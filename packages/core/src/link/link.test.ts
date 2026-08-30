@@ -77,6 +77,25 @@ describe('link - parent resolution and depth', () => {
     expect(depthById.get('claude-code:leaf')).toBe(2);
   });
 
+  test('viaCallId survives from ReducedSession onto the built SessionSummary (ADR 0001)', () => {
+    const items: SourcedReducedSession[] = [
+      { ref: ref('root'), reduced: reduced('root') },
+      {
+        ref: ref('child', 'child'),
+        reduced: reduced('child', {
+          parentSourceId: 'root',
+          relation: 'subagent',
+          viaCallId: 'call-123',
+        }),
+      },
+    ];
+    const { summaries } = link(items, buildProject);
+    const root = summaries.find((s) => s.id === 'claude-code:root');
+    const child = summaries.find((s) => s.id === 'claude-code:child');
+    expect(root?.viaCallId).toBeUndefined();
+    expect(child?.viaCallId).toBe('call-123');
+  });
+
   test('an unresolvable parent is kept as a root and produces an orphan-child diagnostic', () => {
     const items: SourcedReducedSession[] = [
       {

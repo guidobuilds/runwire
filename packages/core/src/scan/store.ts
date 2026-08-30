@@ -179,19 +179,25 @@ function splitId(id: string): [string, string] {
 }
 
 function fillChildIds(trace: SessionTrace, parentId: string, summaries: SessionSummary[]): void {
-  // viaCallId is link-only metadata, not stored on SessionSummary itself;
-  // child linkage is therefore matched by parentId + emission order against
-  // `agent` category tool steps that have no childId yet. Exact per-call
-  // matching via viaCallId is a documented later refinement (docs/ARCHITECTURE.md §13).
+  // Exact match: an `agent` category tool step's callId is looked up against
+  // each child's viaCallId (ADR 0001 / docs/adr/0001-exact-child-linking-via-viacallid.md),
+  // not by emission-order position. A child with no viaCallId is excluded
+  // from the map and simply never gets a childId set.
+  // If two children ever share a viaCallId, the last one in `summaries`
+  // order wins the map key, silently (no diagnostic) - see ADR 0001
+  // Consequences.
   const children = summaries.filter((s) => s.parentId === parentId);
+  const childIdByViaCallId = new Map<string, string>();
+  for (const child of children) {
+    if (child.viaCallId) childIdByViaCallId.set(child.viaCallId, child.id);
+  }
   const agentSteps = trace.steps.filter(
     (s): s is Extract<(typeof trace.steps)[number], { kind: 'tool' }> =>
       s.kind === 'tool' && s.category === 'agent',
   );
-  for (let idx = 0; idx < Math.min(children.length, agentSteps.length); idx++) {
-    const child = children[idx];
-    const step = agentSteps[idx];
-    if (child && step) step.childId = child.id;
+  for (const step of agentSteps) {
+    const childId = step.callId ? childIdByViaCallId.get(step.callId) : undefined;
+    if (childId) step.childId = childId;
   }
 }
 

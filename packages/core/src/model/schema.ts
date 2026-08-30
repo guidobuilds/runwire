@@ -57,6 +57,7 @@ export const SessionSummarySchema = z.object({
   parentId: z.string().optional(),
   relation: z.enum(['subagent', 'teammate', 'fork']).optional(),
   depth: z.number().int().min(0),
+  viaCallId: z.string().optional(),
   agentType: z.string().optional(),
   title: z.object({ value: z.string(), contentDerived: z.literal(true) }).optional(),
   project: ProjectRefSchema,

@@ -48,6 +48,19 @@ function makeScenarios(): FakeScenario[] {
       },
       { kind: 'toolCall', name: 'read-thing', category: 'read', callId: 'c1' },
       { kind: 'toolResult', callId: 'c1', error: false },
+      // ADR 0001 (exact viaCallId child-linking) coverage: three
+      // agent-category tool calls exercising (a) exact match against
+      // child1's viaCallId 'c1' (callId reused only after the read-thing
+      // pair above already resolved it), (b) a decoy callId with no
+      // matching child, and (e) a callId ('c2') that two children
+      // (child3/child4) both claim via viaCallId, to pin deterministic
+      // last-wins linking.
+      { kind: 'toolCall', name: 'spawn-agent', category: 'agent', callId: 'c1' },
+      { kind: 'toolResult', callId: 'c1', error: false },
+      { kind: 'toolCall', name: 'spawn-agent', category: 'agent', callId: 'c-decoy' },
+      { kind: 'toolResult', callId: 'c-decoy', error: false },
+      { kind: 'toolCall', name: 'spawn-agent', category: 'agent', callId: 'c2' },
+      { kind: 'toolResult', callId: 'c2', error: false },
       { kind: 'harnessEvent', name: 'hook:PreToolUse' },
       { kind: 'turn' },
       { kind: 'compaction', preTokens: 500, postTokens: 50 },
@@ -83,6 +96,103 @@ function makeScenarios(): FakeScenario[] {
       },
       { kind: 'usage', dedupeKey: 'req2', model: 'fake-model-a', output: 20 },
       { kind: 'observed', at: '2026-01-01T00:04:00Z' },
+    ],
+  };
+
+  // ADR 0001 (d): a child whose `link` event has no viaCallId, mirroring a
+  // real adapter emitting `link` with viaCallId absent when a child's
+  // .meta.json is missing/invalid. Must never get an agent-step childId and
+  // must never break fillChildIds. No usage event, so root's rollup output
+  // total is unaffected by this addition.
+  const child2: FakeScenario = {
+    ref: {
+      sourceId: 'child2',
+      path: '/fake/child2.json',
+      kind: 'child',
+      sizeBytes: 40,
+      mtimeMs: 1000,
+      parentHint: 'root',
+    },
+    events: [
+      {
+        kind: 'meta',
+        sourceId: 'child2',
+        role: 'child',
+        cwd: '/home/u/proj',
+        at: '2026-01-01T00:05:00Z',
+      },
+      {
+        kind: 'link',
+        parentSourceId: 'root',
+        relation: 'subagent',
+        agentType: 'fake-explorer',
+        depth: 1,
+        // Intentionally no viaCallId - see comment above.
+      },
+      { kind: 'observed', at: '2026-01-01T00:06:00Z' },
+    ],
+  };
+
+  // ADR 0001 (e): child3 and child4 both claim viaCallId 'c2' - a collision
+  // that must resolve deterministically to the later child in scenario/
+  // discovery order (child4), last-wins, with no diagnostic (ADR 0001
+  // Consequences, user decision 2026-08-30). No usage events on either, so
+  // root's rollup output total is unaffected by this addition.
+  const child3: FakeScenario = {
+    ref: {
+      sourceId: 'child3',
+      path: '/fake/child3.json',
+      kind: 'child',
+      sizeBytes: 40,
+      mtimeMs: 1000,
+      parentHint: 'root',
+    },
+    events: [
+      {
+        kind: 'meta',
+        sourceId: 'child3',
+        role: 'child',
+        cwd: '/home/u/proj',
+        at: '2026-01-01T00:07:00Z',
+      },
+      {
+        kind: 'link',
+        parentSourceId: 'root',
+        relation: 'subagent',
+        agentType: 'fake-explorer',
+        depth: 1,
+        viaCallId: 'c2',
+      },
+      { kind: 'observed', at: '2026-01-01T00:08:00Z' },
+    ],
+  };
+
+  const child4: FakeScenario = {
+    ref: {
+      sourceId: 'child4',
+      path: '/fake/child4.json',
+      kind: 'child',
+      sizeBytes: 40,
+      mtimeMs: 1000,
+      parentHint: 'root',
+    },
+    events: [
+      {
+        kind: 'meta',
+        sourceId: 'child4',
+        role: 'child',
+        cwd: '/home/u/proj',
+        at: '2026-01-01T00:09:00Z',
+      },
+      {
+        kind: 'link',
+        parentSourceId: 'root',
+        relation: 'subagent',
+        agentType: 'fake-explorer',
+        depth: 1,
+        viaCallId: 'c2', // collision with child3 - the later child wins.
+      },
+      { kind: 'observed', at: '2026-01-01T00:09:30Z' },
     ],
   };
 
@@ -127,7 +237,7 @@ function makeScenarios(): FakeScenario[] {
     ],
   };
 
-  return [root, child, malformed, titled];
+  return [root, child, child2, child3, child4, malformed, titled];
 }
 
 export function createFakeAdapter(): HarnessAdapter & { scenarios: FakeScenario[] } {
@@ -139,7 +249,10 @@ export function createFakeAdapter(): HarnessAdapter & { scenarios: FakeScenario[
     uncachedInput: 'fake: sum of per-call input tokens not served from cache',
   };
 
-  const toolCategoryMap: Record<string, ToolCategory> = { 'read-thing': 'read' };
+  const toolCategoryMap: Record<string, ToolCategory> = {
+    'read-thing': 'read',
+    'spawn-agent': 'agent',
+  };
 
   return {
     id: 'fake',

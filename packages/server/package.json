@@ -9,7 +9,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@scout/core": "workspace:*"
+    "@scout/core": "workspace:*",
+    "@scout/adapter-claude-code": "workspace:*",
+    "hono": "4.13.5"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."

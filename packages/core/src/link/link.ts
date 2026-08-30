@@ -69,6 +69,7 @@ export function link(
       // is still visible - see the orphan-child diagnostic above.
       relation: reduced.relation,
       depth: 0, // filled in pass 2
+      viaCallId: reduced.viaCallId,
       agentType: reduced.agentType,
       title: reduced.title,
       project: buildProject(reduced.harness, reduced.cwd),

@@ -28,6 +28,8 @@ export type SessionSummary = {
   relation?: SessionRelation;
   /** 0 for roots. */
   depth: number;
+  /** The parent's tool-call id that spawned this session (ADR 0001); plain id passthrough, not content-derived. */
+  viaCallId?: string;
   /** e.g. "Explore", "forge-adversary" - a name, not a prompt. */
   agentType?: string;
   /** D7: the one content-derived field. */

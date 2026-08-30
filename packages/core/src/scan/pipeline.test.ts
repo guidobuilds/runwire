@@ -26,15 +26,23 @@ describe('scan pipeline - end to end on the fake adapter', () => {
 
     const report = await scan([adapter], ctx, state, { projectIdentity: 'cwd' });
 
-    expect(report.perAdapter.fake?.discovered).toBe(4); // root, child1, malformed, titled
-    expect(report.perAdapter.fake?.parsed).toBe(4);
+    // root, child1, child2, child3, child4, malformed, titled
+    expect(report.perAdapter.fake?.discovered).toBe(7);
+    expect(report.perAdapter.fake?.parsed).toBe(7);
     expect(report.perAdapter.fake?.failed).toBe(0);
 
     const root = state.summaries.find((s) => s.id === 'fake:root');
     const child = state.summaries.find((s) => s.id === 'fake:child1');
     expect(root).toBeDefined();
     expect(child).toBeDefined();
-    expect(root?.children).toEqual(['fake:child1']);
+    // Order not asserted here: `scan()` builds its linked items from
+    // `state.cache.values()` (Map insertion order = per-source async
+    // completion order, not discovery/scenario-array order), so which
+    // child lands where in `children[]` is a scan-timing detail, not a
+    // documented contract.
+    expect(new Set(root?.children)).toEqual(
+      new Set(['fake:child1', 'fake:child2', 'fake:child3', 'fake:child4']),
+    );
     expect(child?.parentId).toBe('fake:root');
     expect(child?.depth).toBe(1);
     expect(root?.title?.value).toBe('A real session title');
@@ -42,8 +50,8 @@ describe('scan pipeline - end to end on the fake adapter', () => {
 
     const rootRollup = state.rollups.get('fake:root');
     expect(rootRollup?.exclusive.usage.output?.value).toBe(100);
-    expect(rootRollup?.inclusive.usage.output?.value).toBe(120); // + child's 20
-    expect(rootRollup?.descendants).toBe(1);
+    expect(rootRollup?.inclusive.usage.output?.value).toBe(120); // + child1's 20; child2-4 carry no usage
+    expect(rootRollup?.descendants).toBe(4);
 
     const titled = state.summaries.find((s) => s.id === 'fake:titled');
     expect(titled?.title?.value).toBe('A fake session title');
@@ -72,6 +80,33 @@ describe('scan pipeline - end to end on the fake adapter', () => {
     const trace = await store.getTrace('fake:root');
     expect(trace).toBeDefined();
     expect(trace?.totals.output).toBe(root?.usage.output?.value);
+
+    // ADR 0001: fillChildIds matches agent-category steps to children by
+    // exact viaCallId<->callId, not emission-order position.
+    expect(() => trace).not.toThrow();
+    const agentSteps = (trace?.steps ?? []).filter(
+      (s): s is Extract<NonNullable<typeof trace>['steps'][number], { kind: 'tool' }> =>
+        s.kind === 'tool' && s.category === 'agent',
+    );
+    const c1Step = agentSteps.find((s) => s.callId === 'c1');
+    const decoyStep = agentSteps.find((s) => s.callId === 'c-decoy');
+    const c2Step = agentSteps.find((s) => s.callId === 'c2');
+    // (a) exact match: the c1 agent step resolves to child1 (its viaCallId).
+    expect(c1Step?.childId).toBe('fake:child1');
+    // (b)/(c): the decoy step never matches. Under the old index-based
+    // logic (children[] zipped against agentSteps[] by position), this
+    // second agent step would have been wired to child2 (the second child
+    // in discovery order) - this is the direct refutation of order-based
+    // matching.
+    expect(decoyStep?.childId).toBeUndefined();
+    // (e) viaCallId collision: child3 and child4 both claim 'c2'; the later
+    // child in discovery/summary order (child4) wins, deterministically.
+    expect(c2Step?.childId).toBe('fake:child4');
+
+    // (d) child2 has no viaCallId: it is still linked as a normal child
+    // (getSubtree), it just never receives an agent-step childId.
+    const subtree = store.getSubtree('fake:root');
+    expect(subtree.some((s) => s.id === 'fake:child2')).toBe(true);
   });
 
   test('a malformed source produces diagnostics without failing the scan or the other sources', async () => {
@@ -105,12 +140,12 @@ describe('scan pipeline - end to end on the fake adapter', () => {
     const state = createScanState();
 
     const first = await scan([adapter], ctx, state, { projectIdentity: 'cwd' });
-    expect(first.perAdapter.fake?.parsed).toBe(4);
+    expect(first.perAdapter.fake?.parsed).toBe(7);
     expect(first.perAdapter.fake?.reused).toBe(0);
 
     const second = await scan([adapter], ctx, state, { projectIdentity: 'cwd' });
     expect(second.perAdapter.fake?.parsed).toBe(0);
-    expect(second.perAdapter.fake?.reused).toBe(4);
+    expect(second.perAdapter.fake?.reused).toBe(7);
     expect(state.summaries.find((s) => s.id === 'fake:root')?.usage.output?.value).toBe(100);
   });
 
