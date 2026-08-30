@@ -1,0 +1,18 @@
+{
+  "name": "@scout/adapter-claude-code",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@scout/core": "workspace:*",
+    "zod": "4.5.4"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  }
+}

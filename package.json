@@ -14,7 +14,7 @@
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test",
     "build": "bun run --filter '*' build",
-    "dev": "bun run --filter 'scout' dev"
+    "dev": "bun --watch apps/scout/src/index.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.11",

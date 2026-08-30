@@ -43,9 +43,13 @@ module.exports = {
     },
     {
       name: 'apps-server-and-web-only',
-      comment: 'apps/scout may import server and web, not core or adapters directly.',
+      comment:
+        'apps/scout may import server and web, not core or adapters directly. Narrow exception: ' +
+        'apps/scout/src/fixture.ts (the dev-only `scout fixture` redaction tool) needs an ' +
+        "adapter's own allowlist to know what to redact, so it is exempted here rather than " +
+        'widening this rule for the real serve/scan/doctor commands too (docs/ARCHITECTURE.md §1).',
       severity: 'error',
-      from: { path: '^apps/' },
+      from: { path: '^apps/', pathNot: '^apps/scout/src/fixture' },
       to: { path: '^packages/(core|adapter-)' },
     },
   ],

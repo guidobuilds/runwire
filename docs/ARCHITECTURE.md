@@ -62,6 +62,8 @@ Allowed imports (enforced by workspace `dependencies` and a Biome/`dependency-cr
 
 An adapter that imports `server` or another adapter fails CI.
 
+**Narrow exception (M2):** `apps/scout/src/fixture.ts`, the dev-only `scout fixture` redaction tool, imports `core` and `adapter-*` directly — it needs an adapter's own allowlist to know what to redact when producing that adapter's fixtures, before `server`'s registry (M3) exists to mediate it. The real user-facing commands (`serve`, `scan`, `doctor`) still reach adapters only through `server`. `.dependency-cruiser.cjs` scopes the exception to that one file by path, not to `apps/scout` generally.
+
 ## 2. Domain model
 
 All types live in `packages/core/src/model/`. They are the JSON shapes served by the API; there is no separate DTO layer.
@@ -489,8 +491,7 @@ Fixtures are produced by `scout fixture`, which keeps structure, keys, numbers, 
 
 ## 13. Open questions
 
-- D20 and D22 assumed; confirm.
-- Product name (D27).
+- D22 (per-metric confidence) assumed; confirm.
 - Grok `inputTokens`: inclusive of `cachedReadTokens` or not (affects `uncachedInput` derivation) — verify on real data before the Grok adapter.
 - Whether Claude Code `cost-state` includes subagent usage (affects the label on `cost` for sessions with children).
 - Nested subagent parent resolution (depth > 1) beyond the MVP simplification.

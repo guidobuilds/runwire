@@ -1,6 +1,6 @@
 # Adapter: Claude Code
 
-Status: **MVP adapter (M2)**. Based on structure-only inspection of CLI versions 2.1.22x–2.1.251 on macOS (2026-08-29). Fields marked *(newer)* were only seen in the latest versions.
+Status: **Built (M2)**, validated against real sessions on the reference machine (2026-08-30): 731 sources (367 root, 364 subagent) parsed with zero failures, cold scan 1.3 s / warm rescan 22 ms, well under the 5 s budget. Based on structure-only inspection of CLI versions 2.1.22x–2.1.251 on macOS (2026-08-29). Fields marked *(newer)* were only seen in the latest versions.
 
 ## Location and layout
 
@@ -30,7 +30,7 @@ Records are one JSON object per line. Top-level `type` drives the mapping.
 | `ai-title` | `meta.title` (only when `privacy.titles`) | `aiTitle` |
 | any record | `cwd`, `version` on change | `cwd`, `version`, `gitBranch` |
 | `attachment` | `harnessEvent` for `attachment.type` ∈ `hook_success` / `hook_system_message` (`name = hook:<hookName>`), `command_permissions` (`permission`), `plan_mode` / `plan_mode_exit` / `auto_mode` (mode markers); other attachment types (`total_tokens_reminder`, `file`, `edited_text_file`, deltas…) ignored | `attachment.type`, `attachment.hookName` |
-| `last-prompt`, `agent-name`, `mode`, `atis-latch`, `bridge-session`, `queue-operation`, `file-history-*`, `summary` | nothing (counted as known-ignored) | — |
+| `last-prompt`, `agent-name`, `agent-setting`, `mode`, `atis-latch`, `bridge-session`, `queue-operation`, `file-history-*`, `summary` | nothing (counted as known-ignored) | — |
 | unknown `type` | counted; one aggregated `unknown-record-type` diagnostic per file | — |
 
 `<synthetic>` as `message.model` is ignored for model tallies and its usage is kept (it carries real numbers).
@@ -107,14 +107,19 @@ Harness event vocabulary (`harnessEventNames`): `hook:<hookEvent>` (the part of 
 - Assistant content block types in one session: `tool_use` 358, `thinking` 229, `text` 195 — one block per record, so `blocks` must be summed across `requestId` duplicates.
 - `tool_result.is_error` was `true` on 8 of 358 results; `stop_reason` ∈ `tool_use`, `end_turn`, `stop_sequence`.
 - Hook attachments are ~1 000 per large session (Pre/PostToolUse for every call); the timeline hides them by default.
+- `PostToolUseFailure:<tool>` is a real hook event, alongside `PreToolUse`/`PostToolUse` — found running the full machine-wide cold scan, not the earlier structure-only sample.
+- `agent-setting` (`{ type, agentSetting, sessionId }`) is a real top-level record type — a session-scoped setting marker, no timestamp or usage — added to the known-ignored list after the same cold scan.
 
 ## Fixtures (M2)
 
-| Fixture | Purpose |
-|---|---|
-| `small/` | one short session, no subagents |
-| `medium/` | the dedupe regression: expected deduped `output` recorded in the snapshot |
-| `subagents/` | root + 3 subagents (one nested `spawnDepth: 2`) + a compaction + a version change + a model change; the snapshot records which `Agent` call step links to which child |
-| `old-version/` | no `cost-state`, no `turn_duration` |
-| `malformed/` | broken JSON line, oversized line, truncated final line |
-| `canary/` | every content field = `SCOUT_CANARY_<n>` |
+Generated from real sessions on the reference machine via `scout fixture` (`apps/scout/src/fixture.ts`), except `malformed/` and `canary/`, which are hand-written. `all/` is a generated union of the others, used only so the adapter contract kit's capability-consistency check sees the full repertoire in one `discover()` view.
+
+| Fixture | Source | Purpose |
+|---|---|---|
+| `small/` | a short real session | one root, no subagents, no diagnostics |
+| `medium/` | the reference session (`3666e64a…`) | the dedupe regression — deduped `output` must equal 438 086, not the naive 1 117 279 |
+| `subagents/` | a real session with 2 subagents, a compaction, a version change and a model change | root + 2 subagents linked with `agentType`/`depth`/`viaCallId`; rollups include both children. Both subagents are at `spawnDepth: 1` — no real session on the reference machine combined a small subagent count with nesting at `spawnDepth: 2`; nested-depth tree computation itself is proven at the core level (`link.test.ts`), not re-proven here |
+| `old-version/` | a real session on CLI 2.1.234 | no `cost-state`, no `turn_duration`; turns still derived from user-message heuristics |
+| `malformed/` | hand-written | a broken JSON line and a truncated final line, both mid-file so records before and after still parse. The oversized-line path is exercised separately, in-memory, in `index.test.ts` — not via an 8 MB fixture file |
+| `canary/` | hand-written | every content field = a unique `SCOUT_CANARY_<n>` sentinel, except `aiTitle` (a different, unchecked sentinel — it is the sanctioned D7 exception and legitimately reaches `meta.title`) |
+| `all/` | generated | union of every fixture above, for the contract kit's capability-consistency check only (see `all/README.md`) |

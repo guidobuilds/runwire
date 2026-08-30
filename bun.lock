@@ -18,12 +18,25 @@
         "scout": "./src/index.ts",
       },
       "dependencies": {
+        "@scout/adapter-claude-code": "workspace:*",
+        "@scout/core": "workspace:*",
         "@scout/server": "workspace:*",
+      },
+    },
+    "packages/adapter-claude-code": {
+      "name": "@scout/adapter-claude-code",
+      "version": "0.0.0",
+      "dependencies": {
+        "@scout/core": "workspace:*",
+        "zod": "4.5.4",
       },
     },
     "packages/core": {
       "name": "@scout/core",
       "version": "0.0.0",
+      "dependencies": {
+        "zod": "4.5.4",
+      },
     },
     "packages/server": {
       "name": "@scout/server",
@@ -58,6 +71,8 @@
     "@biomejs/cli-win32-arm64": ["@biomejs/cli-win32-arm64@2.5.11", "", { "os": "win32", "cpu": "arm64" }, "sha512-e49E6K9hzH/ohJNx8Y26mY8HaV4I4ZViIeoqhKsmoXLKHhQnMeBAVqCgsGf2Wa3lXlS7RkporDXMHHWkzvZzFw=="],
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.11", "", { "os": "win32", "cpu": "x64" }, "sha512-QSQr/KjOgXA7OzXJUWS+oguKyAZ3Q0l/lnlDGbu397eKo83atuWUjBPJrsqbKNF6CARGw8XXJLGzpHC8Ryhd4Q=="],
+
+    "@scout/adapter-claude-code": ["@scout/adapter-claude-code@workspace:packages/adapter-claude-code"],
 
     "@scout/core": ["@scout/core@workspace:packages/core"],
 
@@ -160,5 +175,7 @@
     "undici-types": ["undici-types@8.3.0", "", {}, "sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ=="],
 
     "watskeburt": ["watskeburt@6.0.0", "", { "bin": { "watskeburt": "dist/run-cli.js" } }, "sha512-jfiuDABaxSkC71T6oZ3vCS99roYkSHm/+As+G0Dz8taAHQb+SJBvLEm5RlsgG71XdfAj3rv7eudUBTgwcQUPlQ=="],
+
+    "zod": ["zod@4.5.4", "", {}, "sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA=="],
   }
 }
