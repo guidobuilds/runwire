@@ -12,9 +12,9 @@
     "format": "biome format --write .",
     "boundaries": "depcruise packages apps --config .dependency-cruiser.cjs",
     "typecheck": "bun run --filter '*' typecheck",
-    "test": "bun test",
+    "test": "bun run --filter '*' test",
     "build": "bun run --filter '*' build",
-    "dev": "bun --watch apps/scout/src/index.ts"
+    "dev": "bun run --filter scout --filter @scout/web dev"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.11",

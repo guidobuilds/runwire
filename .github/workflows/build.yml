@@ -29,8 +29,7 @@ jobs:
         with:
           bun-version: "1.3.10"
       - run: bun install --frozen-lockfile
-      # Web build (packages/web) is embedded here from M4 onward; the CLI
-      # compiles standalone until then (see docs/PLAN.md M0/M6).
+      # Web build (packages/web) is embedded into the binary from M6 onward (Bun.embeddedFiles); M4 serves packages/web/dist from disk via `scout serve`, so this workflow compiles the CLI standalone until then (see docs/PLAN.md M6).
       - name: Compile ${{ matrix.target }}
         run: bun build --compile --target=${{ matrix.target }} --outfile=dist/${{ matrix.artifact }} ./apps/scout/src/index.ts
       - uses: actions/upload-artifact@v4

@@ -55,7 +55,11 @@ module.exports = {
   ],
   options: {
     doNotFollow: { path: 'node_modules' },
-    exclude: { path: '\\.test\\.ts$' },
+    // Build output is not source: from M4 on, `packages/web/dist` holds bundled
+    // JS that would otherwise be cruised after `bun run build` (7 extra
+    // "modules" and pointless work). dependency-cruiser does not read
+    // .gitignore, so it has to be excluded explicitly.
+    exclude: { path: ['\\.test\\.tsx?$', '(^|/)dist/'] },
     tsConfig: { fileName: 'tsconfig.base.json' },
     enhancedResolveOptions: { exportsFields: ['exports'], mainFields: ['main'] },
   },

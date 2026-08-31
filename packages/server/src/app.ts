@@ -1,6 +1,7 @@
 import type { AdapterContext, ScoutStore } from '@scout/core';
 import { Hono } from 'hono';
 import { buildApiRoutes } from './routes';
+import { webDistHandler } from './static';
 
 // Type-only mount, never invoked: gives `AppType` the exact chained shape
 // `createApp` produces at the point `/api` is mounted (path-prefixed, so
@@ -13,14 +14,27 @@ function mountApi(store: ScoutStore, ctx: AdapterContext) {
 /** Captured before the catch-all/error handler are added below, so neither pollutes hc<AppType>'s shape. */
 export type AppType = ReturnType<typeof mountApi>;
 
+export type CreateAppOptions = {
+  webDist?: string;
+};
+
 /**
- * Builds the full Hono app: `/api/*` routes, a `GET /*` catch-all stub (no
- * embedded web `dist/` until M4), and a defensive error handler.
+ * Builds the full Hono app: `/api/*` routes, then a `GET /*` catch-all (disk
+ * serve + SPA fallback when `opts.webDist` is set; otherwise the JSON 404
+ * stub), and a defensive error handler.
  */
-export function createApp(store: ScoutStore, ctx: AdapterContext): AppType {
+export function createApp(
+  store: ScoutStore,
+  ctx: AdapterContext,
+  opts: CreateAppOptions = {},
+): AppType {
   const api = mountApi(store, ctx);
 
-  api.get('*', (c) => c.json({ error: 'not found' }, 404));
+  if (opts.webDist) {
+    api.get('*', webDistHandler(opts.webDist));
+  } else {
+    api.get('*', (c) => c.json({ error: 'not found' }, 404));
+  }
 
   api.onError((err, c) => {
     ctx.log.error(`unhandled request error: ${err instanceof Error ? err.message : String(err)}`);

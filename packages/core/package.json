@@ -10,7 +10,8 @@
     "./test-kit": "./src/test-kit/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test"
   },
   "dependencies": {
     "zod": "4.5.4"

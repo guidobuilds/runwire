@@ -4,7 +4,7 @@
 // removed here now that f3-t6 has rewritten the CLI and nothing imports
 // them anymore.
 export { adapters } from './adapters';
-export type { AppType } from './app';
+export type { AppType, CreateAppOptions } from './app';
 export { createApp } from './app';
 export type { ProductionContextOptions } from './context';
 export { createProductionContext } from './context';

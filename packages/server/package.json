@@ -14,6 +14,7 @@
     "hono": "4.13.5"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test"
   }
 }
