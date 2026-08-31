@@ -1,8 +1,15 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { HarnessList } from '../components/HarnessList';
 
-// Stub: f4 replaces the body with <HarnessList>.
 function HarnessesIndexRoute() {
-  return <h1>Harnesses</h1>;
+  const navigate = useNavigate();
+  return (
+    <HarnessList
+      onOpen={(id) => {
+        void navigate({ to: '/harnesses/$id', params: { id } });
+      }}
+    />
+  );
 }
 
 export const Route = createFileRoute('/harnesses/')({ component: HarnessesIndexRoute });

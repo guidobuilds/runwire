@@ -3,8 +3,13 @@ import type { Capability } from '../api/types';
 /**
  * Every displayed field, as a runtime list. `FieldKey` is derived from it, so a
  * field cannot enter the union without also entering this array — which is what
- * lets `MetricCell.test.tsx` assert the "no field ever renders a stringified
- * object" guard exhaustively over the whole union.
+ * lets `MetricCell.test.tsx`'s "no field ever renders a stringified object"
+ * guard loop the **whole field union** rather than a hand-kept copy of it.
+ *
+ * That closes the field axis only. The guard runs each field against a list of
+ * sampled value shapes, so a leak scoped to a shape the list does not
+ * instantiate still ships green (BL-15) — do not read this array as making the
+ * guard exhaustive.
  */
 export const ALL_FIELD_KEYS = [
   'uncachedInput',

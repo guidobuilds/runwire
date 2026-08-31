@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { afterEach, describe, expect, test } from 'vitest';
 import { queryKeys } from '../api/queries';
 import type { Capability, Metric, StatusResponse } from '../api/types';
-import { ALL_FIELD_KEYS } from '../lib/capabilities';
+import { ALL_FIELD_KEYS, type FieldKey } from '../lib/capabilities';
 import { ConnectedMetricCell, MetricCell } from './MetricCell';
 
 const FAKE_CAPS: Capability[] = [
@@ -107,7 +107,60 @@ describe('MetricCell', () => {
     expect(screen.getByText('10')).not.toBeNull();
   });
 
-  test('absent without usage.cacheWrite: renders the visible text n/a, never an em dash', () => {
+  /**
+   * BL-3. The marker used to be `aria-hidden`, so assistive technology got the
+   * number and the provenance note and no confidence grading at all — the one
+   * thing the marker exists to say. Naming it changes nothing on screen: the
+   * same `~`/`?` glyph in the same place.
+   *
+   * Queried by role and accessible name, never by class: `getByRole` reads the
+   * accessibility tree, so it fails outright while the span is `aria-hidden`
+   * and passes only once the grade is actually exposed.
+   */
+  test('the medium marker exposes its grade as an accessible name', () => {
+    render(
+      <MetricCell
+        field="output"
+        harness="fake"
+        capabilities={FAKE_CAPS}
+        metric={metric({ value: 100, confidence: 'medium', note: 'derived: input - cached' })}
+      />,
+    );
+    const marker = screen.getByRole('img', { name: 'medium confidence' });
+    // Unchanged for sighted users.
+    expect(marker.textContent).toBe('~');
+    expect(marker.getAttribute('aria-hidden')).toBeNull();
+    expect(screen.getByText('100')).not.toBeNull();
+  });
+
+  test('the low marker exposes its grade as an accessible name', () => {
+    render(
+      <MetricCell
+        field="output"
+        harness="fake"
+        capabilities={FAKE_CAPS}
+        metric={metric({ value: 10, confidence: 'low', note: 'estimated' })}
+      />,
+    );
+    const marker = screen.getByRole('img', { name: 'low confidence' });
+    expect(marker.textContent).toBe('?');
+    expect(marker.getAttribute('aria-hidden')).toBeNull();
+  });
+
+  test('high confidence renders no marker, so there is nothing to name', () => {
+    render(
+      <MetricCell
+        field="output"
+        harness="fake"
+        capabilities={FAKE_CAPS}
+        metric={metric({ value: 1234, confidence: 'high' })}
+      />,
+    );
+    expect(screen.queryByRole('img')).toBeNull();
+    expect(screen.getByText('1.2k')).not.toBeNull();
+  });
+
+  test('absent without usage.cacheWrite: renders the on-screen text n/a, never an em dash', () => {
     // Driven through the real status query, not the capabilities prop.
     renderCell(<ConnectedMetricCell field="cacheWrite" harness="fake" />, ['usage.perCall']);
     expect(screen.getByText('n/a')).not.toBeNull();
@@ -115,14 +168,14 @@ describe('MetricCell', () => {
     expect(screen.getByTitle('Not provided by Fake Harness')).not.toBeNull();
   });
 
-  test('absent with the capability: renders the visible em dash, never n/a', () => {
+  test('absent with the capability: renders the on-screen em dash, never n/a', () => {
     renderCell(<ConnectedMetricCell field="cacheWrite" harness="fake" />, ['usage.cacheWrite']);
     expect(screen.getByText('—')).not.toBeNull();
     expect(screen.queryByText('n/a')).toBeNull();
     expect(screen.getByTitle('Missing in this session')).not.toBeNull();
   });
 
-  test('the two absence states never render the same visible text', () => {
+  test('the two absence states never render the same on-screen text', () => {
     const notProvided = renderCell(<ConnectedMetricCell field="cacheWrite" harness="fake" />, [
       'usage.perCall',
     ]);
@@ -190,7 +243,7 @@ describe('MetricCell', () => {
       <QueryClientProvider client={client}>
         {Array.from({ length: 5 }, (_, i) => (
           <MetricCell
-            // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length static list
+            // biome-ignore lint/suspicious/noArrayIndexKey: literal list of known length
             key={i}
             field="cacheWrite"
             harness="fake"
@@ -256,9 +309,24 @@ describe('MetricCell structured values', () => {
    * probes each field at exactly one shape, so a leak scoped to a shape the
    * loop never supplies still ships green — `if (field === 'title' &&
    * Array.isArray(value)) return String(value);` was the demonstrated escape.
-   * The guard therefore runs the full product of both axes (ADV-1).
+   * The loop below therefore runs `ALL_FIELD_KEYS` against every shape listed
+   * here: it closes the field axis (a new field cannot enter `FieldKey`
+   * without entering `ALL_FIELD_KEYS`) and **samples** the value axis with
+   * nine shapes. It does not close the value axis — a mutant keyed on a
+   * predicate no entry instantiates still escapes green (BL-15, mutant M-J).
+   *
+   * `expectedFor` carries the fields that have a real formatter for the shape:
+   * `title` and `harnessVersion` are object-valued in core, so their shapes
+   * render as text for their own field and as honest JSON everywhere else.
+   * Whoever adds a branch to `defaultFormat` adds its shape here in the same
+   * edit (BL-15).
    */
-  const STRUCTURED_SHAPES: ReadonlyArray<{ name: string; value: unknown; expected: string }> = [
+  const STRUCTURED_SHAPES: ReadonlyArray<{
+    name: string;
+    value: unknown;
+    expected: string;
+    expectedFor?: Partial<Record<FieldKey, string>>;
+  }> = [
     {
       name: 'flat object',
       value: { unexpected: 'shape', n: 1 },
@@ -270,13 +338,25 @@ describe('MetricCell structured values', () => {
     { name: 'no-keys object', value: {}, expected: '(unformatted)' },
     { name: 'Map', value: new Map([['a', 1]]), expected: '(unformatted)' },
     { name: 'Set', value: new Set([1]), expected: '(unformatted)' },
+    {
+      name: 'title facts',
+      value: { value: 'Fix the reducer', contentDerived: true },
+      expected: '{"value":"Fix the reducer","contentDerived":true}',
+      expectedFor: { title: 'Fix the reducer' },
+    },
+    {
+      name: 'version range',
+      value: { first: '1.2.3', last: '1.2.4' },
+      expected: '{"first":"1.2.3","last":"1.2.4"}',
+      expectedFor: { harnessVersion: '1.2.3 → 1.2.4' },
+    },
   ];
 
   /**
    * The general guard: no field in the union may fall through to a stringified
    * object, for any of the shapes above. `ALL_FIELD_KEYS` derives `FieldKey`,
-   * so a field added tomorrow enters this loop automatically — and now enters
-   * it once per shape rather than once.
+   * so a field added tomorrow enters this loop automatically — and enters it
+   * once per shape rather than once.
    */
   test('no field renders a stringified object for any unrecognised structured value', () => {
     for (const field of ALL_FIELD_KEYS) {
@@ -289,19 +369,98 @@ describe('MetricCell structured values', () => {
             metric={structured(shape.value)}
           />,
         );
+        const expected = shape.expectedFor?.[field] ?? shape.expected;
         // Labelled so a failure names the exact cell of the product that leaked.
         const actual = `${field}/${shape.name} -> ${view.container.textContent ?? ''}`;
         // `[object ` catches every default `Object.prototype.toString` form
         // (`[object Map]`, `[object Promise]`, …), not just `[object Object]`.
         expect(actual).not.toContain('[object ');
         // Markup too, so a leak into an attribute (the provenance tooltip) is
-        // caught as well as one into the visible text.
+        // caught as well as one into the on-screen text.
         expect(`${field}/${shape.name} -> ${view.container.innerHTML}`).not.toContain('[object ');
         // Honest fallback: show what the cell actually holds.
-        expect(actual).toBe(`${field}/${shape.name} -> ${shape.expected}`);
+        expect(actual).toBe(`${field}/${shape.name} -> ${expected}`);
         view.unmount();
       }
     }
+  });
+
+  /**
+   * BL-15 residual. `title` (`{ value, contentDerived }`) and `harnessVersion`
+   * (`{ first, last }`) are object-valued in `packages/core` with no
+   * `defaultFormat` branch, so any caller that wrapped one in a `Metric`
+   * rendered raw compact JSON. f6 closed the session-detail *instance* by
+   * rendering both fields directly; these branches close the *class*, for
+   * f7's compare view and every caller after it.
+   */
+  test('field="title" renders the title text, never its JSON', () => {
+    const view = render(
+      <MetricCell
+        field="title"
+        harness="fake"
+        capabilities={FAKE_CAPS}
+        metric={structured({ value: 'Fix the reducer', contentDerived: true })}
+      />,
+    );
+    expect(view.container.textContent).toBe('Fix the reducer');
+  });
+
+  test('field="harnessVersion" renders a moved version as a range', () => {
+    const view = render(
+      <MetricCell
+        field="harnessVersion"
+        harness="fake"
+        capabilities={FAKE_CAPS}
+        metric={structured({ first: '1.2.3', last: '1.2.4' })}
+      />,
+    );
+    expect(view.container.textContent).toBe('1.2.3 → 1.2.4');
+  });
+
+  test('field="harnessVersion" renders a version that never moved once', () => {
+    const view = render(
+      <MetricCell
+        field="harnessVersion"
+        harness="fake"
+        capabilities={FAKE_CAPS}
+        metric={structured({ first: '1.2.3', last: '1.2.3' })}
+      />,
+    );
+    expect(view.container.textContent).toBe('1.2.3');
+  });
+
+  test('field="title" survives a property getter that throws', () => {
+    const hostile = {
+      get value(): string {
+        throw new Error('title getter exploded');
+      },
+    };
+    const view = render(
+      <MetricCell
+        field="title"
+        harness="fake"
+        capabilities={FAKE_CAPS}
+        metric={structured(hostile)}
+      />,
+    );
+    expect(view.container.textContent).toBe('(unformatted)');
+  });
+
+  test('field="harnessVersion" survives a property getter that throws', () => {
+    const hostile = {
+      get first(): string {
+        throw new Error('version getter exploded');
+      },
+    };
+    const view = render(
+      <MetricCell
+        field="harnessVersion"
+        harness="fake"
+        capabilities={FAKE_CAPS}
+        metric={structured(hostile)}
+      />,
+    );
+    expect(view.container.textContent).toBe('(unformatted)');
   });
 
   test('an array value is rendered as its elements, not as a comma-joined string', () => {
@@ -317,7 +476,7 @@ describe('MetricCell structured values', () => {
     expect(view.container.textContent).toBe('[{"a":1},2]');
   });
 
-  test('a value JSON cannot describe degrades to a visible placeholder', () => {
+  test('a value JSON cannot describe degrades to an on-screen placeholder', () => {
     const cyclic: Record<string, unknown> = { name: 'loop' };
     cyclic.self = cyclic;
     const empty = render(
@@ -340,7 +499,7 @@ describe('MetricCell structured values', () => {
    * ADV-2. Every type guard inside `defaultFormat` reads properties off the
    * value, and a property read can throw — which the pre-fix `String(value)`
    * fallback could not. Nothing above a cell is an error boundary, so a
-   * hostile or exotic value must degrade to the visible marker rather than
+   * hostile or exotic value must degrade to the on-screen marker rather than
    * take the surrounding tree down. The whole routing decision is guarded, not
    * just `JSON.stringify`, so this holds for each formatter's own guard.
    */
@@ -378,7 +537,7 @@ describe('MetricCell structured values', () => {
     expect(view.container.textContent).toBe('(unformatted)');
   });
 
-  test('a toJSON that throws degrades to the visible placeholder', () => {
+  test('a toJSON that throws degrades to the on-screen placeholder', () => {
     const hostile = {
       toJSON(): never {
         throw new Error('toJSON exploded');

@@ -1,8 +1,17 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { ProjectsList } from '../components/ProjectsList';
 
-// Stub: f4 replaces the body with <ProjectsList>.
 function ProjectsIndexRoute() {
-  return <h1>Projects</h1>;
+  const navigate = useNavigate();
+  return (
+    <ProjectsList
+      onOpen={(key) => {
+        // `$key` is passed raw (design.md §2); the router percent-encodes it and
+        // the server decodes once.
+        void navigate({ to: '/projects/$key', params: { key } });
+      }}
+    />
+  );
 }
 
 export const Route = createFileRoute('/projects/')({ component: ProjectsIndexRoute });

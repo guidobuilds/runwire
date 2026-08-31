@@ -1,0 +1,137 @@
+import type { Capability, Metric, SessionRollup, SessionSummary, Usage } from '../../api/types';
+import type { FieldKey } from '../../lib/capabilities';
+import { usePrefs } from '../../state/prefs';
+import { MetricCell } from '../MetricCell';
+import { Badge } from '../ui/Badge';
+import { Table, Tbody, Td, Th, Thead, Tr } from '../ui/Table';
+
+/**
+ * Mirrors `USAGE_FIELDS` in `packages/core/src/model/usage.ts` (web imports
+ * core types only, never its runtime — see `.dependency-cruiser.cjs`).
+ */
+const USAGE_FIELDS = [
+  'uncachedInput',
+  'cachedInput',
+  'cacheWrite',
+  'output',
+  'reasoningOutput',
+  'totalInput',
+] as const satisfies readonly (keyof Usage & FieldKey)[];
+
+const USAGE_LABELS: Record<(typeof USAGE_FIELDS)[number], string> = {
+  uncachedInput: 'Uncached input',
+  cachedInput: 'Cached input',
+  cacheWrite: 'Cache write',
+  output: 'Output',
+  reasoningOutput: 'Reasoning output',
+  totalInput: 'Total input',
+};
+
+export type TokenBreakdownProps = {
+  summary: SessionSummary;
+  rollup: SessionRollup | undefined;
+  capabilities: readonly Capability[] | undefined;
+  displayName: string;
+};
+
+type Note = { confidence: string; note: string; source: string };
+
+/**
+ * Distinct provenance notes across every metric rendered above, keyed by
+ * confidence + note + source so the same caveat reported by both columns is
+ * listed once.
+ *
+ * The confidence word is part of the on-screen line on purpose. It was written
+ * when `ConfidenceMarker` was `aria-hidden` and `~` / `?` reached nobody using
+ * assistive technology; BL-3 has since been closed in the shared cell, which now
+ * carries `role="img"` + `aria-label="medium confidence" | "low confidence"`.
+ * The two are additive rather than duplicated: the marker grades the cell you
+ * are on, this list gives the provenance once for the whole block, and the
+ * de-duplication above is what keeps the note from being read out per cell.
+ */
+function collectNotes(metrics: readonly (Metric | undefined)[]): Note[] {
+  const seen = new Set<string>();
+  const notes: Note[] = [];
+  for (const metric of metrics) {
+    if (!metric?.note) continue;
+    const key = `${metric.confidence}|${metric.note}|${metric.source}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    notes.push({ confidence: metric.confidence, note: metric.note, source: metric.source });
+  }
+  return notes;
+}
+
+/** Token usage, exclusive beside inclusive; the shell toggle only marks which one is active. */
+export function TokenBreakdown({
+  summary,
+  rollup,
+  capabilities,
+  displayName,
+}: TokenBreakdownProps) {
+  const prefs = usePrefs();
+  const activeClass = 'bg-zinc-50 dark:bg-zinc-900';
+  const exclusiveMetrics = USAGE_FIELDS.map((field) => summary.usage[field]);
+  const inclusiveMetrics = USAGE_FIELDS.map((field) => rollup?.inclusive.usage[field]);
+  const notes = collectNotes([...exclusiveMetrics, ...inclusiveMetrics]);
+
+  return (
+    <section className="space-y-2">
+      <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Token breakdown</h2>
+      <Table>
+        <Thead>
+          <Tr>
+            <Th>Field</Th>
+            <Th className={prefs.inclusive ? undefined : activeClass}>
+              Exclusive {prefs.inclusive ? null : <Badge tone="info">active</Badge>}
+            </Th>
+            <Th className={prefs.inclusive ? activeClass : undefined}>
+              Inclusive {prefs.inclusive ? <Badge tone="info">active</Badge> : null}
+            </Th>
+          </Tr>
+        </Thead>
+        <Tbody>
+          {USAGE_FIELDS.map((field, index) => (
+            <Tr key={field}>
+              <Td>{USAGE_LABELS[field]}</Td>
+              <Td numeric className={prefs.inclusive ? undefined : activeClass}>
+                <MetricCell
+                  field={field}
+                  harness={summary.harness}
+                  metric={exclusiveMetrics[index]}
+                  capabilities={capabilities}
+                  displayName={displayName}
+                  align="right"
+                />
+              </Td>
+              <Td numeric className={prefs.inclusive ? activeClass : undefined}>
+                <MetricCell
+                  field={field}
+                  harness={summary.harness}
+                  metric={inclusiveMetrics[index]}
+                  capabilities={capabilities}
+                  displayName={displayName}
+                  align="right"
+                />
+              </Td>
+            </Tr>
+          ))}
+        </Tbody>
+      </Table>
+      {notes.length > 0 ? (
+        <div className="space-y-1">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            Confidence notes
+          </h3>
+          <ul className="space-y-0.5 text-xs text-zinc-600 dark:text-zinc-300">
+            {notes.map((entry) => (
+              <li key={`${entry.confidence}|${entry.note}|${entry.source}`}>
+                {`${entry.confidence} confidence — ${entry.note} (${entry.source})`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
+  );
+}

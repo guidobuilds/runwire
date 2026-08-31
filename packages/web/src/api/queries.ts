@@ -3,6 +3,29 @@ import type { InferResponseType } from 'hono/client';
 import { api, unwrap } from './client';
 import type { Capability, SessionDetailResponse, StatusResponse } from './types';
 
+/**
+ * Percent-encodes one path-param value.
+ *
+ * `hc<AppType>` interpolates path params **verbatim** — `replaceUrlParam` in
+ * `hono/dist/client/utils.js` is a bare `urlString.replace(reg, () => `/${v}`)`
+ * — so a value containing `/` silently spreads across path segments and matches
+ * no route. Every real `ProjectRef.key` is a repo URL or a filesystem path, so
+ * an unencoded key is a 404 on every project page, not an edge case (measured
+ * against a live `scout serve`: encoded → 200 with 40 summaries, raw → 404).
+ *
+ * The encoding lives here, at the layer that builds the request, rather than at
+ * a route call site: a call site fix leaves every other caller of the same hook
+ * broken. Callers pass the **raw** value — it is also what the query key is
+ * built from, so the cache stays keyed by identity rather than by spelling.
+ *
+ * TanStack Router already does the mirror-image job for the browser URL
+ * (`encodePathParam` always encodes, and hands the decoded value back to the
+ * component), so a route's `useParams()` value goes straight into these hooks.
+ */
+function pathParam(value: string): string {
+  return encodeURIComponent(value);
+}
+
 export const queryKeys = {
   status: ['status'] as const,
   projects: ['projects'] as const,
@@ -41,7 +64,7 @@ export function useProjectSessions(key: string) {
     queryKey: queryKeys.projectSessions(key),
     queryFn: async () =>
       unwrap<InferResponseType<(typeof api.api.projects)[':key']['sessions']['$get']>>(
-        await api.api.projects[':key'].sessions.$get({ param: { key } }),
+        await api.api.projects[':key'].sessions.$get({ param: { key: pathParam(key) } }),
       ),
   });
 }
@@ -51,7 +74,7 @@ export function useHarnessSessions(id: string) {
     queryKey: queryKeys.harnessSessions(id),
     queryFn: async () =>
       unwrap<InferResponseType<(typeof api.api.harnesses)[':id']['sessions']['$get']>>(
-        await api.api.harnesses[':id'].sessions.$get({ param: { id } }),
+        await api.api.harnesses[':id'].sessions.$get({ param: { id: pathParam(id) } }),
       ),
   });
 }
@@ -60,7 +83,9 @@ export function useSession(id: string) {
   return useQuery({
     queryKey: queryKeys.session(id),
     queryFn: async () =>
-      unwrap<SessionDetailResponse>(await api.api.sessions[':id'].$get({ param: { id } })),
+      unwrap<SessionDetailResponse>(
+        await api.api.sessions[':id'].$get({ param: { id: pathParam(id) } }),
+      ),
   });
 }
 

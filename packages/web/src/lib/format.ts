@@ -95,6 +95,32 @@ export function formatGit(git: GitFacts): string {
     .join(' · ');
 }
 
+/**
+ * `SessionSummary.harnessVersion` as the domain model publishes it — the
+ * version seen at the first and last event of the session.
+ */
+export type VersionRange = NonNullable<SessionSummary['harnessVersion']>;
+
+/**
+ * The harness version as one line: `1.2.3` when it never moved,
+ * `1.2.3 → 1.2.4` when it did, and `""` when neither end carries content (the
+ * caller then falls back to the shared absence rendering).
+ */
+export function formatVersionRange(version: { first?: string; last?: string } | undefined): string {
+  const first = version?.first?.trim() ?? '';
+  const last = version?.last?.trim() ?? '';
+  if (first === '' && last === '') return '';
+  if (first === '' || last === '' || first === last) return first === '' ? last : first;
+  return `${first} → ${last}`;
+}
+
+/**
+ * `SessionSummary.title` as the domain model publishes it: the text plus the
+ * flag marking it as content-derived (D7 — the shell's title toggle is what
+ * decides whether it is shown at all).
+ */
+export type TitleFacts = NonNullable<SessionSummary['title']>;
+
 /** Visible marker for a value that cannot be described honestly at all. */
 export const UNFORMATTED = '(unformatted)';
 
@@ -103,7 +129,7 @@ export const UNFORMATTED = '(unformatted)';
  *
  * `String(value)` is deliberately never used here: for any non-primitive it
  * produces the literal text `[object Object]` (or `a,b` for an array), which is
- * wrong visible output with no error and no failing test. Primitives render as
+ * wrong on-screen output with no error and no failing test. Primitives render as
  * themselves; anything structured renders as compact JSON, so the cell shows
  * what it actually holds; and a value JSON cannot describe (cycle, function,
  * symbol, empty object) degrades to a searchable `(unformatted)` marker.

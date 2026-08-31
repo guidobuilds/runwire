@@ -1,8 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { SessionDetail } from '../components/session-detail/SessionDetail';
 
-// Stub: f6 replaces the body with <SessionDetail>.
 function SessionDetailRoute() {
-  return <h1>Session</h1>;
+  const { id } = Route.useParams();
+  return <SessionDetail id={id} />;
 }
 
 export const Route = createFileRoute('/sessions/$id')({ component: SessionDetailRoute });

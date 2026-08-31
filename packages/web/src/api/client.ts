@@ -34,7 +34,7 @@ type Unwrapable = {
  * HTTP status and the body's `error` string when present.
  *
  * `T` is explicit because Hono `ClientResponse` unions (200 | 404) do not
- * collapse through a `json(): Promise<T>` parameter.
+ * narrow to one branch through a `json(): Promise<T>` parameter.
  */
 export async function unwrap<T>(res: Unwrapable): Promise<T> {
   if (res.ok) {

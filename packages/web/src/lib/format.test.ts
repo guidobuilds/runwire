@@ -121,7 +121,7 @@ describe('formatUnknownValue', () => {
     expect(formatUnknownValue([{ a: 1 }, 2])).toBe('[{"a":1},2]');
   });
 
-  test('values JSON cannot describe degrade to the visible marker', () => {
+  test('values JSON cannot describe degrade to the on-screen marker', () => {
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
     expect(formatUnknownValue(cyclic)).toBe(UNFORMATTED);

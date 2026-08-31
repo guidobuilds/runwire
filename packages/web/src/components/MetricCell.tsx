@@ -8,6 +8,7 @@ import {
   formatTokens,
   formatUnknownValue,
   formatUsd,
+  formatVersionRange,
   type GitFacts,
   UNFORMATTED,
 } from '../lib/format';
@@ -53,10 +54,22 @@ export type MetricCellProps<T = unknown> = {
   displayName?: string;
 };
 
+/**
+ * The `~` / `?` grading glyph. `role="img"` + `aria-label` because the glyph is
+ * a picture of the grade, not a word: assistive technology reads "medium
+ * confidence" where a sighted user sees `~`, and the rendered markup is
+ * otherwise unchanged. It was `aria-hidden` until BL-3 — the number and the
+ * provenance note reached assistive technology, the grading did not, which is
+ * the one signal this marker exists to carry.
+ */
 export function ConfidenceMarker({ confidence }: { confidence: Confidence }) {
   if (confidence === 'high') return null;
   return (
-    <span className="mr-0.5 select-none" aria-hidden="true">
+    <span
+      className="mr-0.5 select-none"
+      role="img"
+      aria-label={confidence === 'medium' ? 'medium confidence' : 'low confidence'}
+    >
       {confidence === 'medium' ? '~' : '?'}
     </span>
   );
@@ -76,6 +89,8 @@ function defaultFormat(field: FieldKey, value: unknown): string {
     }
     if (field === 'cost' && isUsd(value)) return formatUsd(value);
     if (field === 'git' && isGitFacts(value)) return formatGit(value);
+    if (field === 'title' && isTitleFacts(value)) return value.value;
+    if (field === 'harnessVersion' && isVersionRange(value)) return formatVersionRange(value);
     if (USAGE_FIELDS.has(field) && typeof value === 'number') return formatTokens(value);
     // Never `String(value)`: every non-primitive would render as the literal text
     // `[object Object]` — wrong output with no error and no failing test (BL-1).
@@ -108,6 +123,43 @@ function isGitFacts(value: unknown): value is GitFacts {
     (key) => candidate[key] === undefined || typeof candidate[key] === 'string',
   );
   const hasContent = GIT_KEYS.some(
+    (key) => typeof candidate[key] === 'string' && (candidate[key] as string).trim() !== '',
+  );
+  return wellTyped && hasContent;
+}
+
+/**
+ * `SessionSummary.title` shape: a non-empty `value` string, and `contentDerived`
+ * — when present — a boolean. Same discipline as `isGitFacts`: content is
+ * required, not just well-typed keys, so a foreign object with an empty `value`
+ * falls through to `formatUnknownValue` instead of rendering an empty cell.
+ * Narrowed to what the formatter reads rather than to `TitleFacts`, whose
+ * `contentDerived` is non-optional.
+ */
+function isTitleFacts(value: unknown): value is { value: string } {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  const derived = candidate.contentDerived;
+  if (derived !== undefined && typeof derived !== 'boolean') return false;
+  const text = candidate.value;
+  return typeof text === 'string' && text.trim() !== '';
+}
+
+const VERSION_KEYS = ['first', 'last'] as const;
+
+/**
+ * `SessionSummary.harnessVersion` shape: every present end is a string and at
+ * least one carries content. Narrowed to a partial rather than to
+ * `VersionRange` (both ends non-optional there) because a half-populated range
+ * is still formattable.
+ */
+function isVersionRange(value: unknown): value is { first?: string; last?: string } {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  const wellTyped = VERSION_KEYS.every(
+    (key) => candidate[key] === undefined || typeof candidate[key] === 'string',
+  );
+  const hasContent = VERSION_KEYS.some(
     (key) => typeof candidate[key] === 'string' && (candidate[key] as string).trim() !== '',
   );
   return wellTyped && hasContent;
