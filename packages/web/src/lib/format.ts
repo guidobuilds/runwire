@@ -1,3 +1,5 @@
+import type { SessionSummary } from '../api/types';
+
 /** Compact token counts: 1234 → "1.2k", 3200000 → "3.2M", 0 → "0". */
 export function formatTokens(n: number): string {
   if (n === 0) return '0';
@@ -64,6 +66,62 @@ export function formatDate(iso: string): string {
 
 export function formatUsd(cost: { usd: number }): string {
   return `$${cost.usd.toFixed(2)}`;
+}
+
+/**
+ * Git facts exactly as the domain model publishes them. Derived from
+ * `SessionSummary` so a shape change in `packages/core` fails typecheck here
+ * instead of silently reaching a formatter that no longer matches.
+ */
+export type GitFacts = NonNullable<SessionSummary['git']>;
+
+/** First 7 characters of a commit sha — the conventional short form. */
+export function shortCommit(commit: string): string {
+  return commit.trim().slice(0, 7);
+}
+
+/**
+ * Git facts as one line: "scout · main · a1b2c3d". Only the parts the harness
+ * actually reported appear, in most-stable-first order; an object with none of
+ * the three fields yields "" (callers fall back — see `formatUnknownValue`).
+ */
+export function formatGit(git: GitFacts): string {
+  return [
+    git.repoName?.trim(),
+    git.branch?.trim(),
+    git.commit?.trim() ? shortCommit(git.commit) : undefined,
+  ]
+    .filter((part): part is string => part !== undefined && part !== '')
+    .join(' · ');
+}
+
+/** Visible marker for a value that cannot be described honestly at all. */
+export const UNFORMATTED = '(unformatted)';
+
+/**
+ * Last resort for a value no field formatter claims.
+ *
+ * `String(value)` is deliberately never used here: for any non-primitive it
+ * produces the literal text `[object Object]` (or `a,b` for an array), which is
+ * wrong visible output with no error and no failing test. Primitives render as
+ * themselves; anything structured renders as compact JSON, so the cell shows
+ * what it actually holds; and a value JSON cannot describe (cycle, function,
+ * symbol, empty object) degrades to a searchable `(unformatted)` marker.
+ */
+export function formatUnknownValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value);
+  }
+  if (value === null || value === undefined) return UNFORMATTED;
+  let json: string | undefined;
+  try {
+    json = JSON.stringify(value);
+  } catch {
+    return UNFORMATTED;
+  }
+  if (json === undefined || json === 'null' || json === '{}' || json === '[]') return UNFORMATTED;
+  return json;
 }
 
 /**

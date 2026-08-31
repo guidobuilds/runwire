@@ -2,10 +2,14 @@ import { describe, expect, test } from 'vitest';
 import {
   formatDate,
   formatDuration,
+  formatGit,
   formatRelative,
   formatTokens,
+  formatUnknownValue,
   formatUsd,
+  shortCommit,
   shortId,
+  UNFORMATTED,
 } from './format';
 
 describe('formatTokens', () => {
@@ -70,5 +74,62 @@ describe('shortId', () => {
 
   test('treats ids without a colon as the source id', () => {
     expect(shortId('abcdefghij')).toBe('abcdefgh');
+  });
+});
+
+describe('formatGit', () => {
+  test('joins the reported parts, shortening the commit', () => {
+    expect(formatGit({ repoName: 'scout', branch: 'main', commit: 'a1b2c3d4e5f60718' })).toBe(
+      'scout · main · a1b2c3d',
+    );
+  });
+
+  test('omits the parts the harness did not report', () => {
+    expect(formatGit({ branch: 'feature/x' })).toBe('feature/x');
+    expect(formatGit({ repoName: 'scout', commit: 'abcdef0123' })).toBe('scout · abcdef0');
+  });
+
+  test('an empty or blank object yields the empty string', () => {
+    expect(formatGit({})).toBe('');
+    expect(formatGit({ branch: '  ' })).toBe('');
+  });
+
+  test('shortCommit keeps seven characters', () => {
+    expect(shortCommit('a1b2c3d4e5f60718')).toBe('a1b2c3d');
+    expect(shortCommit('abc')).toBe('abc');
+  });
+});
+
+describe('formatUnknownValue', () => {
+  // The whole point: this function replaces `String(value)`, which renders
+  // `[object Object]` for every non-primitive (BL-1).
+  test('never produces [object Object]', () => {
+    for (const value of [{}, { a: 1 }, [1, 2], new Date(0), { nested: { deep: true } }]) {
+      expect(formatUnknownValue(value)).not.toContain('[object Object]');
+    }
+  });
+
+  test('primitives render as themselves', () => {
+    expect(formatUnknownValue('main')).toBe('main');
+    expect(formatUnknownValue(42)).toBe('42');
+    expect(formatUnknownValue(true)).toBe('true');
+    expect(formatUnknownValue(10n)).toBe('10');
+  });
+
+  test('structured values render as compact JSON', () => {
+    expect(formatUnknownValue({ a: 1, b: 'x' })).toBe('{"a":1,"b":"x"}');
+    expect(formatUnknownValue([{ a: 1 }, 2])).toBe('[{"a":1},2]');
+  });
+
+  test('values JSON cannot describe degrade to the visible marker', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    expect(formatUnknownValue(cyclic)).toBe(UNFORMATTED);
+    expect(formatUnknownValue(undefined)).toBe(UNFORMATTED);
+    expect(formatUnknownValue(null)).toBe(UNFORMATTED);
+    expect(formatUnknownValue({})).toBe(UNFORMATTED);
+    expect(formatUnknownValue([])).toBe(UNFORMATTED);
+    expect(formatUnknownValue(() => 1)).toBe(UNFORMATTED);
+    expect(UNFORMATTED).toBe('(unformatted)');
   });
 });

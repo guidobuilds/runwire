@@ -1,7 +1,16 @@
 import { useAdapterCapabilities, useAdapterDisplayName } from '../api/queries';
 import type { Capability, Confidence, HarnessId, Metric } from '../api/types';
 import { absenceKind, type FieldKey } from '../lib/capabilities';
-import { formatDate, formatDuration, formatTokens, formatUsd } from '../lib/format';
+import {
+  formatDate,
+  formatDuration,
+  formatGit,
+  formatTokens,
+  formatUnknownValue,
+  formatUsd,
+  type GitFacts,
+  UNFORMATTED,
+} from '../lib/format';
 import { Tooltip } from './ui/Tooltip';
 
 const USAGE_FIELDS = new Set<FieldKey>([
@@ -28,19 +37,20 @@ export type MetricCellProps<T = unknown> = {
   format?: (value: T) => string;
   align?: 'left' | 'right';
   /**
-   * Capabilities for `harness`, supplied by the caller. Passing this makes the
-   * cell provider-free: it opens **zero** query observers and renders with no
-   * `QueryClientProvider` mounted (design.md §4 — props in, never fetch inside
-   * primitives). Tables with many cells should hoist the lookup and pass this.
+   * Capabilities for `harness`, supplied by the caller (design.md §4 — props
+   * in, never fetch inside primitives). The cell opens **zero** query observers
+   * and renders with no `QueryClientProvider` mounted, always.
+   *
+   * Required, but explicitly nullable: pass `undefined` while `useStatus()` is
+   * still loading. `absenceKind` treats `undefined` as `missing`, its
+   * documented loading behaviour, and — unlike the dispatcher this replaced —
+   * handing over a value later re-renders the cell instead of remounting it
+   * (BL-2). Callers that want the lookup done for them use
+   * `ConnectedMetricCell`.
    */
-  capabilities?: readonly Capability[];
-  /** Adapter display name; only read when `capabilities` is supplied. */
-  displayName?: string;
-};
-
-type MetricCellViewProps<T> = Omit<MetricCellProps<T>, 'capabilities' | 'displayName'> & {
   capabilities: readonly Capability[] | undefined;
-  displayName: string;
+  /** Adapter display name; falls back to the harness id. */
+  displayName?: string;
 };
 
 export function ConfidenceMarker({ confidence }: { confidence: Confidence }) {
@@ -53,15 +63,26 @@ export function ConfidenceMarker({ confidence }: { confidence: Confidence }) {
 }
 
 function defaultFormat(field: FieldKey, value: unknown): string {
-  if (field === 'durationMs' && typeof value === 'number') return formatDuration(value);
-  if ((field === 'startedAt' || field === 'endedAt') && typeof value === 'string') {
-    return formatDate(value);
+  // The try wraps the whole routing decision, not just the JSON fallback: every
+  // type guard below reads properties off `value`, and a property read can
+  // throw (a getter, a Proxy). The `String(value)` fallback this replaced could
+  // not throw, so guarding only `JSON.stringify` would have turned a cosmetic
+  // defect into a render-time crash — nothing above a cell is an error
+  // boundary (ADV-2).
+  try {
+    if (field === 'durationMs' && typeof value === 'number') return formatDuration(value);
+    if ((field === 'startedAt' || field === 'endedAt') && typeof value === 'string') {
+      return formatDate(value);
+    }
+    if (field === 'cost' && isUsd(value)) return formatUsd(value);
+    if (field === 'git' && isGitFacts(value)) return formatGit(value);
+    if (USAGE_FIELDS.has(field) && typeof value === 'number') return formatTokens(value);
+    // Never `String(value)`: every non-primitive would render as the literal text
+    // `[object Object]` — wrong output with no error and no failing test (BL-1).
+    return formatUnknownValue(value);
+  } catch {
+    return UNFORMATTED;
   }
-  if (field === 'cost' && isUsd(value)) return formatUsd(value);
-  if (USAGE_FIELDS.has(field) && typeof value === 'number') return formatTokens(value);
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number') return String(value);
-  return String(value);
 }
 
 function isUsd(value: unknown): value is { usd: number } {
@@ -73,28 +94,52 @@ function isUsd(value: unknown): value is { usd: number } {
   );
 }
 
+const GIT_KEYS = ['branch', 'commit', 'repoName'] as const;
+
+/**
+ * `SessionSummary.git` shape: every present key is a string, and at least one
+ * carries content. An object that fails either half is not git facts and falls
+ * through to `formatUnknownValue` rather than rendering as an empty cell.
+ */
+function isGitFacts(value: unknown): value is GitFacts {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  const wellTyped = GIT_KEYS.every(
+    (key) => candidate[key] === undefined || typeof candidate[key] === 'string',
+  );
+  const hasContent = GIT_KEYS.some(
+    (key) => typeof candidate[key] === 'string' && (candidate[key] as string).trim() !== '',
+  );
+  return wellTyped && hasContent;
+}
+
 function provenanceTitle(metric: Metric<unknown>): string {
   if (metric.confidence === 'high' || !metric.note) return metric.source;
   return `${metric.source}\n${metric.note}`;
 }
 
 /**
- * Renders from props only — no hooks, no query subscription. Every branch of
- * `MetricCell` ends here.
+ * Renders from props only — no hooks, no query subscription, no provider
+ * required. This is the whole component: there is deliberately **no** branch
+ * that swaps in a different component type, because doing so remounted every
+ * cell the moment a hoisted `capabilities` value resolved (BL-2).
  */
-function MetricCellView<T>({
+export function MetricCell<T = unknown>({
   metric,
   field,
+  harness,
   format,
   align = 'left',
   capabilities,
   displayName,
-}: MetricCellViewProps<T>) {
+}: MetricCellProps<T>) {
   const alignClass = align === 'right' ? 'text-right tabular-nums' : 'text-left';
 
   if (!metric) {
     const notProvided = absenceKind(field, capabilities) === 'not-provided';
-    const title = notProvided ? `Not provided by ${displayName}` : 'Missing in this session';
+    const title = notProvided
+      ? `Not provided by ${displayName ?? harness}`
+      : 'Missing in this session';
     return (
       <Tooltip content={title} className={`inline-block ${alignClass}`}>
         <span className={ABSENCE_TONE}>{notProvided ? 'n/a' : '—'}</span>
@@ -122,32 +167,23 @@ function MetricCellView<T>({
   );
 }
 
-/** The status-subscribing path, used only when no `capabilities` prop is given. */
-function ConnectedMetricCell<T>(props: Omit<MetricCellProps<T>, 'capabilities' | 'displayName'>) {
-  const capabilities = useAdapterCapabilities(props.harness);
-  const displayName = useAdapterDisplayName(props.harness);
-  return <MetricCellView<T> {...props} capabilities={capabilities} displayName={displayName} />;
-}
+export type ConnectedMetricCellProps<T = unknown> = Omit<
+  MetricCellProps<T>,
+  'capabilities' | 'displayName'
+>;
 
 /**
- * Calls no hooks itself: it picks between a provider-free view and the
- * status-subscribing wrapper, so supplying `capabilities` really does open zero
- * query observers. Callers must not flip a cell between the two modes — the
- * component type changes, which remounts it.
+ * Convenience wrapper for a one-off cell: resolves `capabilities` and
+ * `displayName` from `useStatus()` itself, at the cost of 2 `QueryObserver`s
+ * per instance and a mounted `QueryClientProvider`.
+ *
+ * **Never use this inside session tables, compare matrices or detail panels.**
+ * Bulk callers hoist `useAdapterCapabilities`/`useAdapterDisplayName` once and
+ * pass the results to `MetricCell` as props — ~4400 observers across 2200 cells
+ * otherwise (design.md §5/§6).
  */
-export function MetricCell<T = unknown>({
-  capabilities,
-  displayName,
-  ...rest
-}: MetricCellProps<T>) {
-  if (capabilities !== undefined) {
-    return (
-      <MetricCellView<T>
-        {...rest}
-        capabilities={capabilities}
-        displayName={displayName ?? rest.harness}
-      />
-    );
-  }
-  return <ConnectedMetricCell<T> {...rest} />;
+export function ConnectedMetricCell<T = unknown>(props: ConnectedMetricCellProps<T>) {
+  const capabilities = useAdapterCapabilities(props.harness);
+  const displayName = useAdapterDisplayName(props.harness);
+  return <MetricCell<T> {...props} capabilities={capabilities} displayName={displayName} />;
 }

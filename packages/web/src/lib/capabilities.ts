@@ -1,27 +1,36 @@
 import type { Capability } from '../api/types';
 
-export type FieldKey =
-  | 'uncachedInput'
-  | 'cachedInput'
-  | 'cacheWrite'
-  | 'output'
-  | 'reasoningOutput'
-  | 'totalInput'
-  | 'turns'
-  | 'apiCalls'
-  | 'toolCalls'
-  | 'compactions'
-  | 'subagents'
-  | 'startedAt'
-  | 'endedAt'
-  | 'durationMs'
-  | 'model'
-  | 'mode'
-  | 'effort'
-  | 'cost'
-  | 'harnessVersion'
-  | 'title'
-  | 'git';
+/**
+ * Every displayed field, as a runtime list. `FieldKey` is derived from it, so a
+ * field cannot enter the union without also entering this array — which is what
+ * lets `MetricCell.test.tsx` assert the "no field ever renders a stringified
+ * object" guard exhaustively over the whole union.
+ */
+export const ALL_FIELD_KEYS = [
+  'uncachedInput',
+  'cachedInput',
+  'cacheWrite',
+  'output',
+  'reasoningOutput',
+  'totalInput',
+  'turns',
+  'apiCalls',
+  'toolCalls',
+  'compactions',
+  'subagents',
+  'startedAt',
+  'endedAt',
+  'durationMs',
+  'model',
+  'mode',
+  'effort',
+  'cost',
+  'harnessVersion',
+  'title',
+  'git',
+] as const;
+
+export type FieldKey = (typeof ALL_FIELD_KEYS)[number];
 
 export type AbsenceKind = 'not-provided' | 'missing';
 
