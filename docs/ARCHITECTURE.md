@@ -2,7 +2,7 @@
 
 Foundations for Scout. This document is the contract between `core`, the adapters, the server and the web app. Anything that touches more than one package is decided here.
 
-Related: [PRODUCT.md](PRODUCT.md) (brief), [DECISIONS.md](DECISIONS.md) (review outcomes), [PLAN.md](PLAN.md) (milestones), [adapters/README.md](adapters/README.md) (how to add a harness), [harness-survey.md](harness-survey.md) (what the source data looks like).
+Related: [PRODUCT.md](PRODUCT.md) (brief), [DECISIONS.md](DECISIONS.md) (review outcomes), [PLAN.md](PLAN.md) (milestones), [ENTITIES.md](ENTITIES.md) (entity catalog with properties and relationships), [adapters/README.md](adapters/README.md) (how to add a harness), [harness-survey.md](harness-survey.md) (what the source data looks like).
 
 ## 0. Overview
 
