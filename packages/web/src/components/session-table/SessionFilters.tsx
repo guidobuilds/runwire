@@ -1,8 +1,7 @@
-import type { ChangeEvent } from 'react';
 import { Button } from '../ui/button';
+import { FilterCombobox } from './FilterCombobox';
 import type {
   DatePreset,
-  FilterOption,
   FilterOptionSets,
   SessionFilters as SessionFilterState,
   SubagentsFilter,
@@ -36,8 +35,9 @@ const SUBAGENT_CHOICES: Array<{ value: SubagentsFilter; label: string }> = [
 ];
 
 /**
- * Shared surface for every native form control in this toolbar (Project/Model
- * multi-selects, the date preset/custom-range controls, Subagents, Search).
+ * Shared surface for every native form control left in this toolbar (the date
+ * preset/custom-range controls, Subagents, Search -- Harness/Project/Model are
+ * Popover comboboxes).
  * Uses the same design tokens `ui/input.tsx` builds on (`border-input`,
  * `focus-visible:ring-ring/50`, `dark:bg-input/30`) rather than literal
  * zinc-* colors, so these read as proper shadcn-styled selectors/inputs and
@@ -46,45 +46,6 @@ const SUBAGENT_CHOICES: Array<{ value: SubagentsFilter; label: string }> = [
  */
 const CONTROL =
   'rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30';
-
-function selectedValues(event: ChangeEvent<HTMLSelectElement>): string[] {
-  return Array.from(event.target.selectedOptions, (option) => option.value);
-}
-
-function MultiSelect({
-  id,
-  label,
-  choices,
-  selected,
-  onSelect,
-}: {
-  id: string;
-  label: string;
-  choices: FilterOption[];
-  selected: string[];
-  onSelect: (values: string[]) => void;
-}) {
-  return (
-    <label className="flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-300" htmlFor={id}>
-      {label}
-      <select
-        id={id}
-        multiple
-        className={`${CONTROL} h-16 min-w-32`}
-        value={selected}
-        onChange={(event) => {
-          onSelect(selectedValues(event));
-        }}
-      >
-        {choices.map((choice) => (
-          <option key={choice.value} value={choice.value}>
-            {choice.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
 
 /**
  * Toolbar above the session view: the option lists come from the rows actually
@@ -124,9 +85,10 @@ export function SessionFilters({
       ) : null}
 
       {scope !== 'project' ? (
-        <MultiSelect
+        <FilterCombobox
           id="session-filter-project"
           label="Project"
+          noun="projects"
           choices={options.project}
           selected={filters.project}
           onSelect={(project) => {
@@ -135,9 +97,10 @@ export function SessionFilters({
         />
       ) : null}
 
-      <MultiSelect
+      <FilterCombobox
         id="session-filter-model"
         label="Model"
+        noun="models"
         choices={options.model}
         selected={filters.model}
         onSelect={(model) => {

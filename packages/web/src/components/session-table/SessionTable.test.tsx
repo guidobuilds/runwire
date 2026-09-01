@@ -694,7 +694,7 @@ describe('SessionTable pagination', () => {
     expect(orderedLabels()[0]).toBe('Guard run 019');
   });
 
-  test('a filter that narrows the row set resets to page 1 and updates the page count', () => {
+  test('a filter that narrows the row set resets to page 1 and updates the page count', async () => {
     withClient(
       <SessionTable
         scope="harness"
@@ -709,12 +709,12 @@ describe('SessionTable pagination', () => {
 
     // MANY_SUMMARIES alternates opus/sonnet 60/60 (design.md §6's `matchesList`
     // pure filter, exercised here through the real component, not in isolation).
-    const modelSelect = screen.getByLabelText('Model') as HTMLSelectElement;
-    const opusOption = within(modelSelect).getByRole('option', {
-      name: 'opus',
-    }) as HTMLOptionElement;
-    opusOption.selected = true;
-    fireEvent.change(modelSelect);
+    // Model is a Popover + Command combobox (same control as Harness), not a
+    // native `<select multiple>`: open it and click the listbox option.
+    // `findByRole('option')` (not `findByText`) because the Model *column*
+    // also renders the text "opus" in every matching row.
+    fireEvent.click(screen.getByLabelText('Model'));
+    fireEvent.click(await screen.findByRole('option', { name: 'opus' }));
 
     expect(screen.getByText('60 of 120 sessions')).toBeTruthy();
     expect(screen.getByText('Page 1 of 3')).toBeTruthy();
@@ -943,6 +943,44 @@ describe('SessionTable scope="all" (Sessions landing, f5)', () => {
 
     expect(screen.getByLabelText('Harness')).toBeTruthy();
     expect(screen.getByLabelText('Project')).toBeTruthy();
+  });
+
+  /**
+   * Regression for sessions-filter-dropdowns: Project and Model used to be
+   * native `<select multiple>` listboxes (permanently-open 3-row lists with no
+   * "all" affordance). They are now the same collapsed Popover trigger as
+   * Harness, so all three read "All <noun>" when nothing is selected, and
+   * `Clear filters` puts all three back to that state.
+   */
+  test('Harness, Project and Model are collapsed "All" triggers and Clear filters restores them', async () => {
+    withClient(
+      <SessionTable
+        scope="all"
+        summaries={ALL_SUMMARIES}
+        rollups={ALL_ROLLUPS}
+        harnesses={ALL_DIRECTORY}
+      />,
+    );
+
+    // No native listbox is left in the toolbar for these two dimensions.
+    for (const name of ['Project', 'Model']) {
+      const trigger = screen.getByLabelText(name);
+      expect(trigger.tagName).not.toBe('SELECT');
+      expect(within(trigger).queryByRole('option')).toBeNull();
+    }
+
+    expect(screen.getByText('All harnesses')).toBeTruthy();
+    expect(screen.getByText('All projects')).toBeTruthy();
+    expect(screen.getByText('All models')).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('Model'));
+    fireEvent.click(await screen.findByRole('option', { name: 'opus' }));
+    expect(screen.queryByText('All models')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(screen.getByText('All harnesses')).toBeTruthy();
+    expect(screen.getByText('All projects')).toBeTruthy();
+    expect(screen.getByText('All models')).toBeTruthy();
   });
 
   test('the Harness filter narrows to one harness across projects', async () => {
