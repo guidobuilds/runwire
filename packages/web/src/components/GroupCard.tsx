@@ -8,6 +8,7 @@ import { Sparkline } from './charts/Sparkline';
 import { Badge } from './primitives/Badge';
 import { ConfidenceMarker } from './primitives/MetricCell';
 import { Tooltip } from './primitives/Tooltip';
+import { CardDescription, CardTitle } from './ui/card';
 
 /*
  * Aggregate-token helpers, moved here from the M4 `ProjectsList.tsx` (which
@@ -271,7 +272,7 @@ export function GroupCard({
       {isEmpty ? null : (
         <>
           <div className="space-y-1">
-            <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+            <p className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
               {crossDimensionLabel}
             </p>
             <div className="flex flex-wrap gap-1">
@@ -294,11 +295,26 @@ export function GroupCard({
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-muted-foreground">
+          <div className="flex items-end justify-between gap-3">
+            <span className="text-sm text-muted-foreground">
               {latestActivityAt ? formatRelative(latestActivityAt, nowMs) : 'unknown'}
             </span>
-            <AggregateTokens usage={aggregateUsage} />
+            {/* The one "at a glance" number per card (design.md §2/§5) --
+                promoted to shadcn's CardTitle scale (D44) instead of the
+                inline text-sm span this replaces. Deliberately NOT
+                `CardHeader`: that component sets `@container/card-header`
+                (`container-type: inline-size`), which collapses to
+                `width: 0` when used as a bare flex item with no ancestor
+                `Card` supplying a definite width -- confirmed live (the
+                token number rendered past the card's right edge). A plain
+                flex column carries the same `CardTitle`/`CardDescription`
+                typography without that containment trap. */}
+            <div className="flex shrink-0 flex-col items-end gap-0.5">
+              <CardDescription className="text-xs">Tokens</CardDescription>
+              <CardTitle className="text-2xl font-semibold tabular-nums">
+                <AggregateTokens usage={aggregateUsage} />
+              </CardTitle>
+            </div>
           </div>
 
           <Sparkline data={sparklineSeries} label={`${name} recent activity`} />

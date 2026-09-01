@@ -116,15 +116,22 @@ describe('TokenBreakdown', () => {
     renderBreakdown();
     // Inclusive is active by default: 11_000 + 12_000 + 13_000 + 14_000 + 15_000
     // (totalInput's 16_000 is excluded — it is derived, not an independent field).
-    expect(screen.getByRole('status', { name: /Total \(inclusive\)/u })).not.toBeNull();
-    expect(screen.getByText('Total (inclusive): 65.0k')).not.toBeNull();
+    // The label (CardDescription) and value (CardTitle) are now separate
+    // elements inside the CardHeader that carries the combined accessible
+    // name, so the live-region assertion and the two on-screen texts are
+    // checked separately rather than as one concatenated string.
+    const status = screen.getByRole('status', { name: 'Total (inclusive): 65.0k' });
+    expect(within(status).getByText('Total (inclusive)')).not.toBeNull();
+    expect(within(status).getByText('65.0k')).not.toBeNull();
   });
 
   test('toggling the preference changes which usage feeds the chart and the total', () => {
     setInclusive(false);
     renderBreakdown();
     // Exclusive is active now: 1000 + 2000 + 3000 + 4000 + 5000 (totalInput's 6000 excluded).
-    expect(screen.getByText('Total (exclusive): 15.0k')).not.toBeNull();
+    const status = screen.getByRole('status', { name: 'Total (exclusive): 15.0k' });
+    expect(within(status).getByText('Total (exclusive)')).not.toBeNull();
+    expect(within(status).getByText('15.0k')).not.toBeNull();
     expect(screen.queryByText(/Total \(inclusive\)/u)).toBeNull();
   });
 

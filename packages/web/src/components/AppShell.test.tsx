@@ -6,7 +6,7 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { Route as compareRoute, useCompareIds } from '../routes/compare';
 
@@ -106,14 +106,24 @@ describe('AppShell', () => {
     expect(screen.queryByText('Recent failures')).toBeNull();
     expect(screen.queryByText('High token usage')).toBeNull();
 
-    expect(screen.getByRole('link', { name: 'Sessions' })).not.toBeNull();
-    expect(screen.getByRole('link', { name: 'Projects' })).not.toBeNull();
-    expect(screen.getByRole('link', { name: 'Harnesses' })).not.toBeNull();
+    // Scoped to the real Sidebar's root (`data-slot="sidebar"` -- shadcn's
+    // own marker; there is no `<aside>` anymore, confirmed by reading the
+    // installed ui/sidebar.tsx). Scoping matters because shadcn's real
+    // `BreadcrumbPage` also renders with `role="link"` (aria-disabled, not a
+    // real link), and the breadcrumb text is always one of these three nav
+    // labels -- an unscoped `getByRole('link', ...)` finds both.
+    const sidebar = document.querySelector('[data-slot="sidebar"]') as HTMLElement;
+    expect(sidebar).not.toBeNull();
+    expect(within(sidebar).getByRole('link', { name: 'Sessions' })).not.toBeNull();
+    expect(within(sidebar).getByRole('link', { name: 'Projects' })).not.toBeNull();
+    expect(within(sidebar).getByRole('link', { name: 'Harnesses' })).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Settings' })).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Help' })).not.toBeNull();
 
-    // Topbar breadcrumb reflects the current route.
-    expect(screen.getByRole('navigation', { name: 'Breadcrumb' }).textContent).toBe('Projects');
+    // Topbar breadcrumb reflects the current route. shadcn's real
+    // `Breadcrumb` sets `aria-label="breadcrumb"` (lower-case) itself --
+    // confirmed by reading the installed ui/breadcrumb.tsx, not assumed.
+    expect(screen.getByRole('navigation', { name: 'breadcrumb' }).textContent).toBe('Projects');
 
     // The Inclusive/Exclusive segmented control (shadcn toggle-group), and Titles switch.
     expect(screen.getByRole('button', { name: 'Inclusive', pressed: true })).not.toBeNull();
@@ -222,21 +232,35 @@ describe('AppShell', () => {
     mount('/harnesses');
     expect(await screen.findByText('harnesses view')).not.toBeNull();
 
-    const active = screen.getByRole('link', { name: 'Harnesses' });
-    const inactive = screen.getByRole('link', { name: 'Projects' });
-    const sessions = screen.getByRole('link', { name: 'Sessions' });
+    // Scoped for the same reason as the test above -- shadcn's `BreadcrumbPage`
+    // also has role="link", and the breadcrumb text at this route is
+    // "Harnesses" too, which would otherwise collide with the nav link.
+    const sidebar = document.querySelector('[data-slot="sidebar"]') as HTMLElement;
+    const active = within(sidebar).getByRole('link', { name: 'Harnesses' });
+    const inactive = within(sidebar).getByRole('link', { name: 'Projects' });
+    const sessions = within(sidebar).getByRole('link', { name: 'Sessions' });
 
-    // `data-status` proves the link resolves to the matched route…
+    // `data-status` proves the link resolves to the matched route -- TanStack
+    // Router's own attribute on the rendered <a>, computed by the <Link>
+    // itself and unaffected by being passed in as SidebarMenuButton's
+    // `render` element (Base UI clones it with merged props, but Link's own
+    // route-match logic runs independently of that).
     expect(active.getAttribute('data-status')).toBe('active');
     expect(inactive.getAttribute('data-status')).not.toBe('active');
     // "Sessions" -> "/" must not be active-by-prefix on every other route.
     expect(sessions.getAttribute('data-status')).not.toBe('active');
-    // …and the active styling is a class, since "which nav item am I on" has no
-    // textual representation to assert instead.
-    expect(active.getAttribute('class') ?? '').toContain('font-medium');
-    expect(inactive.getAttribute('class') ?? '').not.toContain('font-medium');
+    // …and the active styling is driven by SidebarMenuButton's own `isActive`
+    // prop, which surfaces as a `data-active` attribute (Base UI's
+    // useRender state -> data-attribute convention). It is NOT a "font-medium"
+    // substring in `class`: the real component's variant classlist always
+    // contains the literal static string "data-active:font-medium" (a
+    // Tailwind attribute-variant selector), on every menu button whether or
+    // not it is active, so a `class` substring check would now pass
+    // unconditionally and prove nothing.
+    expect(active.getAttribute('data-active')).toBe('');
+    expect(inactive.getAttribute('data-active')).toBeNull();
 
-    expect(screen.getByRole('navigation', { name: 'Breadcrumb' }).textContent).toBe('Harnesses');
+    expect(screen.getByRole('navigation', { name: 'breadcrumb' }).textContent).toBe('Harnesses');
   });
 
   test('the Compare tray badge reacts live to prefs.compareTray changes, without remounting', async () => {
@@ -323,64 +347,135 @@ describe('AppShell', () => {
   // f9 integration-hardening (a11y audit item 1): "focus order runs sidebar
   // -> topbar -> content in DOM order". Native (non-scripted) Tab order is
   // determined by DOM document order for elements with no explicit
-  // `tabIndex` -- confirmed by reading AppShell.tsx directly, zero `tabIndex`
-  // props anywhere in the file -- so this is a real, load-bearing structural
-  // assertion (via `Node.compareDocumentPosition`, not a hand-maintained
-  // list) rather than a restatement of the source layout.
+  // `tabIndex` -- true for everything AppShell.tsx itself renders; the one
+  // exception is shadcn's own `SidebarRail` (tabIndex={-1}), which only
+  // removes it from the sequential tab order rather than reordering it, so
+  // the guard against a *positive* tabIndex below still catches the only way
+  // order could actually be subverted. This is a real, load-bearing
+  // structural assertion (via `Node.compareDocumentPosition`, not a
+  // hand-maintained list) rather than a restatement of the source layout.
   test('focus order runs sidebar -> topbar -> content, in real DOM document order', async () => {
     mount();
     expect(await screen.findByText('projects view')).not.toBeNull();
 
-    const aside = document.querySelector('aside');
+    // shadcn's real `Sidebar` never renders an `<aside>` -- desktop mode is a
+    // plain `<div data-slot="sidebar">` (confirmed by reading the installed
+    // ui/sidebar.tsx; mobile mode swaps in a Sheet instead, still under the
+    // same `data-slot="sidebar"` marker). `SidebarInset` is itself the
+    // page's one `<main>` (`data-slot="sidebar-inset"`), so the routed
+    // content region below the header is a plain `<div data-slot=
+    // "app-content">` rather than a second, nested `<main>` (which would be
+    // invalid HTML and a duplicate landmark).
+    const sidebarRoot = document.querySelector('[data-slot="sidebar"]');
     const header = document.querySelector('header');
-    const main = document.querySelector('main');
-    expect(aside).not.toBeNull();
+    const content = document.querySelector('[data-slot="app-content"]');
+    expect(sidebarRoot).not.toBeNull();
     expect(header).not.toBeNull();
-    expect(main).not.toBeNull();
+    expect(content).not.toBeNull();
 
     // DOCUMENT_POSITION_FOLLOWING (4): `b` comes after `a` in tree order.
     const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
     expect(
       // biome-ignore lint/style/noNonNullAssertion: presence asserted above
-      aside!.compareDocumentPosition(header!) & FOLLOWING,
+      sidebarRoot!.compareDocumentPosition(header!) & FOLLOWING,
     ).toBeTruthy();
     expect(
       // biome-ignore lint/style/noNonNullAssertion: presence asserted above
-      header!.compareDocumentPosition(main!) & FOLLOWING,
+      header!.compareDocumentPosition(content!) & FOLLOWING,
     ).toBeTruthy();
 
     // Every focusable element actually inside each region also respects that
     // region ordering -- not just the three container elements themselves.
     const FOCUSABLE = 'a[href], button:not([disabled]), input, [role="switch"]';
-    const asideFocusables = [...(aside?.querySelectorAll(FOCUSABLE) ?? [])];
+    const sidebarFocusables = [...(sidebarRoot?.querySelectorAll(FOCUSABLE) ?? [])];
     const headerFocusables = [...(header?.querySelectorAll(FOCUSABLE) ?? [])];
-    const mainFocusables = [...(main?.querySelectorAll(FOCUSABLE) ?? [])];
-    expect(asideFocusables.length).toBeGreaterThan(0);
+    const contentFocusables = [...(content?.querySelectorAll(FOCUSABLE) ?? [])];
+    expect(sidebarFocusables.length).toBeGreaterThan(0);
     expect(headerFocusables.length).toBeGreaterThan(0);
 
-    const lastAside = asideFocusables.at(-1);
+    const lastSidebar = sidebarFocusables.at(-1);
     const firstHeader = headerFocusables[0];
     expect(
       // biome-ignore lint/style/noNonNullAssertion: length checked above
-      lastAside!.compareDocumentPosition(firstHeader!) & FOLLOWING,
+      lastSidebar!.compareDocumentPosition(firstHeader!) & FOLLOWING,
     ).toBeTruthy();
 
-    if (mainFocusables.length > 0) {
+    if (contentFocusables.length > 0) {
       const lastHeader = headerFocusables.at(-1);
-      const firstMain = mainFocusables[0];
+      const firstContent = contentFocusables[0];
       expect(
         // biome-ignore lint/style/noNonNullAssertion: length checked above
-        lastHeader!.compareDocumentPosition(firstMain!) & FOLLOWING,
+        lastHeader!.compareDocumentPosition(firstContent!) & FOLLOWING,
       ).toBeTruthy();
     }
 
     // No element anywhere in the shell opts out of document-order tabbing
-    // (a positive tabIndex would reorder it ahead of everything else).
-    for (const el of [...asideFocusables, ...headerFocusables, ...mainFocusables]) {
+    // with a *positive* tabIndex (which would reorder it ahead of
+    // everything else); shadcn's SidebarRail uses tabIndex={-1}, which is
+    // explicitly allowed by the `<= 0` check below.
+    for (const el of [...sidebarFocusables, ...headerFocusables, ...contentFocusables]) {
       const tabIndexAttr = el.getAttribute('tabindex');
       if (tabIndexAttr !== null) {
         expect(Number(tabIndexAttr)).toBeLessThanOrEqual(0);
       }
+    }
+  });
+
+  // The real Sidebar's collapse/expand is a genuine new capability from
+  // adopting shadcn's actual component (design brief only ever specified a
+  // static, always-visible sidebar) -- worth its own coverage rather than
+  // just trusting the vendored implementation.
+  test('the SidebarTrigger toggles the desktop sidebar between expanded and collapsed', async () => {
+    mount();
+    expect(await screen.findByText('projects view')).not.toBeNull();
+
+    const sidebarRoot = document.querySelector('[data-slot="sidebar"]');
+    expect(sidebarRoot?.getAttribute('data-state')).toBe('expanded');
+
+    // Both the topbar's `SidebarTrigger` and shadcn's own `SidebarRail` (a
+    // thin edge-of-sidebar drag handle, tabIndex={-1}) share the accessible
+    // name "Toggle Sidebar" -- `data-slot="sidebar-trigger"` picks the real
+    // topbar button specifically.
+    const trigger = document.querySelector('[data-slot="sidebar-trigger"]');
+    expect(trigger).not.toBeNull();
+    // biome-ignore lint/style/noNonNullAssertion: presence asserted above
+    fireEvent.click(trigger!);
+
+    await waitFor(() => {
+      expect(sidebarRoot?.getAttribute('data-state')).toBe('collapsed');
+    });
+  });
+
+  // Below the 768px breakpoint (`hooks/use-mobile.ts`), shadcn's real
+  // `Sidebar` swaps its inline desktop markup for a `Sheet`-based dialog --
+  // closed by default -- rather than the hand-rolled version's always-inline
+  // `<aside>`, which had no narrow-viewport behavior at all.
+  test('on a narrow viewport the sidebar renders through the mobile Sheet fallback, closed by default', async () => {
+    const originalInnerWidth = window.innerWidth;
+    window.innerWidth = 500;
+    try {
+      mount();
+      expect(await screen.findByText('projects view')).not.toBeNull();
+
+      await waitFor(() => {
+        // `useIsMobile` resolves via an effect after the first render, so
+        // give it a tick before asserting the closed-by-default state.
+        expect(screen.queryByRole('link', { name: 'Sessions' })).toBeNull();
+      });
+      expect(document.querySelector('[data-mobile="true"]')).toBeNull();
+
+      // On mobile there is no SidebarRail (the Sheet fallback replaces the
+      // whole desktop branch), so the trigger is the only "Toggle Sidebar"
+      // control -- still selected by its stable `data-slot`, not the label.
+      const trigger = document.querySelector('[data-slot="sidebar-trigger"]');
+      expect(trigger).not.toBeNull();
+      // biome-ignore lint/style/noNonNullAssertion: presence asserted above
+      fireEvent.click(trigger!);
+
+      expect(await screen.findByRole('link', { name: 'Sessions' })).not.toBeNull();
+      expect(document.querySelector('[data-mobile="true"]')).not.toBeNull();
+    } finally {
+      window.innerWidth = originalInnerWidth;
     }
   });
 });

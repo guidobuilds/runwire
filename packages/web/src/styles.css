@@ -217,10 +217,9 @@
   }
   html {
     @apply font-sans;
-    /* Deliberate density choice (design.md §6): 13px base, verified
-       AA above at this size for --muted-foreground against --card in
-       both schemes. */
-    font-size: 13px;
+    /* Standard 16px root (D43): matches shadcn's own type scale, no
+       custom root-level scaling. Density comes from layout choices
+       (padding, row height), not from shrinking the root. */
   }
   body {
     @apply bg-background text-foreground;

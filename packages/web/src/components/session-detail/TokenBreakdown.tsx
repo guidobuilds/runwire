@@ -6,6 +6,7 @@ import { TokenCompositionBar } from '../charts/TokenCompositionBar';
 import { Badge } from '../primitives/Badge';
 import { MetricCell } from '../primitives/MetricCell';
 import { Table, Tbody, Td, Th, Thead, Tr } from '../primitives/Table';
+import { CardDescription, CardHeader, CardTitle } from '../ui/card';
 
 /**
  * Mirrors `USAGE_FIELDS` in `packages/core/src/model/usage.ts` (web imports
@@ -163,13 +164,22 @@ export function TokenBreakdown({
           capabilities={capabilities}
         />
         {activeTotal !== undefined ? (
-          <div
+          // The equivalent of scout.zip's `.big-number` intent (D44):
+          // shadcn's own CardTitle scale instead of a bespoke large-text
+          // class. `role="status"`/`aria-label` moved up to CardHeader so
+          // toggling inclusive/exclusive still announces label + value
+          // together as one live-region update, matching the prior markup's
+          // accessible name exactly.
+          <CardHeader
             role="status"
             aria-label={`${totalLabel}: ${formatTokens(activeTotal)}`}
-            className="text-xs font-medium text-zinc-700 dark:text-zinc-200"
+            className="gap-0.5 p-0"
           >
-            {`${totalLabel}: ${formatTokens(activeTotal)}`}
-          </div>
+            <CardDescription>{totalLabel}</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">
+              {formatTokens(activeTotal)}
+            </CardTitle>
+          </CardHeader>
         ) : null}
       </div>
       {notes.length > 0 ? (

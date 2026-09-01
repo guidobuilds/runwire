@@ -89,3 +89,14 @@ Context: [PRODUCT-UI.md](PRODUCT-UI.md) is the design brief for the M4b visual r
 | 40 | Compare: incomparable treatment | Dropped. Compare keeps only two visual treatments — missing and derived. No separate "genuinely incomparable" flag (e.g. cross-harness `Counts.turns`/`mode` semantics differing) — declined after the concept was explained with concrete examples. |
 | 41 | Typography | Adopt Geist Sans/Mono (Vercel's typeface), replacing the reference's Arial/Helvetica placeholder. |
 | 42 | Sidebar saved views | Not included. The reference's "Recent failures" / "High token usage" saved-filter shortcuts are a v0 invention, not part of PRODUCT-UI.md §3's nav flow. |
+
+## Post-ship corrections (added 2026-09-01, after the M4b commit)
+
+The user compared the shipped UI against a real `npx shadcn@latest add dashboard-01` scaffold (built in a scratch temp project and inspected directly, not from memory) and found it visibly smaller/denser than intended. Root cause: `html { font-size: 13px }` (D-density-choice, design.md §3) scales every Tailwind `rem`-based utility to ~81% of what shadcn's own blocks assume, since Tailwind's scale is authored against a 16px root — this, not a missing component, is why stat numbers, spacing and the sidebar all read smaller than the reference.
+
+| # | Topic | Decision |
+|---|---|---|
+| 43 | Root font-size | **Reverted.** `html { font-size: 13px }` removed; the app now uses the standard 16px root, matching shadcn's own type scale (`text-2xl`/`text-3xl` for prominent numbers, etc.) rather than a custom-scaled-down one. Density comes from layout choices (padding, table row height), not from shrinking the root. |
+| 44 | Prominent numbers | Adopt shadcn's `Card`/`CardHeader`/`CardTitle`/`CardDescription` pattern (as seen in `dashboard-01`'s `SectionCards`) for headline numbers (`GroupCard`'s aggregate tokens, Session detail's totals), instead of ad-hoc large-text spans. |
+| 45 | Tables | Adopt the real `@tanstack/react-table` v9 `useTable` pattern (the one shadcn's own `data-table` docs use: `tableFeatures`, `rowSortingFeature`, `columnVisibilityFeature`, `rowPaginationFeature`, wired to shadcn's `Table`/`TableHeader`/`TableBody` primitives) for `SessionTable`, replacing its current hand-rolled sort/filter logic. Explicitly **not** adopted from `dashboard-01`'s block: drag-to-reorder (`@dnd-kit`), the row-detail `Drawer`, `sonner` toasts — none apply to session data. Compare stays as metric-rows × session-columns; it is not a row-per-record table and is out of scope for this change. |
+| 46 | Dark mode mechanism | `dashboard-01` ships `.dark`-class theming (`next-themes`) by default — explicitly **not** adopted; Scout keeps `prefers-color-scheme`-only theming (no in-app toggle), per PRODUCT-UI.md §5 and the original M4b decisions. Flagged so no later pass copies the class-based pattern by accident. |

@@ -576,6 +576,201 @@ describe('SessionTable sorting', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Session/ }));
     expect(orderedLabels()).toEqual(['Alpha run', 'Bravo run', 'Charlie run', 'Delta run']);
   });
+
+  /**
+   * The Output test above already proves `sortUndefined: 'last'` on one
+   * column with a real fixture — a hand-rolled `(a, b) => (a.value ?? 0) - (b.value ?? 0)`
+   * comparator would put Delta's absent value wherever 0 sorts, not always
+   * last, and would fail this the moment direction flips. This repeats the
+   * same proof on Duration, where **two** rows (Charlie and Delta both lack
+   * `durationMs`) are absent, so a genuine TanStack `sortUndefined: 'last'`
+   * must keep both of them after every row with a real value, in both
+   * directions, while the two *present* rows (Alpha, Bravo) simply reverse
+   * — not something one column's fixture shape could make look coincidental.
+   */
+  test('absent-last holds on a second sortable numeric column (Duration), both directions', () => {
+    withClient(
+      <SessionTable
+        scope="project"
+        summaries={SUMMARIES}
+        rollups={ROLLUPS}
+        harnesses={DIRECTORY}
+      />,
+    );
+
+    const durationHeader = screen.getByRole('button', { name: /^Duration/ });
+
+    fireEvent.click(durationHeader);
+    let order = orderedLabels();
+    expect(order.slice(0, 2)).toEqual(['Bravo run', 'Alpha run']);
+    expect(new Set(order.slice(2))).toEqual(new Set(['Charlie run', 'Delta run']));
+
+    fireEvent.click(screen.getByRole('button', { name: /^Duration/ }));
+    order = orderedLabels();
+    expect(order.slice(0, 2)).toEqual(['Alpha run', 'Bravo run']);
+    expect(new Set(order.slice(2))).toEqual(new Set(['Charlie run', 'Delta run']));
+  });
+});
+
+/**
+ * f-datatable (post-ship correction, D45). Reuses {@link MANY_SUMMARIES}/
+ * {@link MANY_ROLLUPS} (120 rows, the same fixture the query-subscription
+ * guard uses) so pagination has enough real rows to page through — the
+ * four/six-row fixtures used everywhere else in this file all fit on one
+ * page at the default size and could never exercise this.
+ */
+describe('SessionTable pagination', () => {
+  test('defaults to 25 rows per page, with a page count matching the full row set', () => {
+    withClient(
+      <SessionTable
+        scope="project"
+        summaries={MANY_SUMMARIES}
+        rollups={MANY_ROLLUPS}
+        harnesses={DIRECTORY}
+      />,
+    );
+
+    expect(orderedLabels()).toHaveLength(25);
+    expect(screen.getByText('Page 1 of 5')).toBeTruthy();
+  });
+
+  test('the rows-per-page selector changes how many rows render and the page count', () => {
+    withClient(
+      <SessionTable
+        scope="project"
+        summaries={MANY_SUMMARIES}
+        rollups={MANY_ROLLUPS}
+        harnesses={DIRECTORY}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Rows per page'), { target: { value: '50' } });
+    expect(orderedLabels()).toHaveLength(50);
+    expect(screen.getByText('Page 1 of 3')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Rows per page'), { target: { value: 'all' } });
+    expect(orderedLabels()).toHaveLength(120);
+    expect(screen.getByText('Page 1 of 1')).toBeTruthy();
+  });
+
+  test('Next/Previous page move through the real, sorted row set (not just a page counter)', () => {
+    withClient(
+      <SessionTable
+        scope="project"
+        summaries={MANY_SUMMARIES}
+        rollups={MANY_ROLLUPS}
+        harnesses={DIRECTORY}
+      />,
+    );
+
+    // Default sort is Started descending (highest index = latest), so page 1
+    // is indices 119..95 and page 2 is 94..70 — real row identities, not a
+    // page-counter check that would pass even if the slice were wrong.
+    expect(orderedLabels()[0]).toBe('Guard run 119');
+    expect(orderedLabels().at(-1)).toBe('Guard run 095');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(screen.getByText('Page 2 of 5')).toBeTruthy();
+    expect(orderedLabels()[0]).toBe('Guard run 094');
+    expect(orderedLabels().at(-1)).toBe('Guard run 070');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous page' }));
+    expect(screen.getByText('Page 1 of 5')).toBeTruthy();
+    expect(orderedLabels()[0]).toBe('Guard run 119');
+  });
+
+  test('Previous/First do nothing on page 1; Next/Last do nothing on the final page', () => {
+    withClient(
+      <SessionTable
+        scope="project"
+        summaries={MANY_SUMMARIES}
+        rollups={MANY_ROLLUPS}
+        harnesses={DIRECTORY}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous page' }));
+    fireEvent.click(screen.getByRole('button', { name: 'First page' }));
+    expect(screen.getByText('Page 1 of 5')).toBeTruthy();
+    expect(orderedLabels()[0]).toBe('Guard run 119');
+
+    // Page 5 (index 4) holds sort positions 100..119 -- the last, shortest
+    // page (only 20 rows, 120 - 100) -- so its first row is index 19, not 0.
+    fireEvent.click(screen.getByRole('button', { name: 'Last page' }));
+    expect(screen.getByText('Page 5 of 5')).toBeTruthy();
+    expect(orderedLabels()[0]).toBe('Guard run 019');
+    expect(orderedLabels()).toHaveLength(20);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(screen.getByText('Page 5 of 5')).toBeTruthy();
+    expect(orderedLabels()[0]).toBe('Guard run 019');
+  });
+
+  test('a filter that narrows the row set resets to page 1 and updates the page count', () => {
+    withClient(
+      <SessionTable
+        scope="harness"
+        summaries={MANY_SUMMARIES}
+        rollups={MANY_ROLLUPS}
+        harnesses={DIRECTORY}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(screen.getByText('Page 2 of 5')).toBeTruthy();
+
+    // MANY_SUMMARIES alternates opus/sonnet 60/60 (design.md §6's `matchesList`
+    // pure filter, exercised here through the real component, not in isolation).
+    const modelSelect = screen.getByLabelText('Model') as HTMLSelectElement;
+    const opusOption = within(modelSelect).getByRole('option', {
+      name: 'opus',
+    }) as HTMLOptionElement;
+    opusOption.selected = true;
+    fireEvent.change(modelSelect);
+
+    expect(screen.getByText('60 of 120 sessions')).toBeTruthy();
+    expect(screen.getByText('Page 1 of 3')).toBeTruthy();
+    expect(orderedLabels()).toHaveLength(25);
+  });
+
+  /**
+   * Regression for the pagination-reset-memo-key-too-broad-breaks-tray-checkbox
+   * defect (adversary-found, verification.md#datatable Lens 3/5): `allRows`
+   * used to be memoized on the whole `usePrefs()` snapshot, so a `compareTray`
+   * mutation (the only thing a tray checkbox touches) produced a new `allRows`
+   * reference, which produced a new `data` reference, which tripped the
+   * render-phase "a narrower row set resets to page 1" logic even though the
+   * row set never changed. Only a >25-row (paginated) fixture, past page 1,
+   * exercises this — the tray-checkbox tests elsewhere in this file use
+   * single-page fixtures, where a page-1-to-page-1 reset is a no-op.
+   */
+  test('a compare-tray checkbox click on page 2+ does not reset pagination or change the row set', () => {
+    withClient(
+      <SessionTable
+        scope="project"
+        summaries={MANY_SUMMARIES}
+        rollups={MANY_ROLLUPS}
+        harnesses={DIRECTORY}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(screen.getByText('Page 2 of 5')).toBeTruthy();
+    const rowsBefore = orderedLabels();
+    expect(rowsBefore[0]).toBe('Guard run 094');
+
+    expect(isInTray('claude-code:guard094')).toBe(false);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Compare Guard run 094' }));
+
+    // Still on page 2, with exactly the same row set in the same order --
+    // only the toggled row's own checkbox state changed.
+    expect(screen.getByText('Page 2 of 5')).toBeTruthy();
+    expect(orderedLabels()).toEqual(rowsBefore);
+    expect(isInTray('claude-code:guard094')).toBe(true);
+    expect(
+      (screen.getByRole('checkbox', { name: 'Compare Guard run 094' }) as HTMLInputElement).checked,
+    ).toBe(true);
+  });
 });
 
 describe('SessionTable compare tray and row activation', () => {
@@ -927,6 +1122,14 @@ describe('SessionTable query subscriptions', () => {
       // The query must actually exist, otherwise `?? 0` would pass vacuously.
       const statusQuery = client.getQueryCache().find({ queryKey: queryKeys.status });
       expect(statusQuery).toBeDefined();
+
+      // Pagination (D45) now caps a page to 25 rows by default, which is
+      // itself a disclosed, user-controlled cutoff -- not the hidden,
+      // hard-coded fold this guard exists to catch. Select "All" so every
+      // one of the 120 rows is actually on screen, the same guarantee this
+      // test made before pagination existed.
+      fireEvent.change(screen.getByLabelText('Rows per page'), { target: { value: 'all' } });
+
       // Every row rendered, so a subscription taken past a fold has nowhere to
       // hide inside this fixture.
       expect(orderedLabels()).toHaveLength(GUARD_ROWS);

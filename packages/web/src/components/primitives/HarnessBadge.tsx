@@ -40,7 +40,7 @@ export function HarnessBadge({ harnessId, displayName, className }: HarnessBadge
       <span
         aria-hidden="true"
         className={cn(
-          'flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold',
+          'flex size-4 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
           toneFor(harnessId),
         )}
       >

@@ -120,7 +120,7 @@ export function CompareCell<T = unknown>({
         className="inline-flex flex-col gap-0.5 rounded bg-card px-1.5 py-0.5 text-[var(--confidence-medium)]"
       >
         <span className="tabular-nums">{formatted}</span>
-        <span className="text-[10px] leading-tight">{note}</span>
+        <span className="text-xs leading-tight">{note}</span>
       </span>
     );
   }

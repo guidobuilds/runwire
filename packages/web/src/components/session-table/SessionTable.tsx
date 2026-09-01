@@ -1,12 +1,22 @@
 import {
+  columnVisibilityFeature,
   createColumnHelper,
+  createPaginatedRowModel,
   createSortedRowModel,
+  type ReactTable,
+  rowPaginationFeature,
   rowSortingFeature,
   sortFn_basic,
   sortFn_text,
   tableFeatures,
   useTable,
 } from '@tanstack/react-table';
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronsLeftIcon,
+  ChevronsRightIcon,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { Metric, SessionRollup, SessionSummary } from '../../api/types';
 import type { FieldKey } from '../../lib/capabilities';
@@ -15,6 +25,7 @@ import { ConfidenceDot } from '../primitives/ConfidenceDot';
 import { HarnessBadge } from '../primitives/HarnessBadge';
 import { MetricCell } from '../primitives/MetricCell';
 import { Table, Tbody, Td, Th, Thead, Tr } from '../primitives/Table';
+import { Button } from '../ui/button';
 import {
   applyFilters,
   distinctOptions,
@@ -26,21 +37,55 @@ import { toSessionRows } from './model';
 import { SessionFilters } from './SessionFilters';
 
 /**
- * Only sorting is delegated to TanStack Table v9; filtering stays in the pure
- * `applyFilters` (design.md §6) so those semantics are unit-testable with
- * no rendering at all.
+ * Only filtering stays outside TanStack Table, in the pure `applyFilters`
+ * (design.md §6) so those semantics are unit-testable with no rendering at
+ * all -- the filtered array is what the table receives as `data`. Sorting
+ * and pagination (D45) are both real registered v9 features, not parallel
+ * hand-rolled logic: `getRowModel()` resolves through the sorted model to
+ * the paginated one, so what's on screen is always what the feature APIs
+ * computed.
  *
  * v9 registers features explicitly, and row-model factories travel with them
  * rather than being separate options. `columnMeta` is v9's per-table metadata
  * slot (no global declaration merging) and carries the right-alignment flag.
+ *
+ * `columnVisibilityFeature` is registered per D45's literal feature list (the
+ * same set shadcn's own `data-table` docs use) and `row.getVisibleCells()`
+ * below is visibility-aware, but this build ships no column-hiding control --
+ * no design doc or this task's own verification list asks for one, so adding
+ * a new toolbar surface for it would be scope beyond the approved change.
+ * Wiring stays real (not inert): a future toggle needs no further table
+ * rework, only a control that calls `column.toggleVisibility()`.
  */
 const features = tableFeatures({
   rowSortingFeature,
   sortedRowModel: createSortedRowModel(),
+  rowPaginationFeature,
+  paginatedRowModel: createPaginatedRowModel(),
+  columnVisibilityFeature,
   columnMeta: {} as { numeric?: boolean },
 });
 
 const helper = createColumnHelper<typeof features, SessionRow>();
+
+/**
+ * No design doc pins a default (checked docs/DECISIONS.md and this slug's
+ * design.md -- neither mentions page size); 25 is the documented choice for
+ * this build, matching a session table row's compactness against the
+ * "low thousands" of real sessions D-decisions describes.
+ */
+const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
+/** The `<option>` value TanStack Table's own `pageSize: Infinity` convention maps to. */
+const ALL_ROWS_OPTION = 'all';
+
+function pageSizeOptionValue(size: number): string {
+  return Number.isFinite(size) ? String(size) : ALL_ROWS_OPTION;
+}
+
+function parsePageSizeOption(value: string): number {
+  return value === ALL_ROWS_OPTION ? Number.POSITIVE_INFINITY : Number(value);
+}
 
 export type SessionTableScope = 'project' | 'harness' | 'all';
 
@@ -107,6 +152,8 @@ function buildColumns({ scope, suffix, harnesses, showTitles }: ColumnBuildOptio
 
   const select = helper.display({
     id: 'select',
+    // Never hideable: this is the compare-tray control, not a data column.
+    enableHiding: false,
     header: () => <span className="sr-only">Compare</span>,
     cell: (info) => {
       const row = info.row.original;
@@ -130,6 +177,8 @@ function buildColumns({ scope, suffix, harnesses, showTitles }: ColumnBuildOptio
   const label = helper.accessor((row) => row.label, {
     id: 'label',
     header: 'Session',
+    // Never hideable: the row's own identity, not an optional data column.
+    enableHiding: false,
     sortFn: sortFn_text,
     sortUndefined: 'last',
     cell: (info) => {
@@ -179,7 +228,7 @@ function buildColumns({ scope, suffix, harnesses, showTitles }: ColumnBuildOptio
           <span className="flex items-center gap-1.5">
             <span
               aria-hidden="true"
-              className="flex size-4 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[10px] font-semibold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200"
+              className="flex size-4 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-xs font-semibold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200"
             >
               {letter}
             </span>
@@ -332,9 +381,24 @@ export function SessionTable({ scope, summaries, rollups, harnesses, onOpen }: S
   const prefs = usePrefs();
   const [filters, setFilters] = useState<SessionFilterState>(emptyFilters);
 
+  // Narrowed to the two fields `toSessionRow` actually reads (`SessionRowPrefs`
+  // in model.ts), not the whole `usePrefs()` snapshot: `prefs.compareTray`
+  // changes on every tray toggle (state/prefs.ts's `commit()` allocates a new
+  // snapshot object per mutation), and depending on the whole object here
+  // would give `data` below a new reference on every tray click, wrongly
+  // tripping the page-reset-on-data-change logic further down even though the
+  // row set never changed. Building the narrowed `SessionRowPrefs` object
+  // inside the callback (member-accessing `prefs.inclusive`/`prefs.showTitles`
+  // rather than closing over `prefs` itself) is also what keeps this
+  // exhaustive-deps clean -- the memo genuinely only reads these two fields,
+  // and the dependency array says so precisely.
   const allRows = useMemo(
-    () => toSessionRows(summaries, rollups, prefs),
-    [summaries, rollups, prefs],
+    () =>
+      toSessionRows(summaries, rollups, {
+        inclusive: prefs.inclusive,
+        showTitles: prefs.showTitles,
+      }),
+    [summaries, rollups, prefs.inclusive, prefs.showTitles],
   );
   const options = useMemo(() => distinctOptions(allRows), [allRows]);
   const data = useMemo(() => applyFilters(allRows, filters), [allRows, filters]);
@@ -344,6 +408,29 @@ export function SessionTable({ scope, summaries, rollups, harnesses, onOpen }: S
     () => buildColumns({ scope, suffix, harnesses, showTitles: prefs.showTitles }),
     [scope, suffix, harnesses, prefs.showTitles],
   );
+
+  // Pagination is owned here as plain React state (mirroring `filters`
+  // above), not left to `rowPaginationFeature`'s uncontrolled internal atom.
+  // That is what makes the render-phase reset below safe and synchronous:
+  // it calls React's own `setPagination`, not an external store mutation
+  // mid-render. `rowPaginationFeature`'s own `autoResetPageIndex` resets on
+  // the table's *internal* row-model recomputation, which this app's tests
+  // showed does not reliably land inside the same React commit as a `data`
+  // prop change (confirmed empirically, not assumed: uncontrolled, narrowing
+  // a filter from page 2 left the view on page 2 of the new, smaller page
+  // count).
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: DEFAULT_PAGE_SIZE });
+
+  // React's documented pattern for "adjust state when a prop changes"
+  // without an Effect: comparing against the previous `data` reference
+  // during render and resetting to page 1 makes "a narrower filter goes
+  // back to page 1" happen in the same render as the filter change, not one
+  // tick later.
+  const [pageResetFor, setPageResetFor] = useState(data);
+  if (pageResetFor !== data) {
+    setPageResetFor(data);
+    setPagination((current) => ({ ...current, pageIndex: 0 }));
+  }
 
   const tableApi = useTable({
     features,
@@ -355,6 +442,8 @@ export function SessionTable({ scope, summaries, rollups, harnesses, onOpen }: S
     // otherwise depend on the data.
     sortDescFirst: false,
     initialState: { sorting: [{ id: 'startedAt', desc: true }] },
+    state: { pagination },
+    onPaginationChange: setPagination,
   });
 
   return (
@@ -402,7 +491,7 @@ export function SessionTable({ scope, summaries, rollups, harnesses, onOpen }: S
                 }
               }}
             >
-              {row.getAllCells().map((tableCell) => (
+              {row.getVisibleCells().map((tableCell) => (
                 <Td key={tableCell.id} numeric={tableCell.column.columnDef.meta?.numeric}>
                   <tableApi.FlexRender cell={tableCell} />
                 </Td>
@@ -416,7 +505,105 @@ export function SessionTable({ scope, summaries, rollups, harnesses, onOpen }: S
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
           {allRows.length === 0 ? 'No sessions here yet.' : 'No sessions match these filters.'}
         </p>
-      ) : null}
+      ) : (
+        <DataTablePagination table={tableApi} />
+      )}
+    </div>
+  );
+}
+
+const PAGE_SIZE_SELECT_CLASS =
+  'rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-800 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100';
+
+/**
+ * Real pagination (D45): rows-per-page, a page indicator, and prev/next/
+ * first/last navigation, all driven by `rowPaginationFeature`'s own state and
+ * getters -- nothing here recomputes a page slice by hand. `table.state` is
+ * `useTable`'s reactive snapshot of every registered state slice (no
+ * selector was passed to `useTable`, so it always includes `pagination`),
+ * matching the getting-started pattern shadcn's `data-table` docs use.
+ */
+function DataTablePagination({ table }: { table: ReactTable<typeof features, SessionRow> }) {
+  const { pageIndex, pageSize } = table.state.pagination;
+  const pageCount = table.getPageCount();
+  const rowCount = table.getRowCount();
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-zinc-600 dark:text-zinc-300">
+      <label className="flex items-center gap-2" htmlFor="session-table-page-size">
+        Rows per page
+        <select
+          id="session-table-page-size"
+          className={PAGE_SIZE_SELECT_CLASS}
+          value={pageSizeOptionValue(pageSize)}
+          onChange={(event) => {
+            table.setPageSize(parsePageSizeOption(event.target.value));
+          }}
+        >
+          {PAGE_SIZE_OPTIONS.map((size) => (
+            <option key={size} value={size}>
+              {size}
+            </option>
+          ))}
+          <option value={ALL_ROWS_OPTION}>All</option>
+        </select>
+      </label>
+
+      <div className="flex items-center gap-3">
+        <span>
+          Page {rowCount === 0 ? 0 : pageIndex + 1} of {pageCount}
+        </span>
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label="First page"
+            disabled={!table.getCanPreviousPage()}
+            onClick={() => {
+              table.firstPage();
+            }}
+          >
+            <ChevronsLeftIcon aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label="Previous page"
+            disabled={!table.getCanPreviousPage()}
+            onClick={() => {
+              table.previousPage();
+            }}
+          >
+            <ChevronLeftIcon aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label="Next page"
+            disabled={!table.getCanNextPage()}
+            onClick={() => {
+              table.nextPage();
+            }}
+          >
+            <ChevronRightIcon aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label="Last page"
+            disabled={!table.getCanLastPage()}
+            onClick={() => {
+              table.lastPage();
+            }}
+          >
+            <ChevronsRightIcon aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
