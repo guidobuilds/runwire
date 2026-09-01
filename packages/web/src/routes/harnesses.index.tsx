@@ -10,6 +10,7 @@ import {
 } from '../components/GroupCard';
 import { GroupGrid } from '../components/GroupGrid';
 import { PageHeading } from '../components/PageHeading';
+import { HarnessLogo } from '../components/primitives/HarnessLogo';
 import { QueryState } from '../components/primitives/QueryState';
 
 type AdapterInfo = StatusResponse['adapters'][number];
@@ -60,7 +61,7 @@ function HarnessCard({ aggregate, displayNameFor, onOpen }: HarnessCardProps) {
     <GroupCard
       direction="harness"
       name={name}
-      avatarLabel={name}
+      avatar={<HarnessLogo harnessId={aggregate.harness} displayName={name} size="lg" />}
       sessionCount={aggregate.sessionCount}
       crossDimension={aggregate.projects}
       latestActivityAt={aggregate.latestActivityAt}
@@ -91,7 +92,7 @@ function EmptyHarnessCard({ harnessId, displayNameFor, onOpen }: EmptyHarnessCar
     <GroupCard
       direction="harness"
       name={name}
-      avatarLabel={name}
+      avatar={<HarnessLogo harnessId={harnessId} displayName={name} size="lg" />}
       sessionCount={0}
       crossDimension={[]}
       aggregateUsage={{}}

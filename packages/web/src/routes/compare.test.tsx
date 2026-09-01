@@ -463,8 +463,12 @@ describe('CompareRoute — matrix, D40 cell treatments, no winner styling', () =
       expect(screen.getByRole('rowheader', { name: label })).not.toBeNull();
     }
 
-    expect(screen.getByText('Claude Code')).not.toBeNull();
-    expect(screen.getByText('Codex')).not.toBeNull();
+    // `getByLabelText` (not `getByTitle`): the vendored claude-code.svg mark
+    // carries its own inlined `<title>` element, which would otherwise
+    // duplicate-match a title-text query alongside the Avatar root's own
+    // `title` attribute.
+    expect(screen.getByLabelText('Claude Code')).not.toBeNull();
+    expect(screen.getByLabelText('Codex')).not.toBeNull();
   });
 
   test('missing (capability-absent): Codex has no "mode" capability at all -> "Not reported", not-provided title', async () => {

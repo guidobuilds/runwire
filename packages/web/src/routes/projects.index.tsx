@@ -11,6 +11,7 @@ import {
 import { GroupGrid } from '../components/GroupGrid';
 import { PageHeading } from '../components/PageHeading';
 import { Badge } from '../components/primitives/Badge';
+import { LetterAvatar } from '../components/primitives/LetterAvatar';
 import { QueryState } from '../components/primitives/QueryState';
 
 type ProjectCardProps = {
@@ -36,9 +37,11 @@ function ProjectCard({ aggregate, displayNameFor, onOpen }: ProjectCardProps) {
     <GroupCard
       direction="project"
       name={aggregate.project.name}
-      avatarLabel={aggregate.project.name}
+      avatar={<LetterAvatar label={aggregate.project.name} size="lg" />}
       sessionCount={aggregate.sessionCount}
-      crossDimension={aggregate.harnesses.map(displayNameFor)}
+      crossDimension={aggregate.harnesses}
+      crossDimensionKind="harness"
+      crossDimensionNameFor={displayNameFor}
       latestActivityAt={aggregate.latestActivityAt}
       aggregateUsage={aggregate.aggregateUsage}
       sparklineSeries={series}

@@ -37,6 +37,10 @@
       "includes": ["**/docs/**", "**/*.md"],
       "formatter": { "enabled": false },
       "linter": { "enabled": false }
+    },
+    {
+      "includes": ["packages/web/src/assets/harness-logos/**/*.svg"],
+      "linter": { "enabled": false }
     }
   ]
 }

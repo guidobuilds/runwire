@@ -6,6 +6,7 @@ import { formatRelative, formatTokens } from '../lib/format';
 import { cn } from '../lib/utils';
 import { Sparkline } from './charts/Sparkline';
 import { Badge } from './primitives/Badge';
+import { HarnessLogoStack } from './primitives/HarnessLogoStack';
 import { ConfidenceMarker } from './primitives/MetricCell';
 import { Tooltip } from './primitives/Tooltip';
 import { CardDescription, CardTitle } from './ui/card';
@@ -164,34 +165,26 @@ const CROSS_DIMENSION_LABEL: Record<GroupCardDirection, string> = {
  */
 const CROSS_DIMENSION_VISIBLE_CAP = 4;
 
-const AVATAR_TONES = [
-  'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200',
-  'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200',
-  'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
-  'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200',
-  'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200',
-] as const;
-
-/** Deterministic avatar tone from whatever `avatarLabel` the caller passes. */
-function avatarTone(seed: string): string {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  return AVATAR_TONES[hash % AVATAR_TONES.length] ?? AVATAR_TONES[0];
-}
-
-function initial(label: string): string {
-  return label.trim().charAt(0).toUpperCase() || '?';
-}
-
 export type GroupCardProps = {
   /** Which side of the Project/Harness pair this card represents. */
   direction: GroupCardDirection;
   name: string;
-  /** Seeds the avatar letter + tone -- the project name or harness display name. */
-  avatarLabel: string;
+  /** The avatar slot, rendered at the card's top-left `size-8` position. */
+  avatar: ReactNode;
   sessionCount: number;
-  /** Harness names for a project card, project names for a harness card. */
+  /**
+   * Harness ids for a project card (with `crossDimensionKind="harness"`),
+   * project names for a harness card (default `crossDimensionKind="text"`).
+   */
   crossDimension: readonly string[];
+  /**
+   * How `crossDimension` renders: plain text `Badge` chips (default, used by
+   * harness cards whose cross-dimension is project names) or a
+   * `HarnessLogoStack` (project cards, whose cross-dimension is harness ids).
+   */
+  crossDimensionKind?: 'text' | 'harness';
+  /** Resolves a harness id to its display name -- only used when `crossDimensionKind === 'harness'`. */
+  crossDimensionNameFor?: (id: string) => string;
   latestActivityAt?: string;
   /** Inclusive, summed across this project's/harness's root sessions. */
   aggregateUsage: Usage;
@@ -221,9 +214,11 @@ export type GroupCardProps = {
 export function GroupCard({
   direction,
   name,
-  avatarLabel,
+  avatar,
   sessionCount,
   crossDimension,
+  crossDimensionKind = 'text',
+  crossDimensionNameFor,
   latestActivityAt,
   aggregateUsage,
   sparklineSeries,
@@ -245,15 +240,7 @@ export function GroupCard({
       )}
     >
       <button type="button" onClick={onOpen} className="flex w-full items-start gap-3 text-left">
-        <span
-          aria-hidden="true"
-          className={cn(
-            'flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold',
-            avatarTone(avatarLabel),
-          )}
-        >
-          {initial(avatarLabel)}
-        </span>
+        <span className="flex size-8 shrink-0 items-center justify-center">{avatar}</span>
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="truncate font-medium text-foreground" title={name}>
@@ -277,18 +264,26 @@ export function GroupCard({
             </p>
             <div className="flex flex-wrap gap-1">
               {crossDimension.length > 0 ? (
-                <>
-                  {crossDimension.slice(0, CROSS_DIMENSION_VISIBLE_CAP).map((label) => (
-                    <Badge key={label}>{label}</Badge>
-                  ))}
-                  {crossDimension.length > CROSS_DIMENSION_VISIBLE_CAP ? (
-                    <span title={crossDimension.join(', ')}>
-                      <Badge tone="neutral">
-                        {`+${crossDimension.length - CROSS_DIMENSION_VISIBLE_CAP} more`}
-                      </Badge>
-                    </span>
-                  ) : null}
-                </>
+                crossDimensionKind === 'harness' ? (
+                  <HarnessLogoStack
+                    harnessIds={crossDimension}
+                    displayNameFor={crossDimensionNameFor}
+                    size="sm"
+                  />
+                ) : (
+                  <>
+                    {crossDimension.slice(0, CROSS_DIMENSION_VISIBLE_CAP).map((label) => (
+                      <Badge key={label}>{label}</Badge>
+                    ))}
+                    {crossDimension.length > CROSS_DIMENSION_VISIBLE_CAP ? (
+                      <span title={crossDimension.join(', ')}>
+                        <Badge tone="neutral">
+                          {`+${crossDimension.length - CROSS_DIMENSION_VISIBLE_CAP} more`}
+                        </Badge>
+                      </span>
+                    ) : null}
+                  </>
+                )
               ) : (
                 <span className="text-xs text-muted-foreground">None yet</span>
               )}

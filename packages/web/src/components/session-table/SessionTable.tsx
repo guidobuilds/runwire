@@ -22,7 +22,7 @@ import type { Metric, SessionRollup, SessionSummary } from '../../api/types';
 import type { FieldKey } from '../../lib/capabilities';
 import { isInTray, toggleTray, usePrefs } from '../../state/prefs';
 import { ConfidenceDot } from '../primitives/ConfidenceDot';
-import { HarnessBadge } from '../primitives/HarnessBadge';
+import { HarnessLogo } from '../primitives/HarnessLogo';
 import { MetricCell } from '../primitives/MetricCell';
 import { Table, Tbody, Td, Th, Thead, Tr } from '../primitives/Table';
 import { Button } from '../ui/button';
@@ -250,7 +250,11 @@ function buildColumns({ scope, suffix, harnesses, showTitles }: ColumnBuildOptio
     cell: (info) => {
       const row = info.row.original;
       return (
-        <HarnessBadge harnessId={row.harness} displayName={infoFor(row.harness)?.displayName} />
+        <HarnessLogo
+          harnessId={row.harness}
+          displayName={infoFor(row.harness)?.displayName}
+          size="sm"
+        />
       );
     },
   });

@@ -11,7 +11,7 @@ import type { Metric } from '../api/types';
 import { CompareCell } from '../components/compare/CompareCell';
 import { CompareRibbons } from '../components/compare/CompareRibbons';
 import { PageHeading } from '../components/PageHeading';
-import { HarnessBadge } from '../components/primitives/HarnessBadge';
+import { HarnessLogo } from '../components/primitives/HarnessLogo';
 import { QueryState } from '../components/primitives/QueryState';
 import { Table, Tbody, Td, Th, Thead, Tr } from '../components/primitives/Table';
 import { useHarnessDirectory } from '../components/session-table/harness-directory';
@@ -276,9 +276,10 @@ function CompareRoute() {
                     <Th scope="row">Harness</Th>
                     {rows.map((row) => (
                       <Td key={row.id}>
-                        <HarnessBadge
+                        <HarnessLogo
                           harnessId={row.harness}
                           displayName={harnesses?.[row.harness]?.displayName}
+                          size="sm"
                         />
                       </Td>
                     ))}

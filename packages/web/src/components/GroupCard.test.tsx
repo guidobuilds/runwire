@@ -9,6 +9,7 @@ import {
   sortByLatestActivityDesc,
   sparklineSeriesFromSessions,
 } from './GroupCard';
+import { LetterAvatar } from './primitives/LetterAvatar';
 import { makeRollup, makeSummary, metric } from './session-detail/fixtures';
 
 afterEach(() => {
@@ -113,7 +114,7 @@ describe('sparklineSeriesFromSessions', () => {
 
 const BASE_PROPS: Omit<GroupCardProps, 'direction' | 'onOpen'> = {
   name: 'acme-app',
-  avatarLabel: 'acme-app',
+  avatar: <LetterAvatar label="acme-app" size="lg" />,
   sessionCount: 12,
   crossDimension: ['Claude Code', 'Codex'],
   latestActivityAt: new Date(NOW - 2 * HOUR).toISOString(),

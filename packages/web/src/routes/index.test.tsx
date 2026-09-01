@@ -163,11 +163,15 @@ describe('/ renders the unscoped Sessions landing (f5)', () => {
     // Both projects and both harnesses are visible in one table -- the
     // unscoped landing, not a copy of a scoped route. Scoped to the table
     // body: the same project/harness names also appear as filter options.
+    // Harness identity renders as a logo, not visible text (D-LOGO-1), so
+    // it's asserted via accessible name (`getByLabelText`, not `getByText`)
+    // -- `getByTitle` would ambiguously also match the vendored
+    // claude-code.svg's own inlined `<title>` element.
     const body = screen.getAllByRole('rowgroup')[1] as HTMLElement;
     expect(within(body).getByText('one')).toBeTruthy();
     expect(within(body).getByText('two')).toBeTruthy();
-    expect(within(body).getByText('Claude Code')).toBeTruthy();
-    expect(within(body).getByText('Codex')).toBeTruthy();
+    expect(within(body).getByLabelText('Claude Code')).toBeTruthy();
+    expect(within(body).getByLabelText('Codex')).toBeTruthy();
   });
 
   test('the old M4 redirect to /projects is gone: the route stays at /', async () => {

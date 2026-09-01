@@ -5,6 +5,7 @@ import { formatGit, shortId } from '../../lib/format';
 import { usePrefs } from '../../state/prefs';
 import { PageHeading } from '../PageHeading';
 import { Badge, type BadgeTone } from '../primitives/Badge';
+import { HarnessLogo } from '../primitives/HarnessLogo';
 import { MetricCell } from '../primitives/MetricCell';
 import {
   Popover,
@@ -100,7 +101,7 @@ export function SessionHeader({ summary, capabilities, displayName }: SessionHea
   return (
     <header className="space-y-4">
       <PageHeading
-        eyebrow={displayName}
+        eyebrow={<HarnessLogo harnessId={harness} displayName={displayName} size="xs" />}
         title={titleText === '' ? shortId(summary.id) : clampText(titleText)}
         titleAttr={titleText === '' ? undefined : titleText}
         description={<span className="font-mono text-xs">{summary.id}</span>}
@@ -133,7 +134,7 @@ export function SessionHeader({ summary, capabilities, displayName }: SessionHea
         </Fact>
 
         <Fact label="Harness">
-          <span>{displayName}</span>
+          <HarnessLogo harnessId={harness} displayName={displayName} size="md" />
           {versionText === '' ? (
             <MetricCell
               field="harnessVersion"

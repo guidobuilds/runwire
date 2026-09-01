@@ -392,8 +392,13 @@ describe('SessionTable rendering', () => {
     const delta = rowFor('Delta run');
     expect(within(delta).queryByText('n/a')).toBeNull();
     expect(within(delta).getAllByText('—').length).toBeGreaterThan(0);
-    // displayName falls back to the harness id until status resolves.
-    expect(rowFor('Alpha run').textContent).toContain('claude-code');
+    // displayName falls back to the harness id until status resolves --
+    // rendered as the logo's accessible name, not visible text (D-LOGO-1).
+    // `getByLabelText` (not `getByTitle`): the vendored claude-code.svg mark
+    // carries its own inlined `<title>` element, which would otherwise
+    // duplicate-match a title-text query alongside the Avatar root's own
+    // `title` attribute.
+    expect(within(rowFor('Alpha run')).getByLabelText('claude-code')).toBeTruthy();
   });
 
   test('the harness column shows the adapter display name from the hoisted directory', () => {
@@ -405,7 +410,7 @@ describe('SessionTable rendering', () => {
         harnesses={DIRECTORY}
       />,
     );
-    expect(within(rowFor('Alpha run')).getByText('Claude Code')).toBeTruthy();
+    expect(within(rowFor('Alpha run')).getByLabelText('Claude Code')).toBeTruthy();
   });
 
   test('showTitles=false renders shortId instead of the title', () => {
