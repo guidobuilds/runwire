@@ -40,6 +40,11 @@ function mount(initialPath = '/projects') {
   const routeTree = rootRoute.addChildren([
     createRoute({
       getParentRoute: () => rootRoute,
+      path: '/',
+      component: () => <p>sessions view</p>,
+    }),
+    createRoute({
+      getParentRoute: () => rootRoute,
       path: '/projects',
       component: () => <p>projects view</p>,
     }),
@@ -47,6 +52,11 @@ function mount(initialPath = '/projects') {
       getParentRoute: () => rootRoute,
       path: '/harnesses',
       component: () => <p>harnesses view</p>,
+    }),
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path: '/sessions/$id',
+      component: () => <p>session detail view</p>,
     }),
     createRoute({
       getParentRoute: () => rootRoute,
@@ -85,14 +95,29 @@ describe('AppShell', () => {
     prefs.setShowTitles(true);
   });
 
-  test('renders the brand, both nav destinations and both display toggles', async () => {
+  test('renders the brand, sidebar nav, breadcrumb and both display toggles', async () => {
     mount();
     expect(await screen.findByText('projects view')).not.toBeNull();
 
     expect(screen.getByText('Scout')).not.toBeNull();
+    expect(screen.getByText('LOCAL')).not.toBeNull();
+    expect(screen.getByText('Local data only')).not.toBeNull();
+    // D42: no saved-views shortcuts anywhere in the sidebar.
+    expect(screen.queryByText('Recent failures')).toBeNull();
+    expect(screen.queryByText('High token usage')).toBeNull();
+
+    expect(screen.getByRole('link', { name: 'Sessions' })).not.toBeNull();
     expect(screen.getByRole('link', { name: 'Projects' })).not.toBeNull();
     expect(screen.getByRole('link', { name: 'Harnesses' })).not.toBeNull();
-    expect(screen.getByRole('switch', { name: 'Inclusive' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Settings' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Help' })).not.toBeNull();
+
+    // Topbar breadcrumb reflects the current route.
+    expect(screen.getByRole('navigation', { name: 'Breadcrumb' }).textContent).toBe('Projects');
+
+    // The Inclusive/Exclusive segmented control (shadcn toggle-group), and Titles switch.
+    expect(screen.getByRole('button', { name: 'Inclusive', pressed: true })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Exclusive', pressed: false })).not.toBeNull();
     expect(screen.getByRole('switch', { name: 'Titles' })).not.toBeNull();
     // The status strip is part of the shell, not of any single view.
     expect(screen.getByRole('button', { name: 'Rescan' })).not.toBeNull();
@@ -149,20 +174,33 @@ describe('AppShell', () => {
     expect(compareReceived).toEqual([]);
   });
 
-  test('the Inclusive toggle writes through to the prefs store', async () => {
+  test('the Inclusive/Exclusive segmented control writes through to the prefs store', async () => {
     mount();
     expect(await screen.findByText('projects view')).not.toBeNull();
 
-    const inclusive = screen.getByRole('switch', { name: 'Inclusive' });
-    expect(inclusive.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Inclusive', pressed: true })).not.toBeNull();
 
-    fireEvent.click(inclusive);
+    fireEvent.click(screen.getByRole('button', { name: 'Exclusive' }));
 
-    expect(screen.getByRole('switch', { name: 'Inclusive' }).getAttribute('aria-checked')).toBe(
-      'false',
-    );
+    expect(screen.getByRole('button', { name: 'Exclusive', pressed: true })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Inclusive', pressed: false })).not.toBeNull();
     expect(JSON.parse(localStorage.getItem(prefs.PREFS_STORAGE_KEY) ?? '{}')).toMatchObject({
       inclusive: false,
+    });
+  });
+
+  test('clicking the already-pressed segment leaves exactly one option selected', async () => {
+    mount();
+    expect(await screen.findByText('projects view')).not.toBeNull();
+
+    // A single-select segmented control must never collapse to "neither" —
+    // guards against Base UI's own toggle-group semantics allowing the
+    // active item to un-press itself down to an empty selection.
+    fireEvent.click(screen.getByRole('button', { name: 'Inclusive' }));
+
+    expect(screen.getByRole('button', { name: 'Inclusive', pressed: true })).not.toBeNull();
+    expect(JSON.parse(localStorage.getItem(prefs.PREFS_STORAGE_KEY) ?? '{}')).toMatchObject({
+      inclusive: true,
     });
   });
 
@@ -186,13 +224,163 @@ describe('AppShell', () => {
 
     const active = screen.getByRole('link', { name: 'Harnesses' });
     const inactive = screen.getByRole('link', { name: 'Projects' });
+    const sessions = screen.getByRole('link', { name: 'Sessions' });
 
     // `data-status` proves the link resolves to the matched route…
     expect(active.getAttribute('data-status')).toBe('active');
     expect(inactive.getAttribute('data-status')).not.toBe('active');
+    // "Sessions" -> "/" must not be active-by-prefix on every other route.
+    expect(sessions.getAttribute('data-status')).not.toBe('active');
     // …and the active styling is a class, since "which nav item am I on" has no
     // textual representation to assert instead.
     expect(active.getAttribute('class') ?? '').toContain('font-medium');
     expect(inactive.getAttribute('class') ?? '').not.toContain('font-medium');
+
+    expect(screen.getByRole('navigation', { name: 'Breadcrumb' }).textContent).toBe('Harnesses');
+  });
+
+  test('the Compare tray badge reacts live to prefs.compareTray changes, without remounting', async () => {
+    mount();
+    expect(await screen.findByText('projects view')).not.toBeNull();
+
+    expect(screen.getByRole('button', { name: /Compare sessions/ }).textContent).toBe(
+      'Compare sessions0',
+    );
+
+    prefs.setTray(['claude-code:aaa']);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Compare sessions/ }).textContent).toBe(
+        'Compare sessions1',
+      );
+    });
+
+    prefs.setTray(['claude-code:aaa', 'claude-code:bbb', 'claude-code:ccc']);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Compare sessions/ }).textContent).toBe(
+        'Compare sessions3',
+      );
+    });
+  });
+
+  test('Inclusive and Titles persist in the prefs store across a simulated route change', async () => {
+    const { router } = mount('/projects');
+    expect(await screen.findByText('projects view')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Exclusive' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Titles' }));
+
+    await waitFor(() => {
+      expect(JSON.parse(localStorage.getItem(prefs.PREFS_STORAGE_KEY) ?? '{}')).toMatchObject({
+        inclusive: false,
+        showTitles: false,
+      });
+    });
+
+    // Navigate away (AppShell itself never unmounts -- it wraps every
+    // route's <Outlet/> -- but the prefs store is a module-level singleton
+    // read via useSyncExternalStore, not component state, so this proves the
+    // toggles survive the trip through the *store*, not just one instance's
+    // React state).
+    await router.navigate({ to: '/harnesses' });
+    expect(await screen.findByText('harnesses view')).not.toBeNull();
+
+    // The store itself, not just this one rendered instance, still has both
+    // values -- read straight from localStorage (what the store persists to),
+    // independent of any single component's props/state.
+    expect(JSON.parse(localStorage.getItem(prefs.PREFS_STORAGE_KEY) ?? '{}')).toMatchObject({
+      inclusive: false,
+      showTitles: false,
+    });
+    expect(screen.getByRole('button', { name: 'Exclusive', pressed: true })).not.toBeNull();
+    expect(screen.getByRole('switch', { name: 'Titles' }).getAttribute('aria-checked')).toBe(
+      'false',
+    );
+
+    await router.navigate({ to: '/projects' });
+    expect(await screen.findByText('projects view')).not.toBeNull();
+
+    expect(screen.getByRole('button', { name: 'Exclusive', pressed: true })).not.toBeNull();
+    expect(screen.getByRole('switch', { name: 'Titles' }).getAttribute('aria-checked')).toBe(
+      'false',
+    );
+  });
+
+  test('Cmd+K opens the command palette from anywhere in the shell', async () => {
+    mount();
+    expect(await screen.findByText('projects view')).not.toBeNull();
+
+    expect(screen.queryByPlaceholderText('Search loaded sessions…')).toBeNull();
+
+    fireEvent.keyDown(document, { key: 'k', metaKey: true });
+    expect(await screen.findByPlaceholderText('Search loaded sessions…')).not.toBeNull();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByPlaceholderText('Search loaded sessions…')).toBeNull();
+    });
+  });
+
+  // f9 integration-hardening (a11y audit item 1): "focus order runs sidebar
+  // -> topbar -> content in DOM order". Native (non-scripted) Tab order is
+  // determined by DOM document order for elements with no explicit
+  // `tabIndex` -- confirmed by reading AppShell.tsx directly, zero `tabIndex`
+  // props anywhere in the file -- so this is a real, load-bearing structural
+  // assertion (via `Node.compareDocumentPosition`, not a hand-maintained
+  // list) rather than a restatement of the source layout.
+  test('focus order runs sidebar -> topbar -> content, in real DOM document order', async () => {
+    mount();
+    expect(await screen.findByText('projects view')).not.toBeNull();
+
+    const aside = document.querySelector('aside');
+    const header = document.querySelector('header');
+    const main = document.querySelector('main');
+    expect(aside).not.toBeNull();
+    expect(header).not.toBeNull();
+    expect(main).not.toBeNull();
+
+    // DOCUMENT_POSITION_FOLLOWING (4): `b` comes after `a` in tree order.
+    const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(
+      // biome-ignore lint/style/noNonNullAssertion: presence asserted above
+      aside!.compareDocumentPosition(header!) & FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      // biome-ignore lint/style/noNonNullAssertion: presence asserted above
+      header!.compareDocumentPosition(main!) & FOLLOWING,
+    ).toBeTruthy();
+
+    // Every focusable element actually inside each region also respects that
+    // region ordering -- not just the three container elements themselves.
+    const FOCUSABLE = 'a[href], button:not([disabled]), input, [role="switch"]';
+    const asideFocusables = [...(aside?.querySelectorAll(FOCUSABLE) ?? [])];
+    const headerFocusables = [...(header?.querySelectorAll(FOCUSABLE) ?? [])];
+    const mainFocusables = [...(main?.querySelectorAll(FOCUSABLE) ?? [])];
+    expect(asideFocusables.length).toBeGreaterThan(0);
+    expect(headerFocusables.length).toBeGreaterThan(0);
+
+    const lastAside = asideFocusables.at(-1);
+    const firstHeader = headerFocusables[0];
+    expect(
+      // biome-ignore lint/style/noNonNullAssertion: length checked above
+      lastAside!.compareDocumentPosition(firstHeader!) & FOLLOWING,
+    ).toBeTruthy();
+
+    if (mainFocusables.length > 0) {
+      const lastHeader = headerFocusables.at(-1);
+      const firstMain = mainFocusables[0];
+      expect(
+        // biome-ignore lint/style/noNonNullAssertion: length checked above
+        lastHeader!.compareDocumentPosition(firstMain!) & FOLLOWING,
+      ).toBeTruthy();
+    }
+
+    // No element anywhere in the shell opts out of document-order tabbing
+    // (a positive tabIndex would reorder it ahead of everything else).
+    for (const el of [...asideFocusables, ...headerFocusables, ...mainFocusables]) {
+      const tabIndexAttr = el.getAttribute('tabindex');
+      if (tabIndexAttr !== null) {
+        expect(Number(tabIndexAttr)).toBeLessThanOrEqual(0);
+      }
+    }
   });
 });

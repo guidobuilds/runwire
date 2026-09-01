@@ -10,11 +10,13 @@ import { cleanup, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ApiError } from '../../api/client';
+import type { SessionTrace, TraceStep } from '../../api/types';
 import { makeRollup, makeSummary, metric } from './fixtures';
 import { SessionDetail } from './SessionDetail';
 
 const shared = vi.hoisted(() => ({
   result: {} as Record<string, unknown>,
+  traceResult: { isPending: false, error: null, data: undefined } as Record<string, unknown>,
   caps: [
     'usage.perCall',
     'usage.cumulative',
@@ -37,9 +39,20 @@ const shared = vi.hoisted(() => ({
 
 vi.mock('../../api/queries', () => ({
   useSession: () => shared.result,
+  useTrace: () => shared.traceResult,
   useAdapterCapabilities: () => shared.caps,
   useAdapterDisplayName: () => 'Fake Harness',
 }));
+
+function trace(steps: TraceStep[]): SessionTrace {
+  return {
+    id: 'fake:root',
+    steps,
+    models: ['sonnet-4'],
+    axis: { steps: steps.length },
+    totals: { uncachedInput: 0, cachedInput: 0, cacheWrite: 0, output: 0, reasoningOutput: 0 },
+  };
+}
 
 async function renderInRouter(ui: ReactNode) {
   const rootRoute = createRootRoute({ component: () => <Outlet /> });
@@ -129,6 +142,7 @@ const LOADED = {
 describe('SessionDetail', () => {
   beforeEach(() => {
     shared.result = { ...LOADED };
+    shared.traceResult = { isPending: false, error: null, data: undefined };
   });
 
   afterEach(() => {
@@ -138,7 +152,7 @@ describe('SessionDetail', () => {
   test('renders every section of the detail view', async () => {
     await renderInRouter(<SessionDetail id="fake:root" />);
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Rebuild the rollup');
-    for (const heading of ['Token breakdown', 'Counts', 'Agents', 'Diagnostics']) {
+    for (const heading of ['Token breakdown', 'Counts', 'Agents', 'Diagnostics', 'Trace']) {
       expect(screen.getByRole('heading', { level: 2, name: heading })).not.toBeNull();
     }
     expect(screen.getByText('$1.50')).not.toBeNull();
@@ -150,6 +164,59 @@ describe('SessionDetail', () => {
     expect(diagnosticRow).not.toBeNull();
     expect(diagnosticRow?.textContent).toContain('warn');
     expect(diagnosticRow?.textContent).toContain('3');
+  });
+
+  test('no skill/mcp event-log element exists anywhere in the output (D38)', async () => {
+    await renderInRouter(<SessionDetail id="fake:root" />);
+    expect(screen.queryByRole('heading', { level: 2, name: /event.?log/iu })).toBeNull();
+    expect(screen.queryByText(/skill/iu)).toBeNull();
+  });
+
+  test('a session with diagnostics shows the amber banner before any interaction', async () => {
+    await renderInRouter(<SessionDetail id="fake:root" />);
+    // `role="status"` also matches TokenBreakdown's big-total line; the
+    // diagnostics banner is the one carrying the fixed banner text.
+    const banners = screen
+      .getAllByRole('status')
+      .filter((el) =>
+        (el.textContent ?? '').includes('This session has data-quality diagnostics.'),
+      );
+    expect(banners).toHaveLength(1);
+  });
+
+  test('a clean session (no diagnostics) is distinguishable from one with diagnostics by text, not color alone', async () => {
+    shared.result = {
+      ...LOADED,
+      data: { ...LOADED.data, diagnostics: [] },
+    };
+    await renderInRouter(<SessionDetail id="fake:root" />);
+    expect(screen.getByText('No diagnostics for this session.')).not.toBeNull();
+    expect(screen.queryByText('This session has data-quality diagnostics.')).toBeNull();
+  });
+
+  test('the trace card embeds TraceRibbon and renders real trace data', async () => {
+    shared.traceResult = {
+      isPending: false,
+      error: null,
+      data: trace([
+        {
+          kind: 'call',
+          i: 0,
+          model: 'sonnet-4',
+          cum: { uncachedInput: 10, cachedInput: 0, cacheWrite: 0, output: 5, reasoningOutput: 0 },
+          blocks: { text: 1, thinking: 0, toolUse: 0 },
+        },
+        { kind: 'tool', i: 1, category: 'read', name: 'read-file' },
+      ]),
+    };
+    await renderInRouter(<SessionDetail id="fake:root" />);
+    expect(screen.getByRole('img', { name: /Trace ribbon/u })).not.toBeNull();
+    expect(screen.queryByText('No trace data')).toBeNull();
+  });
+
+  test('the trace card shows the explicit empty state when no trace is available', async () => {
+    await renderInRouter(<SessionDetail id="fake:root" />);
+    expect(screen.getByText('No trace data')).not.toBeNull();
   });
 
   test('no section renders a stringified object or raw JSON', async () => {

@@ -1,5 +1,5 @@
 import { useStatus } from '../api/queries';
-import { Badge } from './ui/Badge';
+import { Badge } from './primitives/Badge';
 
 /**
  * False when Scout has nothing to show: no scan has completed yet, or every

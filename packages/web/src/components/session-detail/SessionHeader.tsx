@@ -3,8 +3,16 @@ import type { ReactNode } from 'react';
 import type { Capability, SessionSummary } from '../../api/types';
 import { formatGit, shortId } from '../../lib/format';
 import { usePrefs } from '../../state/prefs';
-import { MetricCell } from '../MetricCell';
-import { Badge, type BadgeTone } from '../ui/Badge';
+import { PageHeading } from '../PageHeading';
+import { Badge, type BadgeTone } from '../primitives/Badge';
+import { MetricCell } from '../primitives/MetricCell';
+import {
+  Popover,
+  PopoverContent,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from '../ui/popover';
 import { clampText, formatVersionRange } from './text';
 
 export type SessionHeaderProps = {
@@ -23,6 +31,36 @@ const IDENTITY_TONE: Record<SessionSummary['project']['identity'], BadgeTone> = 
   'repo-root': 'neutral',
   cwd: 'neutral',
 };
+
+/**
+ * Model-change popover (design.md §5: "models with change-count popover").
+ * The always-visible `MetricCell` next to this shows the primary model; this
+ * is only rendered when the session actually changed models mid-run
+ * (`model.changes > 0`), so a single-model session (the overwhelming common
+ * case) never pays for a popover trigger it has no content for. The full
+ * model list stays reachable — just behind one click instead of always
+ * inline — which is the point of a popover over a permanently-expanded list
+ * for a fact only a minority of sessions have.
+ */
+function ModelChangesPopover({ models, changes }: { models: readonly string[]; changes: number }) {
+  return (
+    <Popover>
+      <PopoverTrigger className="inline-flex">
+        <Badge tone="warn">{`${changes} ${changes === 1 ? 'change' : 'changes'}`}</Badge>
+      </PopoverTrigger>
+      <PopoverContent className="w-56">
+        <PopoverHeader>
+          <PopoverTitle>Models used</PopoverTitle>
+        </PopoverHeader>
+        <ul className="space-y-0.5 font-mono text-xs">
+          {models.map((model) => (
+            <li key={model}>{model}</li>
+          ))}
+        </ul>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -61,15 +99,12 @@ export function SessionHeader({ summary, capabilities, displayName }: SessionHea
 
   return (
     <header className="space-y-4">
-      <div className="space-y-1">
-        <h1
-          className="text-xl font-semibold text-zinc-900 dark:text-zinc-50"
-          title={titleText === '' ? undefined : titleText}
-        >
-          {titleText === '' ? shortId(summary.id) : clampText(titleText)}
-        </h1>
-        <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400">{summary.id}</p>
-      </div>
+      <PageHeading
+        eyebrow={displayName}
+        title={titleText === '' ? shortId(summary.id) : clampText(titleText)}
+        titleAttr={titleText === '' ? undefined : titleText}
+        description={<span className="font-mono text-xs">{summary.id}</span>}
+      />
 
       <dl className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-4">
         <Fact label="Project">
@@ -174,9 +209,8 @@ export function SessionHeader({ summary, capabilities, displayName }: SessionHea
             displayName={displayName}
           />
           {summary.model.changes > 0 ? (
-            <Badge tone="warn">{`${summary.model.changes} changes`}</Badge>
-          ) : null}
-          {summary.model.all.length > 1 ? (
+            <ModelChangesPopover models={summary.model.all} changes={summary.model.changes} />
+          ) : summary.model.all.length > 1 ? (
             <span className="text-xs text-zinc-500 dark:text-zinc-400">
               {summary.model.all.join(', ')}
             </span>

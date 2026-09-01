@@ -4,7 +4,6 @@ export const VERSION = '0.0.0' as const;
 export type Placeholder = { readonly scout: true };
 
 export * from './adapter';
-export * from './compare';
 export * from './events';
 export * from './link';
 export * from './model';

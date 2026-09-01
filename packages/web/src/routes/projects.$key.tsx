@@ -1,8 +1,8 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useProjectSessions } from '../api/queries';
+import { QueryState } from '../components/primitives/QueryState';
 import { useHarnessDirectory } from '../components/session-table/harness-directory';
 import { SessionTable } from '../components/session-table/SessionTable';
-import { QueryState } from '../components/ui/QueryState';
 
 function ProjectSessionsRoute() {
   const { key } = Route.useParams();

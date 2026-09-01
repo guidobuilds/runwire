@@ -75,3 +75,17 @@ Inspired by the ribbon diagrams in [stencil.so/blog/prewalk](https://stencil.so/
 | 33 | Axis | Step index by default, as in the article; wall-clock time as an alternative axis. |
 | 34 | Timeline header | Models used, harness-reported cost (D6), Σ tokens following the global inclusive/exclusive toggle. |
 | 35 | Subagents on the timeline | MVP draws the root's trace with a marker at each `agent` tool call, linked to the child (via the tool-use id). Child traces open separately; interleaving children by time is a later refinement. |
+
+## UI/UX redesign decisions (added 2026-09-01)
+
+Context: [PRODUCT-UI.md](PRODUCT-UI.md) is the design brief for the M4b visual redesign (tables/numbers → graphs, per §5). The user separately supplied `scout.zip`, a v0.app export (Next.js 16, React 19, Tailwind 4, shadcn `base-nova` style on **Base UI**, not Radix) exploring the target look. It is a **visual/token reference only** — Scout's frontend stays Vite + TanStack (D14); the export's Next.js scaffolding and its unused shadcn `Button` are not adopted. Every literal value in it (hardcoded counts, spark curves, per-session numbers) is a v0 placeholder, not a data-model or content spec (D39).
+
+| # | Topic | Decision |
+|---|---|---|
+| 36 | Confidence visual language | Color-coded dot (green/amber/red for high/medium/low confidence), kept as a pure provenance signal — never framed as good/bad, consistent with Compare's "no verdict" principle (PRODUCT-UI.md §4.6). |
+| 37 | Ribbon timeline fidelity | The reference draws the ribbon (block heights, cumulative-token line width, turn labels) with hardcoded/decorative values, not derived from `SessionTrace`. Deferred: ship the visual grammar now; wire it to real `TraceStep`/turn data as an iterative follow-up, not a blocker for this design pass. |
+| 38 | Skill/agent/mcp event log | The reference adds a separate "execution timeline" (agent/skill/mcp icons + curve) alongside the ribbon, introducing a `skill` concept not in `TraceStep.kind` (ENTITIES.md). To consider adding in a later pass — not yet a committed model change. |
+| 39 | Reference data fidelity | All literal values in `scout.zip` are v0 placeholders, not a data-model or content spec. Only its layout/visual grammar carries forward. |
+| 40 | Compare: incomparable treatment | Dropped. Compare keeps only two visual treatments — missing and derived. No separate "genuinely incomparable" flag (e.g. cross-harness `Counts.turns`/`mode` semantics differing) — declined after the concept was explained with concrete examples. |
+| 41 | Typography | Adopt Geist Sans/Mono (Vercel's typeface), replacing the reference's Arial/Helvetica placeholder. |
+| 42 | Sidebar saved views | Not included. The reference's "Recent failures" / "High token usage" saved-filter shortcuts are a v0 invention, not part of PRODUCT-UI.md §3's nav flow. |

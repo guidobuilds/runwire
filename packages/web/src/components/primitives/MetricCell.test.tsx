@@ -2,9 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, test } from 'vitest';
-import { queryKeys } from '../api/queries';
-import type { Capability, Metric, StatusResponse } from '../api/types';
-import { ALL_FIELD_KEYS, type FieldKey } from '../lib/capabilities';
+import { queryKeys } from '../../api/queries';
+import type { Capability, Metric, StatusResponse } from '../../api/types';
+import { ALL_FIELD_KEYS, type FieldKey } from '../../lib/capabilities';
 import { ConnectedMetricCell, MetricCell } from './MetricCell';
 
 const FAKE_CAPS: Capability[] = [
@@ -264,6 +264,65 @@ describe('MetricCell', () => {
       </QueryClientProvider>,
     );
     expect(statusObservers(client)).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * f2 (m4b-ui-redesign): the D36 `ConfidenceDot` composes alongside the
+ * existing `~`/`?` marker rather than replacing it (feature-list.json f2-t4).
+ * The dot is rendered `decorative` next to the glyph specifically so it does
+ * not introduce a second `role="img"` with the same accessible name as the
+ * glyph above — these are new assertions for the new behavior, added
+ * alongside the pre-existing marker tests rather than in place of them.
+ */
+describe('MetricCell + ConfidenceDot composition', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  test('medium confidence renders both the glyph and a decorative dot, exactly one accessible name', () => {
+    render(
+      <MetricCell
+        field="output"
+        harness="fake"
+        capabilities={FAKE_CAPS}
+        metric={metric({ value: 100, confidence: 'medium', note: 'derived: input - cached' })}
+      />,
+    );
+    // Exactly one role=img: the glyph. A second one with the same name would
+    // make this getByRole throw "multiple elements found".
+    expect(screen.getByRole('img', { name: 'medium confidence' })).not.toBeNull();
+    const dot = document.querySelector('[aria-hidden="true"]');
+    expect(dot).not.toBeNull();
+    expect(dot?.className).toContain('bg-[var(--confidence-medium)]');
+  });
+
+  test('low confidence renders both the glyph and a decorative dot, exactly one accessible name', () => {
+    render(
+      <MetricCell
+        field="output"
+        harness="fake"
+        capabilities={FAKE_CAPS}
+        metric={metric({ value: 10, confidence: 'low', note: 'estimated' })}
+      />,
+    );
+    expect(screen.getByRole('img', { name: 'low confidence' })).not.toBeNull();
+    const dot = document.querySelector('[aria-hidden="true"]');
+    expect(dot).not.toBeNull();
+    expect(dot?.className).toContain('bg-[var(--confidence-low)]');
+  });
+
+  test('high confidence renders neither the glyph nor a dot', () => {
+    render(
+      <MetricCell
+        field="output"
+        harness="fake"
+        capabilities={FAKE_CAPS}
+        metric={metric({ value: 1234, confidence: 'high' })}
+      />,
+    );
+    expect(screen.queryByRole('img')).toBeNull();
+    expect(document.querySelector('[aria-hidden="true"]')).toBeNull();
   });
 });
 

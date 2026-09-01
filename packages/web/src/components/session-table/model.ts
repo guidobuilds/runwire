@@ -1,5 +1,6 @@
 import type {
   Capability,
+  Confidence,
   HarnessId,
   Metric,
   SessionRollup,
@@ -7,6 +8,28 @@ import type {
   Usage,
 } from '../../api/types';
 import { shortId } from '../../lib/format';
+
+const CONFIDENCE_RANK: Record<Confidence, number> = { low: 0, medium: 1, high: 2 };
+
+/**
+ * The weakest (lowest) confidence across a row's visible metrics, or
+ * `undefined` when none of them are present. This is the row-level
+ * confidence subtext / `ConfidenceDot` design.md §5 asks for next to the
+ * session label — a single signal standing in for "how much of this row
+ * should I trust," not a replacement for each cell's own `ConfidenceMarker`.
+ */
+function weakestConfidence(
+  metrics: ReadonlyArray<Metric<unknown> | undefined>,
+): Confidence | undefined {
+  let worst: Confidence | undefined;
+  for (const metric of metrics) {
+    if (!metric) continue;
+    if (worst === undefined || CONFIDENCE_RANK[metric.confidence] < CONFIDENCE_RANK[worst]) {
+      worst = metric.confidence;
+    }
+  }
+  return worst;
+}
 
 /**
  * The two prefs the row projection depends on (design.md §3/§6). Narrower than
@@ -28,9 +51,21 @@ export type SessionRow = {
   id: string;
   /** `title.value` when titles are on and one exists, else `shortId(id)`. */
   label: string;
+  /**
+   * `shortId(id)`, always populated regardless of the Titles pref — the
+   * landing row anatomy's "id" subtext under the title (design.md §5). When
+   * titles are off `label` already equals this value, so callers should only
+   * render it as a separate subtext line when titles are on.
+   */
+  shortId: string;
   harness: HarnessId;
   projectKey: string;
   projectName: string;
+  projectWorktree?: string;
+  /** `summary.diagnostics.length > 0` — drives the row's diagnostic icon. */
+  hasDiagnostics: boolean;
+  /** {@link weakestConfidence} across this row's visible metrics. */
+  confidence?: Confidence;
   model?: Metric<string>;
   mode?: Metric<string>;
   startedAt?: Metric<string>;
@@ -63,19 +98,35 @@ export function toSessionRow(
 ): SessionRow {
   const title = prefs.showTitles ? summary.title?.value : undefined;
   const inclusiveUsage = rollup?.inclusive.usage;
+  const usage =
+    (prefs.inclusive ? (inclusiveUsage ?? summary.usage) : summary.usage) ?? EMPTY_USAGE;
+  const subagents = rollup?.inclusive.counts.subagents;
 
   return {
     id: summary.id,
     label: title && title.trim() !== '' ? title : shortId(summary.id),
+    shortId: shortId(summary.id),
     harness: summary.harness,
     projectKey: summary.project.key,
     projectName: summary.project.name,
+    projectWorktree: summary.project.worktree,
+    hasDiagnostics: summary.diagnostics.length > 0,
+    confidence: weakestConfidence([
+      summary.model.primary,
+      summary.mode?.primary,
+      summary.timing.startedAt,
+      summary.timing.durationMs,
+      usage.uncachedInput,
+      usage.cachedInput,
+      usage.output,
+      subagents,
+    ]),
     model: summary.model.primary,
     mode: summary.mode?.primary,
     startedAt: summary.timing.startedAt,
     durationMs: summary.timing.durationMs,
-    usage: (prefs.inclusive ? (inclusiveUsage ?? summary.usage) : summary.usage) ?? EMPTY_USAGE,
-    subagents: rollup?.inclusive.counts.subagents,
+    usage,
+    subagents,
     hasSubagents: summary.children.length > 0,
     summary,
     rollup,

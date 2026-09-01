@@ -11,9 +11,10 @@ import { useMemo, useState } from 'react';
 import type { Metric, SessionRollup, SessionSummary } from '../../api/types';
 import type { FieldKey } from '../../lib/capabilities';
 import { isInTray, toggleTray, usePrefs } from '../../state/prefs';
-import { MetricCell } from '../MetricCell';
-import { Badge } from '../ui/Badge';
-import { Table, Tbody, Td, Th, Thead, Tr } from '../ui/Table';
+import { ConfidenceDot } from '../primitives/ConfidenceDot';
+import { HarnessBadge } from '../primitives/HarnessBadge';
+import { MetricCell } from '../primitives/MetricCell';
+import { Table, Tbody, Td, Th, Thead, Tr } from '../primitives/Table';
 import {
   applyFilters,
   distinctOptions,
@@ -41,7 +42,7 @@ const features = tableFeatures({
 
 const helper = createColumnHelper<typeof features, SessionRow>();
 
-export type SessionTableScope = 'project' | 'harness';
+export type SessionTableScope = 'project' | 'harness' | 'all';
 
 export type SessionTableProps = {
   scope: SessionTableScope;
@@ -77,9 +78,11 @@ type ColumnBuildOptions = {
   scope: SessionTableScope;
   suffix: string;
   harnesses: HarnessDirectory | undefined;
+  /** Whether the Session column's id subtext should render (design.md §5). */
+  showTitles: boolean;
 };
 
-function buildColumns({ scope, suffix, harnesses }: ColumnBuildOptions) {
+function buildColumns({ scope, suffix, harnesses, showTitles }: ColumnBuildOptions) {
   /** Hoisted lookup: a plain object read per cell, never a query subscription. */
   const infoFor = (harness: string) => (harnesses ? harnesses[harness] : undefined);
 
@@ -129,7 +132,38 @@ function buildColumns({ scope, suffix, harnesses }: ColumnBuildOptions) {
     header: 'Session',
     sortFn: sortFn_text,
     sortUndefined: 'last',
-    cell: (info) => <span className="font-medium">{info.getValue()}</span>,
+    cell: (info) => {
+      const row = info.row.original;
+      // Titles off: `label` already equals `shortId`, so the subtext line
+      // would just repeat it -- only show the id subtext when titles are on
+      // (design.md §5's "title + id + confidence subtext").
+      const showSubtext = showTitles || row.confidence !== undefined;
+      return (
+        <span className="flex items-start gap-1.5">
+          {row.hasDiagnostics ? (
+            <span
+              role="img"
+              aria-label="Has data-quality notes"
+              title="This session has data-quality notes"
+              className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400"
+            >
+              ⚠
+            </span>
+          ) : null}
+          <span className="flex flex-col">
+            <span className="font-medium">{row.label}</span>
+            {showSubtext ? (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                {showTitles ? <span className="font-mono">{row.shortId}</span> : null}
+                {row.confidence !== undefined ? (
+                  <ConfidenceDot level={row.confidence} decorative />
+                ) : null}
+              </span>
+            ) : null}
+          </span>
+        </span>
+      );
+    },
   });
 
   const project = helper.accessor((row) => row.projectName, {
@@ -137,7 +171,26 @@ function buildColumns({ scope, suffix, harnesses }: ColumnBuildOptions) {
     header: 'Project',
     sortFn: sortFn_text,
     sortUndefined: 'last',
-    cell: (info) => info.getValue(),
+    cell: (info) => {
+      const row = info.row.original;
+      const letter = (row.projectName.trim().charAt(0) || '?').toUpperCase();
+      return (
+        <span className="flex flex-col">
+          <span className="flex items-center gap-1.5">
+            <span
+              aria-hidden="true"
+              className="flex size-4 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[10px] font-semibold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200"
+            >
+              {letter}
+            </span>
+            {row.projectName}
+          </span>
+          {row.projectWorktree ? (
+            <span className="pl-5 text-xs text-muted-foreground">{row.projectWorktree}</span>
+          ) : null}
+        </span>
+      );
+    },
   });
 
   const harness = helper.accessor((row) => row.harness, {
@@ -147,7 +200,9 @@ function buildColumns({ scope, suffix, harnesses }: ColumnBuildOptions) {
     sortUndefined: 'last',
     cell: (info) => {
       const row = info.row.original;
-      return <Badge>{infoFor(row.harness)?.displayName ?? row.harness}</Badge>;
+      return (
+        <HarnessBadge harnessId={row.harness} displayName={infoFor(row.harness)?.displayName} />
+      );
     },
   });
 
@@ -156,7 +211,11 @@ function buildColumns({ scope, suffix, harnesses }: ColumnBuildOptions) {
     header: 'Model',
     sortFn: sortFn_text,
     sortUndefined: 'last',
-    cell: (info) => cell(info.row.original, 'model', info.row.original.model, 'left'),
+    cell: (info) => (
+      <span className="font-mono">
+        {cell(info.row.original, 'model', info.row.original.model, 'left')}
+      </span>
+    ),
   });
 
   const mode = helper.accessor((row) => row.mode?.value, {
@@ -164,7 +223,11 @@ function buildColumns({ scope, suffix, harnesses }: ColumnBuildOptions) {
     header: 'Mode',
     sortFn: sortFn_text,
     sortUndefined: 'last',
-    cell: (info) => cell(info.row.original, 'mode', info.row.original.mode, 'left'),
+    cell: (info) => (
+      <span className="inline-flex rounded-full border border-border px-2 py-0.5 text-xs">
+        {cell(info.row.original, 'mode', info.row.original.mode, 'left')}
+      </span>
+    ),
   });
 
   const startedAt = helper.accessor((row) => row.startedAt?.value, {
@@ -224,12 +287,13 @@ function buildColumns({ scope, suffix, harnesses }: ColumnBuildOptions) {
   });
 
   // `helper.columns` keeps each column's own value type while widening the list
-  // to what `useTable` accepts; the Project column exists in harness scope only.
-  return scope === 'harness'
+  // to what `useTable` accepts; the Project column is fixed context in
+  // 'project' scope (every row already belongs to it) but a real column in
+  // 'harness' scope and in the unscoped 'all' landing scope (design.md §5).
+  return scope === 'project'
     ? helper.columns([
         select,
         label,
-        project,
         harness,
         model,
         mode,
@@ -243,6 +307,7 @@ function buildColumns({ scope, suffix, harnesses }: ColumnBuildOptions) {
     : helper.columns([
         select,
         label,
+        project,
         harness,
         model,
         mode,
@@ -256,7 +321,9 @@ function buildColumns({ scope, suffix, harnesses }: ColumnBuildOptions) {
 }
 
 /**
- * The one session view behind `/projects/$key` and `/harnesses/$id`.
+ * The one session view behind `/projects/$key`, `/harnesses/$id`, and the
+ * unscoped Sessions landing at `/` (design.md §2's reuse contract: one
+ * component, scope arrives as a prop, never a second implementation).
  *
  * Renders from props only — no router, no query client — so the whole view
  * costs zero `['status']` query observers however many rows it draws.
@@ -274,8 +341,8 @@ export function SessionTable({ scope, summaries, rollups, harnesses, onOpen }: S
 
   const suffix = prefs.inclusive ? '(incl.)' : '(excl.)';
   const columns = useMemo(
-    () => buildColumns({ scope, suffix, harnesses }),
-    [scope, suffix, harnesses],
+    () => buildColumns({ scope, suffix, harnesses, showTitles: prefs.showTitles }),
+    [scope, suffix, harnesses, prefs.showTitles],
   );
 
   const tableApi = useTable({

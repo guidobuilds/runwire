@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import type { Capability, SessionRollup, Usage } from '../../api/types';
 import type { TreeNode } from '../../lib/tree';
-import { MetricCell } from '../MetricCell';
-import { Badge } from '../ui/Badge';
-import { Table, Tbody, Td, Th, Thead, Tr } from '../ui/Table';
+import { cn } from '../../lib/utils';
+import { Badge } from '../primitives/Badge';
+import { MetricCell } from '../primitives/MetricCell';
+import { Table, Tbody, Td, Th, Thead, Tr } from '../primitives/Table';
 
 export type AgentTreeProps = {
   root: TreeNode;
@@ -23,6 +24,33 @@ const USAGE_COLUMNS = [
 
 function nodeLabel(node: TreeNode): string {
   return node.summary.agentType ?? node.summary.relation ?? 'root';
+}
+
+/**
+ * Static, enumerable class names so Tailwind's JIT scanner can see them as
+ * literal strings in the source (a template-interpolated class like
+ * `pl-${depth * 4}` would not be picked up). Matches the old `depth * 16px`
+ * inline style exactly for depth 0..8, at the default 16px root font-size.
+ */
+const DEPTH_PADDING = [
+  'pl-0',
+  'pl-4',
+  'pl-8',
+  'pl-12',
+  'pl-16',
+  'pl-20',
+  'pl-24',
+  'pl-28',
+  'pl-32',
+] as const;
+
+function depthPaddingClass(depth: number): string {
+  const index = Math.max(0, Math.min(depth, DEPTH_PADDING.length - 1));
+  // `index` is a runtime-computed clamp, so `noUncheckedIndexedAccess` can't
+  // prove it's in range even though it always is; `DEPTH_PADDING[0]` is a
+  // literal-index tuple access, which TS knows is always defined, so it's a
+  // safe fallback that keeps the return type `string` without an assertion.
+  return DEPTH_PADDING[index] ?? DEPTH_PADDING[0];
 }
 
 type Row = { node: TreeNode; depth: number };
@@ -91,10 +119,7 @@ export function AgentTree({ root, rollups, capabilities, displayName, onOpen }: 
             return (
               <Tr key={node.id}>
                 <Td>
-                  <span
-                    className="flex items-center gap-1"
-                    style={{ paddingLeft: `${depth * 16}px` }}
-                  >
+                  <span className={cn('flex items-center gap-1', depthPaddingClass(depth))}>
                     {node.children.length > 0 ? (
                       <button
                         type="button"

@@ -6,7 +6,7 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, test } from 'vitest';
 import type { Capability, SessionSummary } from '../../api/types';
@@ -164,6 +164,41 @@ describe('SessionHeader', () => {
     );
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText('n/a')).toBeNull();
+  });
+
+  test('a session with no model changes shows no change popover trigger', async () => {
+    await renderInRouter(
+      <SessionHeader
+        summary={headerSummary()}
+        capabilities={FULL_CAPS}
+        displayName="Fake Harness"
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /change/u })).toBeNull();
+  });
+
+  test('a model change count opens a popover listing every model used', async () => {
+    await renderInRouter(
+      <SessionHeader
+        summary={headerSummary({
+          model: {
+            primary: metric('sonnet-4'),
+            all: ['sonnet-4', 'opus-5'],
+            changes: 1,
+          },
+        })}
+        capabilities={FULL_CAPS}
+        displayName="Fake Harness"
+      />,
+    );
+    const trigger = screen.getByRole('button', { name: '1 change' });
+    expect(screen.queryByText('opus-5')).toBeNull();
+    fireEvent.click(trigger);
+    const popoverTitle = await screen.findByText('Models used');
+    const popover = popoverTitle.closest('[data-slot="popover-content"]');
+    if (!popover) throw new Error('popover content not found');
+    expect(within(popover as HTMLElement).getByText('sonnet-4')).not.toBeNull();
+    expect(within(popover as HTMLElement).getByText('opus-5')).not.toBeNull();
   });
 
   test('the project link carries the raw project key', async () => {

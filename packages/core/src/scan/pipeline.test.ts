@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createBunFs } from '../adapter/fs.bun';
 import type { AdapterContext, HarnessAdapter } from '../adapter/types';
-import { comparability } from '../compare/comparability';
 import { createFakeAdapter } from '../test-kit/fake-adapter';
 import { createScanState, scan } from './pipeline';
 import { ScoutStore } from './store';
@@ -19,7 +18,7 @@ function testContext(overrides: Partial<AdapterContext> = {}): AdapterContext {
 }
 
 describe('scan pipeline - end to end on the fake adapter', () => {
-  test('produces linked summaries, correct rollups, project/harness aggregates and a comparability matrix', async () => {
+  test('produces linked summaries, correct rollups, project/harness aggregates', async () => {
     const adapter = createFakeAdapter();
     const ctx = testContext({ privacy: { titles: true } });
     const state = createScanState();
@@ -65,16 +64,6 @@ describe('scan pipeline - end to end on the fake adapter', () => {
     expect(harnesses).toEqual([
       expect.objectContaining({ harness: 'fake', sessionCount: 3 }), // 3 roots: root, malformed, titled
     ]);
-
-    // Comparability: a single-harness comparison should never be flagged incomparable.
-    expect(root).toBeDefined();
-    expect(titled).toBeDefined();
-    const cmp = comparability(
-      [root, titled].filter((s): s is NonNullable<typeof s> => s !== undefined),
-      new Map<string, HarnessAdapter>([['fake', adapter]]),
-    );
-    const outputRow = cmp.rows.find((r) => r.field === 'output');
-    expect(outputRow?.cells.some((c) => c.flag === 'incomparable')).toBe(false);
 
     // Trace: the timeline for the root should exist and its totals match the summary.
     const trace = await store.getTrace('fake:root');

@@ -41,8 +41,9 @@ export type AbsenceKind = 'not-provided' | 'missing';
 
 /**
  * Capabilities a harness must declare for `field` to be considered provided.
- * Usage/counts cases duplicate the private map in
- * `packages/core/src/compare/comparability.ts` (do not import core runtime).
+ * Usage/counts cases duplicate the same per-field capability requirements
+ * the reducer's confidence table uses server-side (do not import core
+ * runtime — this stays a standalone, hand-kept map).
  */
 export function requiredCapabilities(field: FieldKey): Capability[] {
   switch (field) {

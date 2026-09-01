@@ -91,4 +91,30 @@ describe('CountsPanel', () => {
     expect(within(rowOf('API calls')).getByText('—')).not.toBeNull();
     expect(within(rowOf('Descendants')).getByText('unknown')).not.toBeNull();
   });
+
+  test('with no series given, the trend sparkline renders its own empty state', () => {
+    render(
+      <CountsPanel
+        summary={summary}
+        rollup={rollup}
+        capabilities={FULL_CAPS}
+        displayName="Fake Harness"
+      />,
+    );
+    expect(screen.getByText('No activity')).not.toBeNull();
+  });
+
+  test('a real series feeds the trend sparkline instead of the empty state', () => {
+    render(
+      <CountsPanel
+        summary={summary}
+        rollup={rollup}
+        capabilities={FULL_CAPS}
+        displayName="Fake Harness"
+        series={[100, 400, 250]}
+      />,
+    );
+    expect(screen.queryByText('No activity')).toBeNull();
+    expect(screen.getByRole('img', { name: 'Recent token-volume trend' })).not.toBeNull();
+  });
 });

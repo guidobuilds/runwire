@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { queryKeys } from '../../api/queries';
 import type { Capability, Metric, SessionRollup, SessionSummary } from '../../api/types';
 import { clearTray, isInTray, setInclusive, setShowTitles } from '../../state/prefs';
-import { ConnectedMetricCell } from '../MetricCell';
+import { ConnectedMetricCell } from '../primitives/MetricCell';
 import { useHarnessDirectory } from './harness-directory';
 import type { HarnessDirectory } from './model';
 import { SessionTable } from './SessionTable';
@@ -74,12 +74,16 @@ type SessionSpec = {
   /** The session's own usage — what the Exclusive view shows. */
   ownOutput?: number;
   children?: string[];
+  /** Defaults to 'claude-code' -- the 'all'-scope fixtures use a second harness. */
+  harness?: SessionSummary['harness'];
+  /** Defaults to `[]` -- non-empty drives the row's diagnostic icon (f5). */
+  diagnostics?: SessionSummary['diagnostics'];
 };
 
 function makeSummary(spec: SessionSpec): SessionSummary {
   return {
     id: spec.id,
-    harness: 'claude-code',
+    harness: spec.harness ?? 'claude-code',
     depth: 0,
     title: { value: spec.title, contentDerived: true },
     project: { key: spec.projectKey, name: spec.projectName, identity: 'remote' },
@@ -106,7 +110,7 @@ function makeSummary(spec: SessionSpec): SessionSummary {
     counts: {},
     children: spec.children ?? [],
     source: { path: `/tmp/${spec.id}.jsonl`, sizeBytes: 10, mtimeMs: 0 },
-    diagnostics: [],
+    diagnostics: spec.diagnostics ?? [],
   };
 }
 
@@ -305,8 +309,18 @@ function bodyRows(): HTMLElement[] {
   return within(body).getAllByRole('row');
 }
 
+/**
+ * The Session column's own label text, not the whole cell's `textContent`.
+ * f5 added an id/confidence subtext line under the label (design.md §5), so
+ * the cell's full `textContent` now concatenates both -- `.font-medium` was
+ * already the label's own marker class before that change, so reading it
+ * directly keeps this helper's meaning (row order by label) unchanged.
+ */
 function orderedLabels(): string[] {
-  return bodyRows().map((row) => within(row).getAllByRole('cell')[1]?.textContent?.trim() ?? '');
+  return bodyRows().map((row) => {
+    const cell = within(row).getAllByRole('cell')[1];
+    return cell?.querySelector('.font-medium')?.textContent?.trim() ?? '';
+  });
 }
 
 function rowFor(label: string): HTMLElement {
@@ -642,6 +656,219 @@ describe('SessionTable filtering', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
     expect(orderedLabels()).toHaveLength(4);
     expect(screen.getByText('4 sessions')).toBeTruthy();
+  });
+});
+
+/**
+ * f5: the Sessions landing scope. Reuses the `SUMMARIES`/`ROLLUPS` fixture
+ * (all `claude-code`) plus a second harness and a diagnostics-bearing session,
+ * so the landing-specific claims (both dimensions filterable, diagnostic
+ * icon, confidence subtext) have something real to assert against.
+ */
+const FOXTROT = makeSummary({
+  id: 'codex:foxtrot001',
+  title: 'Foxtrot run',
+  projectKey: 'github.com/acme/three',
+  projectName: 'three',
+  startedAt: '2026-09-01T09:00:00.000Z',
+  model: 'gpt',
+  mode: 'default',
+  durationMs: 30_000,
+  ownOutput: 40,
+  harness: 'codex',
+});
+
+const GOLF = makeSummary({
+  id: 'claude-code:golf00001',
+  title: 'Golf run',
+  projectKey: 'github.com/acme/one',
+  projectName: 'one',
+  startedAt: '2026-09-01T08:00:00.000Z',
+  model: 'opus',
+  mode: 'plan',
+  durationMs: 90_000,
+  ownOutput: 20,
+  diagnostics: [
+    {
+      level: 'warn',
+      code: 'usage-mismatch',
+      message: 'reported total does not match summed parts',
+      harness: 'claude-code',
+      path: '/tmp/claude-code:golf00001.jsonl',
+    },
+  ],
+});
+
+const ALL_SUMMARIES: SessionSummary[] = [...SUMMARIES, FOXTROT, GOLF];
+const ALL_ROLLUPS: Record<string, SessionRollup> = { ...ROLLUPS };
+const ALL_DIRECTORY: HarnessDirectory = {
+  ...DIRECTORY,
+  codex: { capabilities: CAPS, displayName: 'Codex' },
+};
+
+describe('SessionTable scope="all" (Sessions landing, f5)', () => {
+  test('renders a diagnostic icon only for the row with diagnostics', () => {
+    withClient(
+      <SessionTable
+        scope="all"
+        summaries={ALL_SUMMARIES}
+        rollups={ALL_ROLLUPS}
+        harnesses={ALL_DIRECTORY}
+      />,
+    );
+
+    expect(
+      within(rowFor('Golf run')).getByRole('img', { name: 'Has data-quality notes' }),
+    ).toBeTruthy();
+    expect(
+      within(rowFor('Bravo run')).queryByRole('img', { name: 'Has data-quality notes' }),
+    ).toBeNull();
+  });
+
+  test('renders a confidence subtext (id + dot) under the title for a medium-confidence row', () => {
+    withClient(
+      <SessionTable
+        scope="all"
+        summaries={ALL_SUMMARIES}
+        rollups={ALL_ROLLUPS}
+        harnesses={ALL_DIRECTORY}
+      />,
+    );
+
+    // Alpha's inclusive Input is medium confidence (ROLLUPS fixture), so the
+    // row's overall confidence is medium -- the subtext line carries both the
+    // id (titles are on by default) and a decorative confidence dot.
+    const alpha = rowFor('Alpha run');
+    expect(within(alpha).getByText('aaaa1111')).toBeTruthy();
+    expect(within(alpha).getByRole('img', { name: 'medium confidence' })).toBeTruthy();
+
+    // Bravo is all-high-confidence: the id still shows (titles on), no dot.
+    const bravo = rowFor('Bravo run');
+    expect(within(bravo).getByText('bbbb2222')).toBeTruthy();
+    expect(within(bravo).queryByRole('img', { name: /confidence/ })).toBeNull();
+  });
+
+  test('both Project and Harness filters are offered (neither dimension is fixed)', () => {
+    withClient(
+      <SessionTable
+        scope="all"
+        summaries={ALL_SUMMARIES}
+        rollups={ALL_ROLLUPS}
+        harnesses={ALL_DIRECTORY}
+      />,
+    );
+
+    expect(screen.getByLabelText('Harness')).toBeTruthy();
+    expect(screen.getByLabelText('Project')).toBeTruthy();
+  });
+
+  test('the Harness filter narrows to one harness across projects', () => {
+    withClient(
+      <SessionTable
+        scope="all"
+        summaries={ALL_SUMMARIES}
+        rollups={ALL_ROLLUPS}
+        harnesses={ALL_DIRECTORY}
+      />,
+    );
+
+    expect(orderedLabels()).toHaveLength(6);
+
+    // A native `<select multiple>` is narrowed by toggling its `<option>`s'
+    // own `.selected` before firing one `change` on the select itself.
+    const harnessSelect = screen.getByLabelText('Harness') as HTMLSelectElement;
+    const codexOption = within(harnessSelect).getByRole('option', {
+      name: 'codex',
+    }) as HTMLOptionElement;
+    codexOption.selected = true;
+    fireEvent.change(harnessSelect);
+
+    expect(orderedLabels()).toEqual(['Foxtrot run']);
+  });
+
+  test('sorting by Session works the same as in a scoped view', () => {
+    withClient(
+      <SessionTable
+        scope="all"
+        summaries={ALL_SUMMARIES}
+        rollups={ALL_ROLLUPS}
+        harnesses={ALL_DIRECTORY}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^Session/ }));
+    expect(orderedLabels()).toEqual([
+      'Alpha run',
+      'Bravo run',
+      'Charlie run',
+      'Delta run',
+      'Foxtrot run',
+      'Golf run',
+    ]);
+  });
+
+  test('the tray checkbox adds/removes a landing row without navigating', () => {
+    const onOpen = vi.fn();
+    withClient(
+      <SessionTable
+        scope="all"
+        summaries={ALL_SUMMARIES}
+        rollups={ALL_ROLLUPS}
+        harnesses={ALL_DIRECTORY}
+        onOpen={onOpen}
+      />,
+    );
+
+    expect(isInTray(FOXTROT.id)).toBe(false);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Compare Foxtrot run' }));
+    expect(isInTray(FOXTROT.id)).toBe(true);
+    expect(onOpen).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Compare Foxtrot run' }));
+    expect(isInTray(FOXTROT.id)).toBe(false);
+  });
+
+  test('the Inclusive/Exclusive toggle swaps the visible Output number on the landing table', () => {
+    withClient(
+      <SessionTable
+        scope="all"
+        summaries={ALL_SUMMARIES}
+        rollups={ALL_ROLLUPS}
+        harnesses={ALL_DIRECTORY}
+      />,
+    );
+
+    // Inclusive (default): Alpha's Output is the rollup total (300), not its
+    // own 50 -- same claim the scoped-view test above pins, re-proven here on
+    // the unscoped table specifically (f5's own verification names this).
+    expect(within(rowFor('Alpha run')).getByText('300')).toBeTruthy();
+    expect(within(rowFor('Alpha run')).queryByText('50')).toBeNull();
+
+    act(() => {
+      setInclusive(false);
+    });
+
+    expect(within(rowFor('Alpha run')).getByText('50')).toBeTruthy();
+    expect(within(rowFor('Alpha run')).queryByText('300')).toBeNull();
+  });
+
+  test('Titles off shows shortId instead of the title, and drops the id subtext', () => {
+    setShowTitles(false);
+    withClient(
+      <SessionTable
+        scope="all"
+        summaries={ALL_SUMMARIES}
+        rollups={ALL_ROLLUPS}
+        harnesses={ALL_DIRECTORY}
+      />,
+    );
+
+    expect(screen.getByText('aaaa1111')).toBeTruthy();
+    expect(screen.queryByText('Alpha run')).toBeNull();
+    // The subtext line is what carried the id when titles were on; with the
+    // label itself now the id, a second identical line would be a bare
+    // duplicate rather than new information.
+    expect(within(rowFor('aaaa1111')).getAllByText('aaaa1111')).toHaveLength(1);
   });
 });
 

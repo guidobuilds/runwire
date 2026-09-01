@@ -38,7 +38,7 @@ scout/
     scout/                     CLI: serve, scan, doctor, fixture. Builds the binaries.
   packages/
     core/                      domain model, events, reducer, adapter contract, registry, scan pipeline,
-                               project identity, privacy projection, comparability, contract test kit
+                               project identity, privacy projection, contract test kit
     adapter-claude-code/       first adapter (MVP)
     adapter-codex/             second (proof of modularity)
     adapter-grok/              later
@@ -421,13 +421,13 @@ Harness-provided git facts (Codex `git.repository_url`, Grok `git_root_dir`) are
 | `GET /api/harnesses` | `HarnessAggregate[]` |
 | `GET /api/harnesses/:id/sessions` | root summaries + rollups for that harness |
 | `GET /api/sessions/:id` | summary, rollup, full subtree (summaries + rollups), diagnostics |
-| `GET /api/sessions?ids=a,b,c` | summaries + rollups + `comparability` matrix for the compare view |
+| `GET /api/sessions?ids=a,b,c` | summaries + rollups for the compare view |
 | `GET /api/sessions/:id/trace` | `SessionTrace` for the timeline (built on demand, §5) |
 | `GET /api/traces?ids=a,b,c` | one `SessionTrace` per id for stacked timelines |
 | `GET /api/diagnostics` | aggregated diagnostics for the last scan |
 | `GET /*` | the embedded web build |
 
-`comparability(sessions)` lives in `core`: for each metric row it returns `ok`, `missing` (field absent), `not-provided` (capability absent), `derived` (any medium/low with note) or `incomparable` (different `explain()` semantics between harnesses). The UI renders the flag; the API computes it so both agree.
+Compare's missing/derived cell flags (PRODUCT-UI.md §4.6) are computed client-side, per session, from `web/src/lib/capabilities.ts` — not by a server-computed comparison matrix. (A separate `incomparable` flag — different `explain()` semantics between harnesses — was proposed and dropped per D40; an earlier server-side `comparability()` matrix was removed as unused API surface once the UI's own two-treatment flagging was confirmed to never read it.)
 
 No CORS headers, no auth, no cookies. The store is a plain in-memory object; the app boots by running a scan before opening the browser (with a `--no-open` flag).
 
@@ -475,7 +475,7 @@ Build: `bun build --compile` per target (`bun-darwin-arm64`, `bun-darwin-x64`, `
 | Adapter contract kit | `core/test-kit` | any adapter must: emit `meta` first; never throw on the malformed fixture; pass the canary; produce a stable `sourceId`; keep every emitted key inside the allowlist |
 | Adapter fixtures | `bun test` | per harness × version: discovered count, per-session expected summary (snapshot of the summary, not of events) |
 | Project resolver | `bun test` with a temp dir | repo, worktree, no-git, remote normalization |
-| Server | `bun test` + Hono `app.request` | routes against a fixture store; comparability matrix |
+| Server | `bun test` + Hono `app.request` | routes against a fixture store |
 | Web | Vitest + Testing Library | table rendering with confidence markers; tray persistence; compare flags; timeline renders the expected column count and markers for a fixture trace |
 | End-to-end | Playwright (later) | open app on fixtures, navigate, compare |
 

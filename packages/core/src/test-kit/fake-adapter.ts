@@ -4,7 +4,7 @@ import type { ToolCategory } from '../model/trace';
 
 /**
  * A pure in-memory adapter double used to exercise scan -> link -> rollup ->
- * aggregates -> comparability end to end without any real harness data
+ * aggregates end to end without any real harness data
  * (docs/PLAN.md M1). Its scenarios are fixed and hand-authored, not parsed
  * from files, since it is not modeling a real on-disk format.
  */

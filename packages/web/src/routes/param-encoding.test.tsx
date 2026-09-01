@@ -227,13 +227,23 @@ function headerText(): string {
   return heading.closest('header')?.textContent ?? '';
 }
 
+/**
+ * The Session column's own label text, not the whole cell's `textContent`.
+ * f5 added an id/confidence subtext line under the label (design.md §5), so
+ * the cell's full `textContent` now concatenates both -- `.font-medium` was
+ * already the label's own marker class before that change (see the same fix
+ * in `session-table/SessionTable.test.tsx`'s `orderedLabels`).
+ */
 function bodyRowLabels(): string[] {
   const groups = screen.queryAllByRole('rowgroup');
   const body = groups[1];
   if (!body) return [];
   return within(body)
     .getAllByRole('row')
-    .map((row) => within(row).getAllByRole('cell')[1]?.textContent?.trim() ?? '');
+    .map((row) => {
+      const cell = within(row).getAllByRole('cell')[1];
+      return cell?.querySelector('.font-medium')?.textContent?.trim() ?? '';
+    });
 }
 
 afterEach(() => {
@@ -326,7 +336,12 @@ describe('/sessions/$id carries the raw id end to end', () => {
       { timeout: 4000 },
     );
 
-    const apiCalls = requested.filter((url) => url.includes('/api/sessions/'));
+    // `SessionDetail` also fires `GET /api/sessions/:id/trace` (`useTrace`) —
+    // match the summary/rollup endpoint specifically (no trailing path segment
+    // after the id) so that additional, legitimate request doesn't inflate
+    // this count. See `api/queries.ts`'s own `/^\/api\/sessions\/([^/]+)$/`
+    // handler pattern in this file's fake network for the same distinction.
+    const apiCalls = requested.filter((url) => /\/api\/sessions\/[^/?]+(?:\?.*)?$/.test(url));
     expect(apiCalls).toHaveLength(1);
     const segment = (apiCalls[0] ?? '').replace('/api/sessions/', '').split('?')[0];
     expect(decodeURIComponent(segment ?? '')).toBe(id);

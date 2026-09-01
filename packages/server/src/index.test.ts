@@ -186,29 +186,47 @@ describe('GET /api/sessions/:id', () => {
 });
 
 describe('GET /api/sessions?ids=', () => {
-  test('missing ids returns 400', async () => {
-    const { app } = await scannedApp();
+  // f5-t1: `ids` is now OPTIONAL, not required. Missing/empty `ids` used to
+  // 400 ('ids is required'); it now lists every ROOT session instead (same
+  // shape as /projects/:key/sessions and /harnesses/:id/sessions), so the
+  // web app can render an "all sessions" table without a synthetic ids list.
+  // This intentionally replaces the old 'missing ids returns 400' test below
+  // rather than deleting its coverage silently.
+  test('missing ids returns every root session, not a 400', async () => {
+    const { app, store } = await scannedApp();
+    const roots = store.getRoots();
     const res = await app.request('/api/sessions');
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: 'ids is required' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      summaries: Array<{ id: string }>;
+      rollups: Record<string, unknown>;
+    };
+    expect(body.summaries.length).toBe(roots.length);
+    expect(body.summaries.some((s) => s.id === 'fake:root')).toBe(true);
+    expect(body.rollups['fake:root']).toBeDefined();
   });
 
-  test('known ids come back with rollups and a comparability matrix; unknown ids are dropped silently', async () => {
+  test('empty ids (ids=) behaves like a missing ids param, not a 400', async () => {
+    const { app } = await scannedApp();
+    const res = await app.request('/api/sessions?ids=');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { summaries: Array<{ id: string }> };
+    expect(body.summaries.some((s) => s.id === 'fake:root')).toBe(true);
+  });
+
+  test('known ids come back with rollups; unknown ids are dropped silently', async () => {
     const { app } = await scannedApp();
     const res = await app.request('/api/sessions?ids=fake:root,fake:child1,fake:does-not-exist');
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       summaries: Array<{ id: string }>;
       rollups: Record<string, unknown>;
-      comparability: { rows: unknown[] };
     };
     const ids = body.summaries.map((s) => s.id);
     expect(ids).toContain('fake:root');
     expect(ids).toContain('fake:child1');
     expect(ids).not.toContain('fake:does-not-exist');
     expect(body.rollups['fake:root']).toBeDefined();
-    expect(Array.isArray(body.comparability.rows)).toBe(true);
-    expect(body.comparability.rows.length).toBeGreaterThan(0);
   });
 });
 

@@ -1,7 +1,14 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { InferResponseType } from 'hono/client';
 import { api, unwrap } from './client';
-import type { Capability, SessionDetailResponse, StatusResponse } from './types';
+import type {
+  Capability,
+  CompareSessionsResponse,
+  SessionDetailResponse,
+  SessionsListResponse,
+  SessionTraceResponse,
+  StatusResponse,
+} from './types';
 
 /**
  * Percent-encodes one path-param value.
@@ -34,6 +41,8 @@ export const queryKeys = {
   harnessSessions: (id: string) => ['harnesses', id, 'sessions'] as const,
   session: (id: string) => ['sessions', id] as const,
   compareSessions: (ids: string[]) => ['sessions', 'compare', ids.join(',')] as const,
+  allSessions: ['sessions', 'all'] as const,
+  trace: (id: string) => ['sessions', id, 'trace'] as const,
 };
 
 export function useStatus() {
@@ -89,14 +98,59 @@ export function useSession(id: string) {
   });
 }
 
+/** `GET /api/sessions/:id/trace` (packages/server/src/routes.ts). */
+export function useTrace(id: string) {
+  return useQuery({
+    queryKey: queryKeys.trace(id),
+    queryFn: async () =>
+      unwrap<SessionTraceResponse>(
+        await api.api.sessions[':id'].trace.$get({ param: { id: pathParam(id) } }),
+      ),
+  });
+}
+
+/**
+ * One `useTrace`-shaped query per id, for Compare's compact ribbon strip
+ * (f8, DECISIONS D33 — a shared step-index axis across every compared
+ * session). Each trace is fetched independently (so one slow/failing
+ * session's trace never blocks the others' ribbons from rendering) and keyed
+ * with the same `queryKeys.trace(id)` `useTrace` uses, so a trace already
+ * cached from Session detail is reused rather than re-fetched.
+ */
+export function useTraces(ids: readonly string[]) {
+  return useQueries({
+    queries: ids.map((id) => ({
+      queryKey: queryKeys.trace(id),
+      queryFn: async () =>
+        unwrap<SessionTraceResponse>(
+          await api.api.sessions[':id'].trace.$get({ param: { id: pathParam(id) } }),
+        ),
+    })),
+  });
+}
+
 export function useCompareSessions(ids: string[]) {
   return useQuery({
     queryKey: queryKeys.compareSessions(ids),
     queryFn: async () =>
-      unwrap<Exclude<InferResponseType<(typeof api.api.sessions)['$get']>, { error: string }>>(
+      unwrap<CompareSessionsResponse>(
         await api.api.sessions.$get({ query: { ids: ids.join(',') } }),
       ),
     enabled: ids.length > 0,
+  });
+}
+
+/**
+ * `GET /api/sessions` with no `ids` (packages/server/src/routes.ts, f5): every
+ * root session's summary + rollup, unscoped by project or harness — the
+ * Sessions landing screen's data source. Keyed separately from
+ * `compareSessions` (whose key embeds the ids string) so the two branches of
+ * the one route never collide in the query cache.
+ */
+export function useAllSessions() {
+  return useQuery({
+    queryKey: queryKeys.allSessions,
+    queryFn: async () => unwrap<SessionsListResponse>(await api.api.sessions.$get()),
   });
 }
 

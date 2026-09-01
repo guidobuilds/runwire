@@ -6,7 +6,6 @@ import type {
   SessionSummary,
   SessionTrace,
 } from '@scout/core';
-import { comparability } from '@scout/core';
 import { Hono } from 'hono';
 
 function summariesWithRollups(
@@ -113,13 +112,17 @@ export function buildApiRoutes(store: ScoutStore, ctx: AdapterContext) {
 
     .get('/sessions', (c) => {
       const idsParam = c.req.query('ids');
-      if (!idsParam) return c.json({ error: 'ids is required' }, 400);
-      const summaries = parseIds(idsParam)
-        .map((id) => store.getSession(id))
-        .filter((s): s is SessionSummary => s !== undefined);
-      const { rollups } = summariesWithRollups(store, summaries);
-      const adaptersById = new Map(store.getAdapters().map((a) => [a.id, a]));
-      return c.json({ summaries, rollups, comparability: comparability(summaries, adaptersById) });
+      if (idsParam) {
+        const summaries = parseIds(idsParam)
+          .map((id) => store.getSession(id))
+          .filter((s): s is SessionSummary => s !== undefined);
+        const { rollups } = summariesWithRollups(store, summaries);
+        return c.json({ summaries, rollups });
+      }
+      // No `ids` (missing or empty string): list every ROOT session, same
+      // serializer shape as /projects/:key/sessions and /harnesses/:id/sessions
+      // above.
+      return c.json(summariesWithRollups(store, store.getRoots()));
     })
 
     .get('/sessions/:id/trace', async (c) => {

@@ -1,6 +1,6 @@
-import { useAdapterCapabilities, useAdapterDisplayName } from '../api/queries';
-import type { Capability, Confidence, HarnessId, Metric } from '../api/types';
-import { absenceKind, type FieldKey } from '../lib/capabilities';
+import { useAdapterCapabilities, useAdapterDisplayName } from '../../api/queries';
+import type { Capability, Confidence, HarnessId, Metric } from '../../api/types';
+import { absenceKind, type FieldKey } from '../../lib/capabilities';
 import {
   formatDate,
   formatDuration,
@@ -11,8 +11,9 @@ import {
   formatVersionRange,
   type GitFacts,
   UNFORMATTED,
-} from '../lib/format';
-import { Tooltip } from './ui/Tooltip';
+} from '../../lib/format';
+import { ConfidenceDot } from './ConfidenceDot';
+import { Tooltip } from './Tooltip';
 
 const USAGE_FIELDS = new Set<FieldKey>([
   'uncachedInput',
@@ -55,22 +56,36 @@ export type MetricCellProps<T = unknown> = {
 };
 
 /**
- * The `~` / `?` grading glyph. `role="img"` + `aria-label` because the glyph is
- * a picture of the grade, not a word: assistive technology reads "medium
- * confidence" where a sighted user sees `~`, and the rendered markup is
- * otherwise unchanged. It was `aria-hidden` until BL-3 — the number and the
- * provenance note reached assistive technology, the grading did not, which is
- * the one signal this marker exists to carry.
+ * The `~` / `?` grading glyph, paired with a D36 `ConfidenceDot` (docs/DECISIONS.md;
+ * design.md §2 — "gains the D36 ConfidenceDot"). `role="img"` + `aria-label` on
+ * the glyph because it is a picture of the grade, not a word: assistive
+ * technology reads "medium confidence" where a sighted user sees `~`, and the
+ * rendered markup is otherwise unchanged. It was `aria-hidden` until BL-3 —
+ * the number and the provenance note reached assistive technology, the
+ * grading did not, which is the one signal this marker exists to carry.
+ *
+ * The dot is rendered `decorative` here: it sits directly beside the glyph
+ * that already carries the "medium confidence"/"low confidence" accessible
+ * name, so a second `role="img"` with the identical name would have assistive
+ * technology announce the same grade twice for one value, and would also
+ * break every existing `getByRole('img', { name })` assertion below (which
+ * expects exactly one match) — glyph and dot render together (never one
+ * without the other), but only the glyph carries the accessible name.
+ * `ConfidenceDot`'s own standalone (non-decorative) contract — for callers
+ * with no adjacent glyph, e.g. chart legends/headers in f4/f7 — is pinned by
+ * `ConfidenceDot.test.tsx`.
  */
 export function ConfidenceMarker({ confidence }: { confidence: Confidence }) {
   if (confidence === 'high') return null;
   return (
-    <span
-      className="mr-0.5 select-none"
-      role="img"
-      aria-label={confidence === 'medium' ? 'medium confidence' : 'low confidence'}
-    >
-      {confidence === 'medium' ? '~' : '?'}
+    <span className="mr-0.5 inline-flex select-none items-center gap-0.5">
+      <span
+        role="img"
+        aria-label={confidence === 'medium' ? 'medium confidence' : 'low confidence'}
+      >
+        {confidence === 'medium' ? '~' : '?'}
+      </span>
+      <ConfidenceDot level={confidence} decorative />
     </span>
   );
 }

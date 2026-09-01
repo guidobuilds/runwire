@@ -1,6 +1,6 @@
 import { useProjects, useRescan, useStatus } from '../api/queries';
 import { formatRelative } from '../lib/format';
-import { Button } from './ui/Button';
+import { Button } from './ui/button';
 
 /**
  * The shell's status strip (design.md §9): when the data was last scanned, how

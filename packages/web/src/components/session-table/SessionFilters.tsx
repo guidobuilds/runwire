@@ -1,6 +1,6 @@
 import type { ChangeEvent } from 'react';
-import { Badge } from '../ui/Badge';
-import { Button } from '../ui/Button';
+import { Badge } from '../primitives/Badge';
+import { Button } from '../ui/button';
 import type {
   DatePreset,
   FilterOption,
@@ -11,7 +11,7 @@ import type {
 import { emptyFilters } from './filters';
 
 export type SessionFiltersProps = {
-  scope: 'project' | 'harness';
+  scope: 'project' | 'harness' | 'all';
   filters: SessionFilterState;
   options: FilterOptionSets;
   /** Mirrors the shell's global toggle; shown as a badge (design.md §6). */
@@ -98,7 +98,12 @@ export function SessionFilters({
     <div className="flex flex-wrap items-end gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-700">
       <Badge tone={inclusive ? 'info' : 'neutral'}>{inclusive ? 'Inclusive' : 'Exclusive'}</Badge>
 
-      {scope === 'project' ? (
+      {/*
+       * Each dimension gets a selector unless it's already the fixed scope
+       * (nothing to narrow there). 'all' (the unscoped landing, f5) has
+       * neither dimension fixed, so both selectors show — design.md §5.
+       */}
+      {scope !== 'harness' ? (
         <MultiSelect
           id="session-filter-harness"
           label="Harness"
@@ -108,7 +113,9 @@ export function SessionFilters({
             patch({ harness });
           }}
         />
-      ) : (
+      ) : null}
+
+      {scope !== 'project' ? (
         <MultiSelect
           id="session-filter-project"
           label="Project"
@@ -118,7 +125,7 @@ export function SessionFilters({
             patch({ project });
           }}
         />
-      )}
+      ) : null}
 
       <MultiSelect
         id="session-filter-model"

@@ -1,5 +1,32 @@
-import { createFileRoute, type SearchSchemaInput, useSearch } from '@tanstack/react-router';
-import { useMemo } from 'react';
+import {
+  createFileRoute,
+  Link,
+  type SearchSchemaInput,
+  useNavigate,
+  useSearch,
+} from '@tanstack/react-router';
+import { useEffect, useMemo } from 'react';
+import { useCompareSessions } from '../api/queries';
+import type { Metric } from '../api/types';
+import { CompareCell } from '../components/compare/CompareCell';
+import { CompareRibbons } from '../components/compare/CompareRibbons';
+import { PageHeading } from '../components/PageHeading';
+import { HarnessBadge } from '../components/primitives/HarnessBadge';
+import { QueryState } from '../components/primitives/QueryState';
+import { Table, Tbody, Td, Th, Thead, Tr } from '../components/primitives/Table';
+import { useHarnessDirectory } from '../components/session-table/harness-directory';
+import type { SessionRow } from '../components/session-table/model';
+import { toSessionRows } from '../components/session-table/model';
+import { Button, buttonVariants } from '../components/ui/button';
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from '../components/ui/empty';
+import type { FieldKey } from '../lib/capabilities';
+import { setTray, usePrefs } from '../state/prefs';
 
 /**
  * What a caller may hand to `navigate`/`Link`. `SearchSchemaInput` is what
@@ -83,9 +110,227 @@ export function validateCompareSearch(search: CompareSearchInput): CompareSearch
   return { ids: ids.length > 0 ? ids.join(',') : undefined };
 }
 
-// Stub: f7 replaces the body with <CompareSelector> + <CompareView>.
+type MetricRowDef = {
+  key: string;
+  label: string;
+  field: FieldKey;
+  align: 'left' | 'right';
+  getMetric: (row: SessionRow) => Metric<unknown> | undefined;
+};
+
+/** The metric rows below Harness/Project (design.md §5's row list). `suffix`
+ * is the same "(incl.)"/"(excl.)" label `SessionTable` puts on its own usage
+ * columns -- `toSessionRows` already resolves `usage` against the same
+ * global `prefs.inclusive` toggle, so reusing the label keeps the two
+ * screens honest about which total is on screen. */
+function metricRowDefs(suffix: string): MetricRowDef[] {
+  return [
+    { key: 'model', label: 'Model', field: 'model', align: 'left', getMetric: (row) => row.model },
+    { key: 'mode', label: 'Mode', field: 'mode', align: 'left', getMetric: (row) => row.mode },
+    {
+      key: 'durationMs',
+      label: 'Duration',
+      field: 'durationMs',
+      align: 'right',
+      getMetric: (row) => row.durationMs,
+    },
+    {
+      key: 'uncachedInput',
+      label: `Input ${suffix}`,
+      field: 'uncachedInput',
+      align: 'right',
+      getMetric: (row) => row.usage.uncachedInput,
+    },
+    {
+      key: 'cachedInput',
+      label: `Cached ${suffix}`,
+      field: 'cachedInput',
+      align: 'right',
+      getMetric: (row) => row.usage.cachedInput,
+    },
+    {
+      key: 'output',
+      label: `Output ${suffix}`,
+      field: 'output',
+      align: 'right',
+      getMetric: (row) => row.usage.output,
+    },
+    {
+      key: 'subagents',
+      label: 'Subagents',
+      field: 'subagents',
+      align: 'right',
+      getMetric: (row) => row.subagents,
+    },
+  ];
+}
+
+/**
+ * Compare view (design.md §5, docs/PRODUCT-UI.md §4.6): metric-label column +
+ * N session columns. D40 -- exactly two special cell treatments beyond plain
+ * (`CompareCell` owns that; no third "incomparable" bucket), and no winner
+ * highlighting anywhere in this component -- this view gives evidence, not a
+ * verdict.
+ */
 function CompareRoute() {
-  return <h1>Compare</h1>;
+  const ids = useCompareIds();
+  const navigate = useNavigate();
+  const prefs = usePrefs();
+  const harnesses = useHarnessDirectory();
+  const { data, isPending, error, refetch } = useCompareSessions(ids);
+
+  // Keeps `prefs.compareTray` (the shell's badge count, and what "Compare
+  // sessions" seeds on the next visit) in sync with whatever this screen is
+  // actually showing, including right after a column remove (which
+  // re-navigates to a smaller `ids` below). `useCompareIds()` hands back the
+  // SAME array identity for one selection (its own contract, pinned below),
+  // so this effect runs once per distinct selection, never once per render.
+  useEffect(() => {
+    setTray(ids);
+  }, [ids]);
+
+  const sessionRows = useMemo(
+    () => (data ? toSessionRows(data.summaries, data.rollups, prefs) : []),
+    [data, prefs],
+  );
+  // URL order is compare column order (this file's own `parseCompareIds` doc
+  // comment) -- never re-sort by whatever order the server returned
+  // summaries in. An id that did not resolve (deleted/unknown harness data)
+  // simply gets no column, rather than a broken one.
+  const rows = useMemo(() => {
+    const byId = new Map(sessionRows.map((row) => [row.id, row]));
+    return ids.map((id) => byId.get(id)).filter((row): row is SessionRow => row !== undefined);
+  }, [ids, sessionRows]);
+
+  const removeColumn = (id: string) => {
+    const next = ids.filter((existing) => existing !== id);
+    void navigate({ to: '/compare', search: { ids: next.join(',') } });
+  };
+
+  if (ids.length === 0) {
+    return (
+      <section className="space-y-4">
+        <PageHeading
+          eyebrow="Compare"
+          title="Compare sessions"
+          description="Evidence, side by side — no winner, no auto-computed verdict."
+        />
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>No sessions to compare yet</EmptyTitle>
+            <EmptyDescription>
+              Add sessions to the compare tray from the Sessions table, then come back here.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Link to="/" className={buttonVariants({ variant: 'default' })}>
+              Go to Sessions
+            </Link>
+          </EmptyContent>
+        </Empty>
+      </section>
+    );
+  }
+
+  const suffix = prefs.inclusive ? '(incl.)' : '(excl.)';
+  const rowDefs = metricRowDefs(suffix);
+
+  return (
+    <section className="space-y-4">
+      <PageHeading
+        eyebrow="Compare"
+        title="Compare sessions"
+        description="Evidence, side by side — no winner, no auto-computed verdict."
+      />
+
+      <QueryState isPending={isPending} error={error} refetch={refetch}>
+        {rows.length > 0 ? (
+          <>
+            <div className="overflow-x-auto">
+              <Table>
+                <Thead>
+                  <Tr>
+                    <Th scope="col">Metric</Th>
+                    {rows.map((row) => (
+                      <Th key={row.id} scope="col">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate" title={row.label}>
+                            {row.label}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            aria-label={`Remove ${row.label} from comparison`}
+                            onClick={() => removeColumn(row.id)}
+                          >
+                            <span aria-hidden="true">×</span>
+                          </Button>
+                        </div>
+                      </Th>
+                    ))}
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  <Tr>
+                    <Th scope="row">Harness</Th>
+                    {rows.map((row) => (
+                      <Td key={row.id}>
+                        <HarnessBadge
+                          harnessId={row.harness}
+                          displayName={harnesses?.[row.harness]?.displayName}
+                        />
+                      </Td>
+                    ))}
+                  </Tr>
+                  <Tr>
+                    <Th scope="row">Project</Th>
+                    {rows.map((row) => (
+                      <Td key={row.id}>
+                        <span className="flex flex-col">
+                          <span>{row.projectName}</span>
+                          {row.projectWorktree ? (
+                            <span className="text-xs text-muted-foreground">
+                              {row.projectWorktree}
+                            </span>
+                          ) : null}
+                        </span>
+                      </Td>
+                    ))}
+                  </Tr>
+                  {rowDefs.map((def) => (
+                    <Tr key={def.key}>
+                      <Th scope="row">{def.label}</Th>
+                      {rows.map((row) => (
+                        <Td key={row.id} numeric={def.align === 'right'}>
+                          <CompareCell
+                            field={def.field}
+                            harness={row.harness}
+                            capabilities={harnesses?.[row.harness]?.capabilities}
+                            displayName={harnesses?.[row.harness]?.displayName}
+                            metric={def.getMetric(row)}
+                          />
+                        </Td>
+                      ))}
+                    </Tr>
+                  ))}
+                </Tbody>
+              </Table>
+            </div>
+
+            <div className="space-y-2">
+              <h2 className="text-sm font-medium text-foreground">Trace</h2>
+              <CompareRibbons rows={rows.map((row) => ({ id: row.id, label: row.label }))} />
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            None of the selected sessions could be found — they may have been removed by a rescan.
+          </p>
+        )}
+      </QueryState>
+    </section>
+  );
 }
 
 export const Route = createFileRoute('/compare')({

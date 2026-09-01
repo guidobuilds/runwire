@@ -1,9 +1,11 @@
 import type { Capability, Metric, SessionRollup, SessionSummary, Usage } from '../../api/types';
 import type { FieldKey } from '../../lib/capabilities';
+import { formatTokens } from '../../lib/format';
 import { usePrefs } from '../../state/prefs';
-import { MetricCell } from '../MetricCell';
-import { Badge } from '../ui/Badge';
-import { Table, Tbody, Td, Th, Thead, Tr } from '../ui/Table';
+import { TokenCompositionBar } from '../charts/TokenCompositionBar';
+import { Badge } from '../primitives/Badge';
+import { MetricCell } from '../primitives/MetricCell';
+import { Table, Tbody, Td, Th, Thead, Tr } from '../primitives/Table';
 
 /**
  * Mirrors `USAGE_FIELDS` in `packages/core/src/model/usage.ts` (web imports
@@ -26,6 +28,39 @@ const USAGE_LABELS: Record<(typeof USAGE_FIELDS)[number], string> = {
   reasoningOutput: 'Reasoning output',
   totalInput: 'Total input',
 };
+
+/**
+ * The 5 fields a "total tokens" figure sums over. `totalInput` is excluded on
+ * purpose: it is itself derived/display-only (see the `USAGE_FIELDS` comment
+ * above), so folding it into a sum alongside the fields it is derived from
+ * would double count.
+ */
+const TOTAL_FIELDS = [
+  'uncachedInput',
+  'cachedInput',
+  'cacheWrite',
+  'output',
+  'reasoningOutput',
+] as const satisfies readonly (keyof Usage & FieldKey)[];
+
+/**
+ * Sums whichever metrics are actually present in `usage`, over `TOTAL_FIELDS`
+ * only. Returns `undefined` — not `0` — when nothing is present, so the caller
+ * can tell "no usage data at all" apart from "usage summed to zero", the same
+ * absence-must-differ-from-a-real-value discipline `MetricCell` already
+ * follows for a single field.
+ */
+export function sumPresentUsage(usage: Usage): number | undefined {
+  let sum = 0;
+  let any = false;
+  for (const field of TOTAL_FIELDS) {
+    const value = usage[field]?.value;
+    if (value === undefined) continue;
+    any = true;
+    sum += value;
+  }
+  return any ? sum : undefined;
+}
 
 export type TokenBreakdownProps = {
   summary: SessionSummary;
@@ -74,6 +109,9 @@ export function TokenBreakdown({
   const exclusiveMetrics = USAGE_FIELDS.map((field) => summary.usage[field]);
   const inclusiveMetrics = USAGE_FIELDS.map((field) => rollup?.inclusive.usage[field]);
   const notes = collectNotes([...exclusiveMetrics, ...inclusiveMetrics]);
+  const activeUsage: Usage = prefs.inclusive ? (rollup?.inclusive.usage ?? {}) : summary.usage;
+  const activeTotal = sumPresentUsage(activeUsage);
+  const totalLabel = prefs.inclusive ? 'Total (inclusive)' : 'Total (exclusive)';
 
   return (
     <section className="space-y-2">
@@ -118,6 +156,22 @@ export function TokenBreakdown({
           ))}
         </Tbody>
       </Table>
+      <div className="space-y-2 rounded-lg border border-border bg-card p-3">
+        <TokenCompositionBar
+          usage={activeUsage}
+          harness={summary.harness}
+          capabilities={capabilities}
+        />
+        {activeTotal !== undefined ? (
+          <div
+            role="status"
+            aria-label={`${totalLabel}: ${formatTokens(activeTotal)}`}
+            className="text-xs font-medium text-zinc-700 dark:text-zinc-200"
+          >
+            {`${totalLabel}: ${formatTokens(activeTotal)}`}
+          </div>
+        ) : null}
+      </div>
       {notes.length > 0 ? (
         <div className="space-y-1">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">

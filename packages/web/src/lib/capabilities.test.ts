@@ -2,9 +2,10 @@ import { describe, expect, test } from 'vitest';
 import { absenceKind, type FieldKey, requiredCapabilities } from './capabilities';
 
 describe('requiredCapabilities', () => {
-  // Pins the usage/counts subset against the private map in
-  // packages/core/src/compare/comparability.ts — any drift is a review signal.
-  test('mirrors core usage/counts requiredCapabilities literally', () => {
+  // Pins the usage/counts subset of this hand-kept map to its expected
+  // values — any drift from the reducer's confidence-table requirements is a
+  // review signal.
+  test('usage/counts requiredCapabilities are pinned to their expected values', () => {
     const usageCounts: Record<
       Extract<
         FieldKey,

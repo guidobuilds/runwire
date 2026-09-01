@@ -56,6 +56,11 @@ describe('TokenBreakdown', () => {
 
   test('renders the six usage rows with exclusive and inclusive values', () => {
     renderBreakdown();
+    // Scoped to the table: `TokenCompositionBar`'s own legend (added alongside
+    // the table by this same component) repeats these row labels and some of
+    // these formatted values, so an unscoped `screen.getByText` would now find
+    // more than one match for labels/values the two renderings share.
+    const table = within(screen.getByRole('table'));
     for (const label of [
       'Uncached input',
       'Cached input',
@@ -64,11 +69,11 @@ describe('TokenBreakdown', () => {
       'Reasoning output',
       'Total input',
     ]) {
-      expect(screen.getByText(label)).not.toBeNull();
+      expect(table.getByText(label)).not.toBeNull();
     }
-    expect(screen.getByText('1.0k')).not.toBeNull();
-    expect(screen.getByText('11.0k')).not.toBeNull();
-    expect(screen.getByText('16.0k')).not.toBeNull();
+    expect(table.getByText('1.0k')).not.toBeNull();
+    expect(table.getByText('11.0k')).not.toBeNull();
+    expect(table.getByText('16.0k')).not.toBeNull();
   });
 
   test('the inclusive column is marked active while the Inclusive preference is on', () => {
@@ -100,5 +105,46 @@ describe('TokenBreakdown', () => {
   test('a medium-confidence value keeps its on-screen ~ marker', () => {
     renderBreakdown();
     expect(screen.getAllByText('~').length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('the composition chart is present alongside the table when usage data exists', () => {
+    renderBreakdown();
+    expect(screen.getByRole('img', { name: 'Token composition' })).not.toBeNull();
+  });
+
+  test('the big total reflects the sum of the active column’s present metrics', () => {
+    renderBreakdown();
+    // Inclusive is active by default: 11_000 + 12_000 + 13_000 + 14_000 + 15_000
+    // (totalInput's 16_000 is excluded — it is derived, not an independent field).
+    expect(screen.getByRole('status', { name: /Total \(inclusive\)/u })).not.toBeNull();
+    expect(screen.getByText('Total (inclusive): 65.0k')).not.toBeNull();
+  });
+
+  test('toggling the preference changes which usage feeds the chart and the total', () => {
+    setInclusive(false);
+    renderBreakdown();
+    // Exclusive is active now: 1000 + 2000 + 3000 + 4000 + 5000 (totalInput's 6000 excluded).
+    expect(screen.getByText('Total (exclusive): 15.0k')).not.toBeNull();
+    expect(screen.queryByText(/Total \(inclusive\)/u)).toBeNull();
+  });
+
+  test('an empty active side shows no fabricated total, just the chart’s own empty state', () => {
+    const emptySummary = makeSummary({ id: 'fake:empty0000', usage: {} });
+    const emptyRollup = makeRollup({
+      id: 'fake:empty0000',
+      exclusive: { usage: {}, counts: {} },
+      inclusive: { usage: {}, counts: { subagents: metric(0) } },
+    });
+    render(
+      <TokenBreakdown
+        summary={emptySummary}
+        rollup={emptyRollup}
+        capabilities={FULL_CAPS}
+        displayName="Fake Harness"
+      />,
+    );
+    expect(screen.getByText('No usage recorded')).not.toBeNull();
+    expect(screen.queryByText(/^Total \(/u)).toBeNull();
+    expect(screen.queryByText(/NaN/u)).toBeNull();
   });
 });

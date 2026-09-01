@@ -5,9 +5,12 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { type ReactNode, useEffect, useReducer } from 'react';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import type { Capability, Metric, SessionRollup, SessionSummary } from '../api/types';
+import type { HarnessDirectory } from '../components/session-table/model';
+import { clearTray, isInTray } from '../state/prefs';
 import {
   type CompareSearchInput,
   parseCompareIds,
@@ -15,6 +18,121 @@ import {
   useCompareIds,
   validateCompareSearch,
 } from './compare';
+
+/**
+ * `useCompareSessions`/`useTraces` are mocked entirely (the same pattern
+ * `SessionDetail.test.tsx` uses for `../../api/queries`) rather than driven
+ * through a real `QueryClientProvider` + fetch stub: this suite exercises
+ * `CompareRoute`'s own matrix/ribbon/tray wiring, not react-query's data
+ * fetching, which `CompareCell.test.tsx`/`CompareRibbons.test.tsx` already
+ * cover in isolation. The functions read a mutable `shared` object (not a
+ * snapshot captured at mock-creation time) so each test can set its own
+ * fixture before rendering, same convention as `SessionDetail.test.tsx`.
+ */
+const shared: {
+  compare: { data?: unknown; isPending: boolean; error: unknown; refetch: () => void };
+  traces: Array<{ data?: unknown }>;
+} = {
+  compare: { data: undefined, isPending: false, error: undefined, refetch: () => {} },
+  traces: [],
+};
+
+vi.mock('../api/queries', () => ({
+  useCompareSessions: () => shared.compare,
+  useTraces: () => shared.traces,
+}));
+
+let harnessDirectory: HarnessDirectory | undefined;
+vi.mock('../components/session-table/harness-directory', () => ({
+  useHarnessDirectory: () => harnessDirectory,
+}));
+
+function metric<T>(value: T, overrides: Partial<Metric<T>> = {}): Metric<T> {
+  return { value, confidence: 'high', source: 'claude-code/assistant.usage#req1', ...overrides };
+}
+
+const CAPS_CLAUDE: readonly Capability[] = [
+  'model',
+  'mode',
+  'timing',
+  'usage.perCall',
+  'usage.cumulative',
+  'subagents',
+];
+// Deliberately no 'mode' -- the not-provided (capability-absent) case below.
+const CAPS_CODEX: readonly Capability[] = [
+  'model',
+  'timing',
+  'usage.perCall',
+  'usage.cumulative',
+  'subagents',
+];
+
+function compareSummary(overrides: Partial<SessionSummary> & { id: string }): SessionSummary {
+  return {
+    harness: 'claude-code',
+    depth: 0,
+    title: { value: overrides.id, contentDerived: true },
+    project: { key: 'github.com/acme/one', name: 'one', identity: 'remote' },
+    cwd: { first: '/tmp', all: ['/tmp'] },
+    timing: { startedAt: metric('2026-08-30T00:00:00.000Z'), durationMs: metric(120_000) },
+    model: { primary: metric('opus'), all: ['opus'], changes: 0 },
+    mode: { primary: metric('plan'), all: ['plan'], changes: 0 },
+    flags: {},
+    usage: { uncachedInput: metric(1_000), cachedInput: metric(2_000), output: metric(500) },
+    counts: {},
+    children: [],
+    source: { path: `/tmp/${overrides.id}.jsonl`, sizeBytes: 1, mtimeMs: 0 },
+    diagnostics: [],
+    ...overrides,
+  };
+}
+
+const ALPHA = compareSummary({
+  id: 'claude-code:alpha',
+  title: { value: 'Alpha run', contentDerived: true },
+  harness: 'claude-code',
+  // capabilities include 'subagents', but this session has no rollup below
+  // -- the field-absent ("Missing in this session") case.
+});
+
+const BETA = compareSummary({
+  id: 'codex:beta',
+  title: { value: 'Beta run', contentDerived: true },
+  harness: 'codex',
+  // codex's capabilities (below) don't include 'mode' at all -- the
+  // capability-absent ("Not provided by Codex") case.
+  mode: undefined,
+  usage: {
+    // present, but computed differently -- the D40 "derived" case.
+    uncachedInput: metric(4_000, {
+      confidence: 'medium',
+      note: 'derived from input − cached (D5)',
+    }),
+    cachedInput: metric(2_500),
+    output: metric(999_999), // deliberately far from ALPHA's 500 (no-winner check).
+  },
+});
+
+const ROLLUPS: Record<string, SessionRollup> = {
+  // `toSessionRow` prefers a rollup's `inclusive.usage` over the summary's own
+  // (exclusive) usage whenever `prefs.inclusive` is true (the default), so
+  // Beta's rollup has to carry the same derived/high-confidence values as its
+  // summary or the inclusive (default) view would show different numbers
+  // than `BETA.usage` above -- and, with an empty rollup usage, "missing"
+  // instead of the intended "derived"/"normal" cells this suite exercises.
+  'codex:beta': {
+    id: 'codex:beta',
+    exclusive: { usage: {}, counts: {} },
+    inclusive: { usage: BETA.usage, counts: { subagents: metric(2) } },
+    descendants: 2,
+  },
+};
+
+const HARNESSES: HarnessDirectory = {
+  'claude-code': { capabilities: CAPS_CLAUDE, displayName: 'Claude Code' },
+  codex: { capabilities: CAPS_CODEX, displayName: 'Codex' },
+};
 
 /**
  * `SearchSchemaInput` is a phantom marker: TanStack strips it from the
@@ -293,5 +411,205 @@ describe('useCompareIds is stable enough to be an effect dependency', () => {
 
     expect(handedBack.at(-1)).not.toBe(first);
     expect(effectRuns).toEqual([['aaa', 'bbb'], ['ccc']]);
+  });
+});
+
+describe('CompareRoute — matrix, D40 cell treatments, no winner styling', () => {
+  afterEach(() => {
+    cleanup();
+    clearTray();
+    shared.compare = { data: undefined, isPending: false, error: undefined, refetch: () => {} };
+    shared.traces = [];
+    harnessDirectory = undefined;
+  });
+
+  function mountCompare(initialPath: string) {
+    // Route.options.component is the real, unexported `CompareRoute` this
+    // file's own `mount()` helper otherwise stubs out with a probe -- casting
+    // through `never` mirrors this file's existing `router as never` idiom
+    // for the same ad-hoc-route-tree-vs-registered-router-type mismatch.
+    return mount(initialPath, Route.options.component as never);
+  }
+
+  test('renders one column per compared session, in URL order, with every design.md §5 row', async () => {
+    harnessDirectory = HARNESSES;
+    shared.compare = {
+      data: { summaries: [BETA, ALPHA], rollups: ROLLUPS },
+      isPending: false,
+      error: undefined,
+      refetch: () => {},
+    };
+
+    mountCompare('/compare?ids=claude-code:alpha,codex:beta');
+
+    const headers = await screen.findAllByRole('columnheader');
+    // Metric label column + one column per session, Alpha before Beta (URL
+    // order), even though the mocked query returned Beta first.
+    expect(headers).toHaveLength(3);
+    expect(headers[1]?.textContent).toContain('Alpha run');
+    expect(headers[2]?.textContent).toContain('Beta run');
+
+    for (const label of [
+      'Harness',
+      'Project',
+      'Model',
+      'Mode',
+      'Duration',
+      'Input (incl.)',
+      'Cached (incl.)',
+      'Output (incl.)',
+      'Subagents',
+    ]) {
+      expect(screen.getByRole('rowheader', { name: label })).not.toBeNull();
+    }
+
+    expect(screen.getByText('Claude Code')).not.toBeNull();
+    expect(screen.getByText('Codex')).not.toBeNull();
+  });
+
+  test('missing (capability-absent): Codex has no "mode" capability at all -> "Not reported", not-provided title', async () => {
+    harnessDirectory = HARNESSES;
+    shared.compare = {
+      data: { summaries: [ALPHA, BETA], rollups: ROLLUPS },
+      isPending: false,
+      error: undefined,
+      refetch: () => {},
+    };
+
+    mountCompare('/compare?ids=claude-code:alpha,codex:beta');
+    await screen.findAllByRole('columnheader');
+
+    const modeRow = screen.getByRole('rowheader', { name: 'Mode' }).closest('tr');
+    expect(modeRow).not.toBeNull();
+    const cell = within(modeRow as HTMLElement).getByText('Not reported');
+    expect(cell.getAttribute('title')).toBe('Not provided by Codex');
+  });
+
+  test('missing (field-absent): Alpha has the "subagents" capability but no rollup -> "Not reported", missing-in-session title', async () => {
+    harnessDirectory = HARNESSES;
+    shared.compare = {
+      data: { summaries: [ALPHA, BETA], rollups: ROLLUPS },
+      isPending: false,
+      error: undefined,
+      refetch: () => {},
+    };
+
+    mountCompare('/compare?ids=claude-code:alpha,codex:beta');
+    await screen.findAllByRole('columnheader');
+
+    const subagentsRow = screen.getByRole('rowheader', { name: 'Subagents' }).closest('tr');
+    expect(subagentsRow).not.toBeNull();
+    const cells = within(subagentsRow as HTMLElement).getAllByText('Not reported');
+    // Alpha's cell is field-absent; assert its title specifically (Beta's
+    // subagents cell, from its rollup, renders normally below).
+    const alphaCell = cells.find((el) => el.getAttribute('title') === 'Missing in this session');
+    expect(alphaCell).not.toBeUndefined();
+  });
+
+  test("derived: Beta's uncachedInput is present but medium-confidence -> amber value + visible note text, not delegated to plain MetricCell", async () => {
+    harnessDirectory = HARNESSES;
+    shared.compare = {
+      data: { summaries: [ALPHA, BETA], rollups: ROLLUPS },
+      isPending: false,
+      error: undefined,
+      refetch: () => {},
+    };
+
+    mountCompare('/compare?ids=claude-code:alpha,codex:beta');
+    await screen.findAllByRole('columnheader');
+
+    expect(screen.getByText('derived from input − cached (D5)')).not.toBeNull();
+    const derivedCell = document.querySelector('[data-compare-cell="derived"]');
+    expect(derivedCell).not.toBeNull();
+    expect(derivedCell?.className).toContain('var(--confidence-medium)');
+  });
+
+  test('no winner highlighting: Alpha (output 500) and Beta (output 999999) render with identical cell styling despite the huge gap', async () => {
+    harnessDirectory = HARNESSES;
+    shared.compare = {
+      data: { summaries: [ALPHA, BETA], rollups: ROLLUPS },
+      isPending: false,
+      error: undefined,
+      refetch: () => {},
+    };
+
+    mountCompare('/compare?ids=claude-code:alpha,codex:beta');
+    await screen.findAllByRole('columnheader');
+
+    const outputRow = screen.getByRole('rowheader', { name: 'Output (incl.)' }).closest('tr');
+    const valueSpans = within(outputRow as HTMLElement).getAllByText(/^\d/);
+    expect(valueSpans).toHaveLength(2);
+    expect(valueSpans[0]?.className).toBe(valueSpans[1]?.className);
+  });
+
+  test('column remove: clicking × drops that session from the matrix and from prefs.compareTray', async () => {
+    harnessDirectory = HARNESSES;
+    shared.compare = {
+      data: { summaries: [ALPHA, BETA], rollups: ROLLUPS },
+      isPending: false,
+      error: undefined,
+      refetch: () => {},
+    };
+
+    mountCompare('/compare?ids=claude-code:alpha,codex:beta');
+    await screen.findAllByRole('columnheader');
+    expect(isInTray('claude-code:alpha')).toBe(true);
+    expect(isInTray('codex:beta')).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Alpha run from comparison' }));
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('columnheader')).toHaveLength(2);
+    });
+    expect(screen.queryAllByText('Alpha run')).toHaveLength(0);
+    const remainingHeaders = screen.getAllByRole('columnheader');
+    expect(remainingHeaders.some((header) => header.textContent?.includes('Beta run'))).toBe(true);
+    await waitFor(() => {
+      expect(isInTray('claude-code:alpha')).toBe(false);
+    });
+    expect(isInTray('codex:beta')).toBe(true);
+  });
+
+  test('empty tray: bare /compare renders the CTA back to Sessions, no table', async () => {
+    mountCompare('/compare');
+
+    expect(await screen.findByText('No sessions to compare yet')).not.toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
+    const cta = screen.getByRole('link', { name: 'Go to Sessions' });
+    expect(cta.getAttribute('href')).toBe('/');
+  });
+
+  test('ribbons: one compact ribbon strip per compared session, sharing an axis (delegated to CompareRibbons, smoke-checked here)', async () => {
+    harnessDirectory = HARNESSES;
+    shared.compare = {
+      data: { summaries: [ALPHA, BETA], rollups: ROLLUPS },
+      isPending: false,
+      error: undefined,
+      refetch: () => {},
+    };
+    shared.traces = [
+      {
+        data: {
+          id: ALPHA.id,
+          steps: [{ kind: 'turn', i: 0 }],
+          models: ['opus'],
+          axis: { steps: 1 },
+          totals: {
+            uncachedInput: 0,
+            cachedInput: 0,
+            cacheWrite: 0,
+            output: 0,
+            reasoningOutput: 0,
+          },
+        },
+      },
+      { data: undefined },
+    ];
+
+    const view = mountCompare('/compare?ids=claude-code:alpha,codex:beta');
+    await screen.findAllByRole('columnheader');
+
+    expect(view.state.location.pathname).toBe('/compare');
+    expect(screen.getByText('Trace')).not.toBeNull();
   });
 });

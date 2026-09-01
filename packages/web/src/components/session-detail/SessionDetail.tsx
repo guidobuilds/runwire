@@ -1,13 +1,20 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { ApiError } from '../../api/client';
-import { useAdapterCapabilities, useAdapterDisplayName, useSession } from '../../api/queries';
+import {
+  useAdapterCapabilities,
+  useAdapterDisplayName,
+  useSession,
+  useTrace,
+} from '../../api/queries';
+import type { SessionSummary } from '../../api/types';
 import { buildAgentTree } from '../../lib/tree';
-import { QueryState } from '../ui/QueryState';
+import { TraceRibbon } from '../charts/TraceRibbon';
+import { QueryState } from '../primitives/QueryState';
 import { AgentTree } from './AgentTree';
 import { CountsPanel } from './CountsPanel';
 import { DiagnosticsList } from './DiagnosticsList';
 import { SessionHeader } from './SessionHeader';
-import { TokenBreakdown } from './TokenBreakdown';
+import { sumPresentUsage, TokenBreakdown } from './TokenBreakdown';
 
 function NotFound({ id }: { id: string }) {
   return (
@@ -27,16 +34,48 @@ function NotFound({ id }: { id: string }) {
 }
 
 /**
+ * Recent token-volume trend for `CountsPanel`'s mini sparkline (design.md
+ * §5), derived client-side from the subtree's own summaries — no new
+ * endpoint. Ordered by `startedAt` (absent-timing sessions last, matching
+ * `lib/tree.ts`'s own ordering convention); a session with no present usage
+ * metric at all is dropped rather than turned into an invented `0` — the
+ * same absence discipline `sumPresentUsage` already applies per-session.
+ */
+function deriveTokenSeries(summaries: readonly SessionSummary[]): number[] {
+  const ordered = [...summaries].sort((a, b) => {
+    const at = a.timing.startedAt?.value;
+    const bt = b.timing.startedAt?.value;
+    if (at === bt) return 0;
+    if (at === undefined) return 1;
+    if (bt === undefined) return -1;
+    return at < bt ? -1 : 1;
+  });
+  const series: number[] = [];
+  for (const summary of ordered) {
+    const total = sumPresentUsage(summary.usage);
+    if (total !== undefined) series.push(total);
+  }
+  return series;
+}
+
+/**
  * Session detail: the operational review from PRODUCT.md, never a transcript.
  *
  * `useAdapterCapabilities`/`useAdapterDisplayName` are called exactly once here
  * and handed down as props (design.md §5/§6/§7), so the whole view holds two
  * `['status']` observers rather than two per metric cell. `ConnectedMetricCell`
  * is deliberately not used anywhere below.
+ *
+ * Section order (design.md §5): header/meta band, diagnostics banner
+ * (surfaced right under the header so it is visible before anything else —
+ * brief §4.4 — rather than buried at the bottom where M4 originally put it),
+ * token breakdown, counts + trend, agent tree, trace ribbon. No skill/mcp
+ * event-log card anywhere (D38).
  */
 export function SessionDetail({ id }: { id: string }) {
   const navigate = useNavigate();
   const query = useSession(id);
+  const trace = useTrace(id);
   const harness = query.data?.summary.harness ?? '';
   const capabilities = useAdapterCapabilities(harness);
   const displayName = useAdapterDisplayName(harness);
@@ -48,6 +87,7 @@ export function SessionDetail({ id }: { id: string }) {
   const tree = query.data
     ? buildAgentTree(query.data.summary.id, query.data.subtree.summaries)
     : undefined;
+  const series = query.data ? deriveTokenSeries(query.data.subtree.summaries) : [];
 
   return (
     <QueryState isPending={query.isPending} error={query.error} refetch={query.refetch}>
@@ -58,18 +98,22 @@ export function SessionDetail({ id }: { id: string }) {
             capabilities={capabilities}
             displayName={displayName}
           />
+          <DiagnosticsList diagnostics={query.data.diagnostics} />
           <TokenBreakdown
             summary={query.data.summary}
             rollup={query.data.rollup}
             capabilities={capabilities}
             displayName={displayName}
           />
-          <CountsPanel
-            summary={query.data.summary}
-            rollup={query.data.rollup}
-            capabilities={capabilities}
-            displayName={displayName}
-          />
+          <div className="rounded-lg border border-border bg-card p-3">
+            <CountsPanel
+              summary={query.data.summary}
+              rollup={query.data.rollup}
+              capabilities={capabilities}
+              displayName={displayName}
+              series={series}
+            />
+          </div>
           {tree ? (
             <AgentTree
               root={tree}
@@ -81,7 +125,12 @@ export function SessionDetail({ id }: { id: string }) {
               }}
             />
           ) : null}
-          <DiagnosticsList diagnostics={query.data.diagnostics} />
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Trace</h2>
+            <div className="rounded-lg border border-border bg-card p-3">
+              <TraceRibbon trace={trace.data} />
+            </div>
+          </section>
         </div>
       ) : null}
     </QueryState>

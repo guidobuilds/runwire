@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { SessionRollup } from '../../api/types';
@@ -133,5 +134,35 @@ describe('AgentTree', () => {
   test('the root row is not activatable — it is the session already on screen', () => {
     renderTree(vi.fn());
     expect(screen.queryByRole('button', { name: 'root' })).toBeNull();
+  });
+
+  test('has no inline style={{ usage in its source (design.md §1: no inline CSS)', () => {
+    const sourcePath = `${import.meta.dirname}/AgentTree.tsx`;
+    const source = readFileSync(sourcePath, 'utf8');
+    expect(source).not.toContain('style={{');
+    expect(source).not.toContain('style ={{');
+  });
+
+  test('rows are indented by depth via static pl-* classes, not an inline style', () => {
+    renderTree();
+    fireEvent.click(screen.getByRole('button', { name: 'Show children of Explore' }));
+
+    // `getByText(label)` matches the innermost element holding the label text
+    // (a bare `<span>{label}</span>` when no `onOpen` is wired up). The row's
+    // depth-padding class lives on that label's *wrapping* span, which is the
+    // only span in the row carrying the `flex` layout class -- so anchoring
+    // `.closest()` on `span.flex` reliably steps past the label span (which
+    // has no class of its own) to reach it.
+    const rootSpan = within(rowOf('root')).getByText('root').closest('span.flex');
+    const exploreSpan = within(rowOf('Explore')).getByText('Explore').closest('span.flex');
+    const deepSpan = within(rowOf('Deep')).getByText('Deep').closest('span.flex');
+
+    expect(rootSpan?.className).toContain('pl-0');
+    expect(exploreSpan?.className).toContain('pl-4');
+    expect(deepSpan?.className).toContain('pl-8');
+
+    expect(rootSpan?.getAttribute('style')).toBeNull();
+    expect(exploreSpan?.getAttribute('style')).toBeNull();
+    expect(deepSpan?.getAttribute('style')).toBeNull();
   });
 });

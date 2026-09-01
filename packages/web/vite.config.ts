@@ -1,3 +1,4 @@
+import path from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
@@ -18,6 +19,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  resolve: { alias: { '@': path.resolve(__dirname, './src') } },
   server: {
     // `scout serve` binds 127.0.0.1:7423 (apps/scout/src/commands/serve.ts DEFAULT_PORT).
     proxy: { '/api': 'http://127.0.0.1:7423' },
