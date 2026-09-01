@@ -484,23 +484,6 @@ describe('SessionTable inclusive toggle', () => {
     expect(within(rowFor('Alpha run')).queryByText('300')).toBeNull();
   });
 
-  test('the toolbar badge names the active view', () => {
-    withClient(
-      <SessionTable
-        scope="project"
-        summaries={SUMMARIES}
-        rollups={ROLLUPS}
-        harnesses={DIRECTORY}
-      />,
-    );
-    expect(screen.getByText('Inclusive')).toBeTruthy();
-
-    act(() => {
-      setInclusive(false);
-    });
-    expect(screen.getByText('Exclusive')).toBeTruthy();
-  });
-
   test('the subagent count ignores the toggle — it is a tree property', () => {
     withClient(
       <SessionTable
@@ -962,7 +945,7 @@ describe('SessionTable scope="all" (Sessions landing, f5)', () => {
     expect(screen.getByLabelText('Project')).toBeTruthy();
   });
 
-  test('the Harness filter narrows to one harness across projects', () => {
+  test('the Harness filter narrows to one harness across projects', async () => {
     withClient(
       <SessionTable
         scope="all"
@@ -974,16 +957,40 @@ describe('SessionTable scope="all" (Sessions landing, f5)', () => {
 
     expect(orderedLabels()).toHaveLength(6);
 
-    // A native `<select multiple>` is narrowed by toggling its `<option>`s'
-    // own `.selected` before firing one `change` on the select itself.
-    const harnessSelect = screen.getByLabelText('Harness') as HTMLSelectElement;
-    const codexOption = within(harnessSelect).getByRole('option', {
-      name: 'codex',
-    }) as HTMLOptionElement;
-    codexOption.selected = true;
-    fireEvent.change(harnessSelect);
+    // The Harness filter is a Popover + Command combobox, not a native
+    // `<select>`: open it and click the harness's display name in the list
+    // (resolved via `displayNameFor`, so "codex" shows as "Codex" here --
+    // ALL_DIRECTORY.codex.displayName).
+    // `{ selector: 'span' }` scopes the text match to the item's own visible
+    // label -- some vendored harness SVGs (e.g. Claude Code's) carry their
+    // own inlined `<title>` matching the harness name, and a bare
+    // `findByText` matches that too (see `.forge/lessons.md#harness-logo-vendoring`).
+    fireEvent.click(screen.getByLabelText('Harness'));
+    fireEvent.click(await screen.findByText('Codex', { selector: 'span' }));
 
     expect(orderedLabels()).toEqual(['Foxtrot run']);
+  });
+
+  test('the Harness combobox stays a real multi-select -- a second click adds, not replaces', async () => {
+    withClient(
+      <SessionTable
+        scope="all"
+        summaries={ALL_SUMMARIES}
+        rollups={ALL_ROLLUPS}
+        harnesses={ALL_DIRECTORY}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Harness'));
+    fireEvent.click(await screen.findByText('Codex', { selector: 'span' }));
+    expect(orderedLabels()).toEqual(['Foxtrot run']);
+
+    // The popover stays open across a selection (multi-select semantics), so
+    // a second click on the other harness unions the selection rather than
+    // replacing it -- claude-code + codex is every row in this fixture.
+    // ("Claude Code" per DIRECTORY['claude-code'].displayName.)
+    fireEvent.click(await screen.findByText('Claude Code', { selector: 'span' }));
+    expect(orderedLabels()).toHaveLength(6);
   });
 
   test('sorting by Session works the same as in a scoped view', () => {

@@ -172,13 +172,6 @@ describe('applyFilters — one criterion at a time', () => {
     ]);
   });
 
-  test('mode', () => {
-    const rows = [rowOf({ id: 'a', mode: 'plan' }), rowOf({ id: 'b', mode: 'default' })];
-    expect(applyFilters(rows, filtersWith({ mode: ['plan'] }), NOW).map((r) => r.id)).toEqual([
-      'a',
-    ]);
-  });
-
   test('a row missing the filtered field is excluded, never silently kept', () => {
     const rows = [rowOf({ id: 'a', model: 'opus' }), rowOf({ id: 'b' })];
     expect(applyFilters(rows, filtersWith({ model: ['opus'] }), NOW).map((r) => r.id)).toEqual([
@@ -342,7 +335,6 @@ describe('distinctOptions', () => {
         projectKey: 'github.com/acme/two',
         projectName: 'two',
         model: 'opus',
-        mode: 'plan',
       }),
       rowOf({
         id: 'b',
@@ -360,6 +352,5 @@ describe('distinctOptions', () => {
       { value: 'github.com/acme/two', label: 'two' },
     ]);
     expect(options.model).toEqual([{ value: 'opus', label: 'opus' }]);
-    expect(options.mode).toEqual([{ value: 'plan', label: 'plan' }]);
   });
 });

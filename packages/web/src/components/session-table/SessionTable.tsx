@@ -406,6 +406,11 @@ export function SessionTable({ scope, summaries, rollups, harnesses, onOpen }: S
   );
   const options = useMemo(() => distinctOptions(allRows), [allRows]);
   const data = useMemo(() => applyFilters(allRows, filters), [allRows, filters]);
+  // Same lookup `routes/harnesses.$id.tsx` uses: a plain object read against
+  // the already-resolved `harnesses` prop, not a query -- the harness combobox
+  // needs a visible name per option/trigger chip (unlike `HarnessLogo`'s own
+  // `displayName`, which is title/aria-label only).
+  const displayNameFor = (harnessId: string) => harnesses?.[harnessId]?.displayName ?? harnessId;
 
   const suffix = prefs.inclusive ? '(incl.)' : '(excl.)';
   const columns = useMemo(
@@ -451,19 +456,48 @@ export function SessionTable({ scope, summaries, rollups, harnesses, onOpen }: S
   });
 
   return (
-    <div className="space-y-3">
+    // `flex h-full min-h-0 flex-col`: the caller (`routes/index.tsx`) gives
+    // this a definite height to fill (fix-appshell-height-bounding). Filters
+    // and pagination are `shrink-0` (see `SessionFilters`/`DataTablePagination`
+    // below) so they always stay visible; the `<Table>` region is the only
+    // `flex-1 min-h-0` piece, so it is the one that grows/shrinks and
+    // scrolls internally.
+    <div className="flex h-full min-h-0 flex-col gap-3">
       <SessionFilters
         scope={scope}
         filters={filters}
         options={options}
-        inclusive={prefs.inclusive}
+        displayNameFor={displayNameFor}
         onChange={setFilters}
         matched={data.length}
         total={allRows.length}
       />
 
-      <Table>
-        <Thead>
+      {/*
+       * `flex-1 min-h-[12rem] overflow-auto` (fix-appshell-height-bounding,
+       * amended by fix-narrow-viewport-table-collapse): AppShell.tsx now
+       * establishes a real bounded flex chain from the viewport down to this
+       * component's own root (`h-dvh` shell -> `app-content` `flex-1
+       * min-h-0` -> this file's root `h-full min-h-0 flex-col`), so this
+       * region can size against real remaining space instead of guessing
+       * with `calc(100vh-...)` viewport units (the prior fix, which under-
+       * or over-counted the real chrome above it). `flex-1` still lets it
+       * grow to fill available space in the common case; `min-h-[12rem]`
+       * (header `h-10` + ~3-4 data rows) is a hard floor so a tall
+       * `SessionFilters` bar (wraps to multiple lines at narrow widths, see
+       * `bounded-flex-shell-filters-bar-wrap-collapses-table` in
+       * `.forge/lessons.md`) can no longer squeeze this region to 0 visible
+       * rows -- below that floor, `app-content`'s own `overflow-y-auto`
+       * fallback (AppShell.tsx) takes over with a small amount of scroll
+       * instead. Passed as `containerClassName` straight into `Table`'s own
+       * scroll container (not a wrapper div around `Table`) so exactly one
+       * element owns both `overflow-x` and `overflow-y` -- see `Table`'s doc
+       * comment and `.forge/lessons.md`'s `nested-overflow-auto-breaks-
+       * sticky-th` for why a second ancestor `overflow-y-auto` div breaks
+       * `<Thead sticky>`.
+       */}
+      <Table containerClassName="flex-1 min-h-[12rem] overflow-auto rounded-md border border-zinc-200 dark:border-zinc-700">
+        <Thead sticky>
           {tableApi.getHeaderGroups().map((headerGroup) => (
             <Tr key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
@@ -506,7 +540,7 @@ export function SessionTable({ scope, summaries, rollups, harnesses, onOpen }: S
       </Table>
 
       {data.length === 0 ? (
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="shrink-0 text-sm text-zinc-500 dark:text-zinc-400">
           {allRows.length === 0 ? 'No sessions here yet.' : 'No sessions match these filters.'}
         </p>
       ) : (
@@ -533,7 +567,7 @@ function DataTablePagination({ table }: { table: ReactTable<typeof features, Ses
   const rowCount = table.getRowCount();
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-zinc-600 dark:text-zinc-300">
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 text-sm text-zinc-600 dark:text-zinc-300">
       <label className="flex items-center gap-2" htmlFor="session-table-page-size">
         Rows per page
         <select

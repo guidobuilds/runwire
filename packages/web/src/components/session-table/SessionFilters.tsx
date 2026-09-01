@@ -1,5 +1,4 @@
 import type { ChangeEvent } from 'react';
-import { Badge } from '../primitives/Badge';
 import { Button } from '../ui/button';
 import type {
   DatePreset,
@@ -9,13 +8,14 @@ import type {
   SubagentsFilter,
 } from './filters';
 import { emptyFilters } from './filters';
+import { HarnessFilterCombobox } from './HarnessFilterCombobox';
 
 export type SessionFiltersProps = {
   scope: 'project' | 'harness' | 'all';
   filters: SessionFilterState;
   options: FilterOptionSets;
-  /** Mirrors the shell's global toggle; shown as a badge (design.md §6). */
-  inclusive: boolean;
+  /** Resolves a harness id to its adapter display name for the combobox (design-approved D-LOGO-1-safe: only used as visible list-item/trigger text, not a `HarnessLogo` `title`). */
+  displayNameFor?: (harnessId: string) => string;
   onChange: (next: SessionFilterState) => void;
   matched: number;
   total: number;
@@ -35,8 +35,17 @@ const SUBAGENT_CHOICES: Array<{ value: SubagentsFilter; label: string }> = [
   { value: 'without', label: 'Without subagents' },
 ];
 
+/**
+ * Shared surface for every native form control in this toolbar (Project/Model
+ * multi-selects, the date preset/custom-range controls, Subagents, Search).
+ * Uses the same design tokens `ui/input.tsx` builds on (`border-input`,
+ * `focus-visible:ring-ring/50`, `dark:bg-input/30`) rather than literal
+ * zinc-* colors, so these read as proper shadcn-styled selectors/inputs and
+ * pick up a visible focus ring, instead of the flat bare-HTML look they had
+ * before (datatable-filters-revamp).
+ */
 const CONTROL =
-  'rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-800 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100';
+  'rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30';
 
 function selectedValues(event: ChangeEvent<HTMLSelectElement>): string[] {
   return Array.from(event.target.selectedOptions, (option) => option.value);
@@ -85,7 +94,7 @@ export function SessionFilters({
   scope,
   filters,
   options,
-  inclusive,
+  displayNameFor,
   onChange,
   matched,
   total,
@@ -95,20 +104,19 @@ export function SessionFilters({
   };
 
   return (
-    <div className="flex flex-wrap items-end gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-700">
-      <Badge tone={inclusive ? 'info' : 'neutral'}>{inclusive ? 'Inclusive' : 'Exclusive'}</Badge>
-
+    <div className="flex shrink-0 flex-wrap items-end gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-700">
       {/*
        * Each dimension gets a selector unless it's already the fixed scope
        * (nothing to narrow there). 'all' (the unscoped landing, f5) has
        * neither dimension fixed, so both selectors show — design.md §5.
        */}
       {scope !== 'harness' ? (
-        <MultiSelect
+        <HarnessFilterCombobox
           id="session-filter-harness"
           label="Harness"
           choices={options.harness}
           selected={filters.harness}
+          displayNameFor={displayNameFor}
           onSelect={(harness) => {
             patch({ harness });
           }}
@@ -134,16 +142,6 @@ export function SessionFilters({
         selected={filters.model}
         onSelect={(model) => {
           patch({ model });
-        }}
-      />
-
-      <MultiSelect
-        id="session-filter-mode"
-        label="Mode"
-        choices={options.mode}
-        selected={filters.mode}
-        onSelect={(mode) => {
-          patch({ mode });
         }}
       />
 

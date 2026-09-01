@@ -19,7 +19,6 @@ export type SessionFilters = {
   harness: string[];
   project: string[];
   model: string[];
-  mode: string[];
   date: DateFilter;
   subagents: SubagentsFilter;
   search: string;
@@ -30,7 +29,6 @@ export function emptyFilters(): SessionFilters {
     harness: [],
     project: [],
     model: [],
-    mode: [],
     date: { preset: 'all' },
     subagents: 'any',
     search: '',
@@ -43,7 +41,6 @@ export type FilterOptionSets = {
   harness: FilterOption[];
   project: FilterOption[];
   model: FilterOption[];
-  mode: FilterOption[];
 };
 
 const DAY_MS = 86_400_000;
@@ -129,7 +126,6 @@ export function applyFilters(
     if (!matchesList(filters.harness, row.harness)) return false;
     if (!matchesList(filters.project, row.projectKey)) return false;
     if (!matchesList(filters.model, row.model?.value)) return false;
-    if (!matchesList(filters.mode, row.mode?.value)) return false;
     if (filters.subagents === 'with' && !row.hasSubagents) return false;
     if (filters.subagents === 'without' && row.hasSubagents) return false;
     if (!matchesDate(row, filters.date, nowMs)) return false;
@@ -162,9 +158,6 @@ export function distinctOptions(rows: readonly SessionRow[]): FilterOptionSets {
     project: collect(rows, (row) => ({ value: row.projectKey, label: row.projectName })),
     model: collect(rows, (row) =>
       row.model === undefined ? undefined : { value: row.model.value, label: row.model.value },
-    ),
-    mode: collect(rows, (row) =>
-      row.mode === undefined ? undefined : { value: row.mode.value, label: row.mode.value },
     ),
   };
 }

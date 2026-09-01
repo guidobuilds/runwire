@@ -82,7 +82,17 @@ export function AppShell() {
 
   return (
     <TooltipProvider>
-      <SidebarProvider>
+      {/*
+       * `h-dvh overflow-hidden` bounds the whole shell to a real viewport
+       * height instead of vendored `SidebarProvider`'s default `min-h-svh`
+       * (a floor, not a ceiling -- content taller than the viewport used to
+       * grow the wrapper itself, forcing a whole-page scroll). Passed as a
+       * `className` override, not by hand-editing vendored `ui/sidebar.tsx`
+       * (datatable-filters-revamp f1-t6): nothing below this can silently
+       * grow taller than the viewport anymore, so `app-content` below is the
+       * one place that needs to absorb any remaining overflow.
+       */}
+      <SidebarProvider className="h-dvh overflow-hidden">
         <Sidebar>
           <SidebarHeader>
             <div className="flex items-center gap-2 px-2 py-1">
@@ -158,8 +168,17 @@ export function AppShell() {
           <SidebarRail />
         </Sidebar>
 
-        <SidebarInset>
-          <header className="border-b border-border">
+        {/*
+         * `min-h-0` lets this flex item actually shrink to fit inside the
+         * now-bounded `h-dvh` wrapper above (a flex item's default min
+         * height is `auto`, i.e. "at least as tall as my content", which is
+         * exactly what let the shell grow past the viewport before);
+         * `overflow-hidden` is the backstop so nothing here can force a
+         * second, whole-page scrollbar -- `app-content` below is the one
+         * place that scrolls when a route's content does not fit.
+         */}
+        <SidebarInset className="min-h-0 overflow-hidden">
+          <header className="shrink-0 border-b border-border">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
               <SidebarTrigger />
 
@@ -219,8 +238,17 @@ export function AppShell() {
           {/* Not a second `<main>` -- `SidebarInset` above already renders one
               (`data-slot="sidebar-inset"`), and a nested `main` would create a
               second landmark. `data-slot="app-content"` marks the routed
-              region for the focus-order test without claiming the role. */}
-          <div data-slot="app-content" className="flex-1 px-4 py-4">
+              region for the focus-order test without claiming the role.
+              `flex-1 min-h-0` makes this the one flexible region below the
+              fixed header/StatusStrip; `overflow-y-auto` is a safe fallback
+              for any route that does not arrange its own content to fit --
+              functionally equivalent to today's whole-page scroll for those
+              routes, just scoped to this region instead of the whole page.
+              Routes that DO want their own internal, per-region scrolling
+              (the Sessions table, `routes/index.tsx`) fill this region with
+              `h-full` and manage their own overflow so this fallback never
+              needs to kick in during normal use. */}
+          <div data-slot="app-content" className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
             <Outlet />
           </div>
         </SidebarInset>

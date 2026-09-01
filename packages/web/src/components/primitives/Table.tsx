@@ -6,7 +6,6 @@ import {
   TableHead as ShadcnTh,
   TableHeader as ShadcnThead,
   TableRow as ShadcnTr,
-  Table as TableRoot,
 } from '../ui/table';
 
 /**
@@ -17,14 +16,66 @@ import {
  * `Th`, `numeric` on `Td`) -- every call site needed only an import-path
  * change, not a rewrite.
  */
-export type TableProps = HTMLAttributes<HTMLTableElement>;
+export type TableProps = HTMLAttributes<HTMLTableElement> & {
+  /**
+   * Classes for the single scroll-owning container div. Deliberately NOT
+   * delegating to vendored `ui/table.tsx`'s own `Table` here: that component
+   * bundles its own `<div data-slot="table-container" className="... w-full
+   * overflow-x-auto">` with no way to inject extra classes into that specific
+   * div. Wrapping THAT in a second `overflow-y-auto` div (as an earlier build
+   * did) nests two overflow-auto containers -- per the CSS spec a div with
+   * overflow-x: auto also computes overflow-y: auto, so the inert inner div
+   * becomes a second valid sticky-positioning containing block and wins over
+   * the outer one that actually scrolls, breaking `<Thead sticky>`. See
+   * `.forge/lessons.md`'s `nested-overflow-auto-breaks-sticky-th`. This
+   * reproduces just the vendored `Table` function's container+table pairing
+   * locally so there is exactly one scroll container. Defaults to
+   * `overflow-x-auto` (matching the vendored default) when omitted; a caller
+   * that also needs vertical scroll (e.g. a sticky-header region) should pass
+   * both axes here, e.g. `"overflow-auto max-h-[...]"`, instead of adding an
+   * ancestor wrapper.
+   */
+  containerClassName?: string;
+};
 
-export function Table(props: TableProps) {
-  return <TableRoot {...props} />;
+export function Table({ containerClassName, className, ...props }: TableProps) {
+  return (
+    <div
+      data-slot="table-container"
+      className={cn('relative w-full', containerClassName ?? 'overflow-x-auto')}
+    >
+      <table
+        data-slot="table"
+        className={cn('w-full caption-bottom text-sm', className)}
+        {...props}
+      />
+    </div>
+  );
 }
 
-export function Thead(props: HTMLAttributes<HTMLTableSectionElement>) {
-  return <ShadcnThead {...props} />;
+export type TheadProps = HTMLAttributes<HTMLTableSectionElement> & {
+  /**
+   * Cascades sticky positioning + an opaque background onto every `th`
+   * inside via a descendant-selector class on the `<thead>` itself (the
+   * same pattern the vendored `ui/table.tsx` already uses for
+   * `[&_tr]:border-b`) -- callers get a sticky header with one prop instead
+   * of annotating each `Th` individually. `top-0`/`z-10` are relative to the
+   * nearest scrolling ancestor, so this only pins within whatever wrapper
+   * the caller scrolls (datatable-filters-revamp).
+   */
+  sticky?: boolean;
+};
+
+export function Thead({ sticky, className, ...props }: TheadProps) {
+  return (
+    <ShadcnThead
+      className={cn(
+        sticky && '[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-background',
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 export function Tbody(props: HTMLAttributes<HTMLTableSectionElement>) {
