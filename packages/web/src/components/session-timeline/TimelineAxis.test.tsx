@@ -35,6 +35,23 @@ describe('tick labels', () => {
   });
 });
 
+describe('edge tick clipping', () => {
+  test('first/last tick labels anchor inward (start/end) so they never extend past the svg bounds', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 6_000_000]} width={480}>
+        <TimelineAxis />
+      </TimelineProvider>,
+    );
+    const texts = Array.from(view.container.querySelectorAll('text'));
+    expect(texts.length).toBeGreaterThan(2);
+    expect(texts[0]?.getAttribute('text-anchor')).toBe('start');
+    expect(texts[texts.length - 1]?.getAttribute('text-anchor')).toBe('end');
+    for (const text of texts.slice(1, -1)) {
+      expect(text.getAttribute('text-anchor')).toBe('middle');
+    }
+  });
+});
+
 describe('zero-width domain edge case', () => {
   test('does not throw for a [0, 0] domain', () => {
     expect(() =>

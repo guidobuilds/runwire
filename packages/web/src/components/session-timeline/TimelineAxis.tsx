@@ -49,11 +49,30 @@ export function TimelineAxis({ height = DEFAULT_HEIGHT }: TimelineAxisProps) {
           tickFormat={(value) => formatElapsed(Number(value))}
           stroke="var(--border)"
           tickStroke="var(--border)"
-          tickLabelProps={() => ({
+          tickLabelProps={(_value, index, values) => ({
             fill: 'var(--muted-foreground)',
             fontSize: 10,
-            textAnchor: 'middle',
-            dy: '0.75em',
+            // Centering every label ('middle') puts half the leftmost tick's
+            // text at x<0 and half the rightmost tick's text at x>width --
+            // both clipped by the svg's own bounds (SVG's default overflow is
+            // hidden), which reads as the axis time being "cut off" against
+            // the track box's edge. The first/last tick instead anchor
+            // inward (start/end) so their text never extends past [0, width];
+            // interior ticks keep centering since they have room on both
+            // sides.
+            // No `dy` override: `@visx/text` (which `AxisBottom` uses
+            // internally for each label) applies `dy` by nesting the text in
+            // its own `<svg y={dy}>`, which STACKS on top of the `y`
+            // AxisBottom already computed for the label (itself already
+            // placed below the tick line) rather than replacing it. With
+            // `dy: '0.75em'` here, that pushed the label's real vertical
+            // position past this axis's own 24px-tall viewBox, so browsers
+            // (whose default SVG overflow is hidden) clipped it against this
+            // svg's bottom edge — read as the time being "cut off" against
+            // the track box's border. AxisBottom's own default `y` already
+            // places the label sensibly below the tick line with no extra
+            // offset needed.
+            textAnchor: index === 0 ? 'start' : index === values.length - 1 ? 'end' : 'middle',
           })}
         />
       </svg>
