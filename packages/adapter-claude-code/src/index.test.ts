@@ -4,6 +4,7 @@ import type { AdapterContext, ScoutEvent, SourceRef } from '@scout/core';
 import { createBunFs, createMemoryFs, link, reduce } from '@scout/core';
 import { adapterContract } from '@scout/core/test-kit';
 import { createClaudeCodeAdapter } from './index';
+import { claudeCodeToolCategory } from './tool-category';
 
 const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', 'fixtures', 'claude-code');
 
@@ -81,6 +82,14 @@ describe('claude-code adapter: medium fixture (the dedupe regression)', () => {
     expect(reduced.model.all).toContain('claude-sonnet-5');
     expect(reduced.flags.versionChanged).toBe(true);
     expect(reduced.counts.compactions?.value).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('claude-code adapter: tool categories', () => {
+  test("classifies the real 'Skill' tool name as category 'skill'", () => {
+    // Real tool name observed in fixtures/claude-code/medium
+    // (3666e64a-bdeb-4ffb-82d4-ad06666a67a8.jsonl), not a synthetic name.
+    expect(claudeCodeToolCategory('Skill')).toBe('skill');
   });
 });
 

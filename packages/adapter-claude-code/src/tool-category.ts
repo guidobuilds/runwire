@@ -22,6 +22,7 @@ const EXACT: Record<string, ToolCategory> = {
   ListAgents: 'agent',
   WebFetch: 'web',
   WebSearch: 'web',
+  Skill: 'skill',
 };
 
 /** docs/adapters/claude-code.md "Tool categories". Total: unknown names fall back to 'other'. */

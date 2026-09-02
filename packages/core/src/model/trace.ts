@@ -9,6 +9,7 @@ export type ToolCategory =
   | 'agent'
   | 'web'
   | 'mcp'
+  | 'skill'
   | 'other';
 
 export type TraceStepCall = {

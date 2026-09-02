@@ -123,7 +123,8 @@ Any other observed value classifies `kind: 'unknown'` at `low` (an adapter versi
 | `agent` | `Agent`, `Task`, `SendMessage`, `ListAgents` |
 | `web` | `WebFetch`, `WebSearch` |
 | `mcp` | any `mcp__*` |
-| `other` | everything else (`Skill`, `Artifact`, `SendUserFile`, …) |
+| `skill` | `Skill` |
+| `other` | everything else (`Artifact`, `SendUserFile`, …) |
 
 Harness event vocabulary (`harnessEventNames`): `hook:<hookEvent>` (the part of `hookName` before `:`; e.g. `hook:PreToolUse`, `hook:Stop`, `hook:UserPromptSubmit`), `permission`, `plan-mode`, `plan-mode-exit`, `auto-mode`. The tool name after the colon is dropped so the vocabulary stays finite.
 

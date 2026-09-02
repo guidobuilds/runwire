@@ -143,6 +143,7 @@ export const ToolCategorySchema = z.enum([
   'agent',
   'web',
   'mcp',
+  'skill',
   'other',
 ]);
 
