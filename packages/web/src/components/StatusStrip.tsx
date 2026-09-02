@@ -18,7 +18,10 @@ export function StatusStrip() {
   const startedAt = status.data?.lastReport?.startedAt;
   const lastScan = startedAt ? formatRelative(startedAt, Date.now()) : 'never';
 
-  const rootSessions = projects.data?.reduce((sum, project) => sum + project.sessionCount, 0);
+  const rootSessions = projects.data?.projects.reduce(
+    (sum, project) => sum + project.sessionCount,
+    0,
+  );
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-zinc-200 px-4 py-1.5 text-xs text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">

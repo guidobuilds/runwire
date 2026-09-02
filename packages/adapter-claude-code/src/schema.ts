@@ -70,6 +70,8 @@ export const claudeCodeRecordSchema = z
     isMeta: z.boolean().optional(),
     isCompactSummary: z.boolean().optional(),
     agentId: z.string().nullable().optional(),
+    entrypoint: z.string().optional(),
+    promptSource: z.string().optional(),
     effort: z.string().optional(),
     permissionMode: z.string().optional(),
     durationMs: z.number().optional(),

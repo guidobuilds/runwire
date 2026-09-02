@@ -22,6 +22,7 @@ export type Capability =
   | 'cost'
   | 'title'
   | 'git'
+  | 'initiator'
   | 'trace.blocks'
   | 'trace.errors'
   | 'trace.harnessEvents'

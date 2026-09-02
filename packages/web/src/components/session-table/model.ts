@@ -8,6 +8,7 @@ import type {
   Usage,
 } from '../../api/types';
 import { shortId } from '../../lib/format';
+import { isMachineInitiated } from '../../lib/initiator';
 
 const CONFIDENCE_RANK: Record<Confidence, number> = { low: 0, medium: 1, high: 2 };
 
@@ -79,6 +80,17 @@ export type SessionRow = {
    */
   subagents?: Metric;
   hasSubagents: boolean;
+  /**
+   * The harness says a machine started this session (SDK, CI, agent dispatch).
+   *
+   * Carried so a view can *label* the row, never so it can drop it: the
+   * automated filter runs server-side (`?automated=exclude`) precisely because
+   * hiding a session has to remove it from the aggregates too. Compare in
+   * particular resolves sessions by explicit id and must keep rendering a
+   * machine-started column while the lists hide it — filtering here instead
+   * would delete the user's own selection.
+   */
+  isAutomated: boolean;
   summary: SessionSummary;
   rollup?: SessionRollup;
 };
@@ -128,6 +140,7 @@ export function toSessionRow(
     usage,
     subagents,
     hasSubagents: summary.children.length > 0,
+    isAutomated: isMachineInitiated(summary),
     summary,
     rollup,
   };

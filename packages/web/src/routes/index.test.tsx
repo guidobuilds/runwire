@@ -78,8 +78,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function handle(pathname: string, search: string): Response {
   if (pathname === '/api/status') return jsonResponse(STATUS);
-  if (pathname === '/api/projects') return jsonResponse([]);
-  if (pathname === '/api/harnesses') return jsonResponse([]);
+  if (pathname === '/api/projects')
+    return jsonResponse({ projects: [], hiddenProjects: 0, hiddenAutomated: 0 });
+  if (pathname === '/api/harnesses')
+    return jsonResponse({ harnesses: [], hiddenHarnesses: 0, hiddenAutomated: 0 });
   if (pathname === '/api/sessions') {
     // The landing route must hit this with NO ids -- a stray `ids=` here
     // would mean `/` is silently reusing Compare's query instead of

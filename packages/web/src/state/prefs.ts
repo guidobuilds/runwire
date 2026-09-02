@@ -5,12 +5,31 @@ export const PREFS_STORAGE_KEY = 'scout.prefs.v1';
 export type Prefs = {
   inclusive: boolean;
   showTitles: boolean;
+  /**
+   * Whether machine-initiated sessions (SDK, CI, agent dispatch) appear in
+   * lists, counts and rollups. **Default off**: the great majority of a real
+   * `~/.claude/projects` is automation, so the honest default view is the work
+   * a person actually started.
+   *
+   * This is a display *preference*, not a toolbar filter, and the difference is
+   * deliberate: it is global (one setting, every screen), it persists, and
+   * "Clear filters" does not touch it — clearing filters must always reveal
+   * more rows, never hide them. It follows `showTitles`, the existing global
+   * pref that also changes what the table shows, rather than inventing a
+   * second pattern.
+   *
+   * Unlike the toolbar filters this one is applied SERVER-side (`?automated=`
+   * on the list/aggregate routes), because it has to move the aggregates too —
+   * a hidden session must not contribute to a project's token total.
+   */
+  showAutomated: boolean;
   compareTray: string[];
 };
 
 const DEFAULTS: Prefs = {
   inclusive: true,
   showTitles: true,
+  showAutomated: false,
   compareTray: [],
 };
 
@@ -20,6 +39,7 @@ function copyPrefs(prefs: Prefs): Prefs {
   return {
     inclusive: prefs.inclusive,
     showTitles: prefs.showTitles,
+    showAutomated: prefs.showAutomated,
     compareTray: [...prefs.compareTray],
   };
 }
@@ -32,6 +52,11 @@ function mergePrefs(partial: unknown): Prefs {
   return {
     inclusive: typeof rec.inclusive === 'boolean' ? rec.inclusive : DEFAULTS.inclusive,
     showTitles: typeof rec.showTitles === 'boolean' ? rec.showTitles : DEFAULTS.showTitles,
+    // Field-by-field tolerance is what makes adding a key a zero-migration
+    // change: every `scout.prefs.v1` blob written before this field existed
+    // simply falls back to the default here.
+    showAutomated:
+      typeof rec.showAutomated === 'boolean' ? rec.showAutomated : DEFAULTS.showAutomated,
     compareTray: Array.isArray(rec.compareTray)
       ? rec.compareTray.filter((id): id is string => typeof id === 'string')
       : [...DEFAULTS.compareTray],
@@ -125,6 +150,10 @@ export function createPrefsStore(storage?: PrefsStorage) {
       if (snapshot.showTitles === value) return;
       commit({ ...snapshot, showTitles: value });
     },
+    setShowAutomated(value: boolean): void {
+      if (snapshot.showAutomated === value) return;
+      commit({ ...snapshot, showAutomated: value });
+    },
     toggleTray(id: string): void {
       const idx = snapshot.compareTray.indexOf(id);
       const compareTray =
@@ -164,6 +193,10 @@ export function setInclusive(value: boolean): void {
 
 export function setShowTitles(value: boolean): void {
   defaultStore.setShowTitles(value);
+}
+
+export function setShowAutomated(value: boolean): void {
+  defaultStore.setShowAutomated(value);
 }
 
 export function toggleTray(id: string): void {

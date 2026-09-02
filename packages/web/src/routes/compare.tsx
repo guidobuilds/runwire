@@ -11,6 +11,7 @@ import type { Metric } from '../api/types';
 import { CompareCell } from '../components/compare/CompareCell';
 import { CompareRibbons } from '../components/compare/CompareRibbons';
 import { PageHeading } from '../components/PageHeading';
+import { Badge } from '../components/primitives/Badge';
 import { HarnessLogo } from '../components/primitives/HarnessLogo';
 import { QueryState } from '../components/primitives/QueryState';
 import { Table, Tbody, Td, Th, Thead, Tr } from '../components/primitives/Table';
@@ -254,8 +255,25 @@ function CompareRoute() {
                     {rows.map((row) => (
                       <Th key={row.id} scope="col">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="truncate" title={row.label}>
-                            {row.label}
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <span className="truncate" title={row.label}>
+                              {row.label}
+                            </span>
+                            {/*
+                             * Compare resolves sessions by explicit id and is
+                             * never narrowed by the global "Automated"
+                             * preference (packages/server/src/routes.ts) -- the
+                             * tray persists, so comparing sessions the tables
+                             * currently refuse to list is a reachable state.
+                             * Dropping the column would delete the user's own
+                             * selection; labelling it explains why this session
+                             * is here and not over there.
+                             */}
+                            {row.isAutomated && !prefs.showAutomated ? (
+                              <Badge tone="neutral" className="shrink-0 text-[10px]">
+                                automated
+                              </Badge>
+                            ) : null}
                           </span>
                           <Button
                             type="button"

@@ -2,7 +2,7 @@ import type { ScoutEvent, UsageEventFields } from '../events/event';
 import { type Diagnostic, makeDiagnostic } from '../model/diagnostic';
 import type { HarnessId } from '../model/harness';
 import { type Metric, minConfidence } from '../model/metric';
-import type { SessionRelation } from '../model/session';
+import type { Initiator, SessionRelation } from '../model/session';
 import type { Counts, Usage } from '../model/usage';
 
 export type ReducedSession = {
@@ -14,6 +14,7 @@ export type ReducedSession = {
   depthHint?: number;
   viaCallId?: string;
   agentType?: string;
+  initiator?: Metric<Initiator>;
   title?: { value: string; contentDerived: true };
   cwd: { first: string; all: string[] };
   git?: { branch?: string; commit?: string; remote?: string };
@@ -83,6 +84,7 @@ export async function reduce(
   let depthHint: number | undefined;
   let viaCallId: string | undefined;
   let agentType: string | undefined;
+  let initiator: Metric<Initiator> | undefined;
 
   const usageByKey = new Map<string, UsageEventFields>();
   let usageAnonSeq = 0;
@@ -128,6 +130,20 @@ export async function reduce(
         agentType ??= event.agentType;
         depthHint = event.depth;
         viaCallId = event.viaCallId;
+        break;
+      }
+      case 'initiator': {
+        // First one wins: an adapter describes the session's initiator once.
+        // No touchTimestamp - the event carries no `at` by design.
+        initiator ??= {
+          value: {
+            kind: event.initiatorKind,
+            surface: event.surface,
+            ...(event.automation ? { automation: event.automation } : {}),
+          },
+          confidence: event.confidence,
+          source: `${ctx.harness}/initiator`,
+        };
         break;
       }
       case 'observed': {
@@ -436,6 +452,7 @@ export async function reduce(
     depthHint,
     viaCallId,
     agentType,
+    initiator,
     title,
     cwd: { first: cwdFirst ?? '', all: [...new Set(cwdAll)] },
     git,

@@ -71,6 +71,12 @@ export function link(
       depth: 0, // filled in pass 2
       viaCallId: reduced.viaCallId,
       agentType: reduced.agentType,
+      // NOTE: this literal is exhaustive by hand, not by spread - an optional
+      // field added to ReducedSession and omitted here compiles fine and
+      // vanishes silently. Guarded by link.test.ts
+      // "carries every reduced field the summary declares", whose
+      // REDUCED_FIELD_DISPOSITION map must be updated for any new reduced field.
+      initiator: reduced.initiator,
       title: reduced.title,
       project: buildProject(reduced.harness, reduced.cwd),
       cwd: reduced.cwd,

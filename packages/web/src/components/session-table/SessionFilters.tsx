@@ -18,6 +18,13 @@ export type SessionFiltersProps = {
   onChange: (next: SessionFilterState) => void;
   matched: number;
   total: number;
+  /**
+   * Root sessions the global "Automated" preference removed from this scope
+   * before the table ever saw them (server-side, so they are out of the totals
+   * too). Rendered next to the counter so the default view never quietly drops
+   * most of the rows with nothing on screen to say so.
+   */
+  hiddenAutomated?: number;
 };
 
 const DATE_PRESETS: Array<{ value: DatePreset; label: string }> = [
@@ -59,6 +66,7 @@ export function SessionFilters({
   onChange,
   matched,
   total,
+  hiddenAutomated = 0,
 }: SessionFiltersProps) {
   const patch = (next: Partial<SessionFilterState>) => {
     onChange({ ...filters, ...next });
@@ -214,6 +222,13 @@ export function SessionFilters({
 
       <span className="text-xs text-zinc-500 dark:text-zinc-400">
         {matched === total ? `${total} sessions` : `${matched} of ${total} sessions`}
+        {hiddenAutomated > 0 ? (
+          // Names what it is: rows the developer did not start. Not a saving
+          // and not a cost view -- the hidden sessions are ~83% of the ROWS but
+          // only a couple of percent of the token mass, so any copy implying
+          // this reveals "real" spend would be false.
+          <span className="ml-1">· {hiddenAutomated} automated hidden</span>
+        ) : null}
       </span>
     </div>
   );

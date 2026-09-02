@@ -53,6 +53,7 @@ describe('prefs store', () => {
     expect(createPrefsStore(storage).getSnapshot()).toEqual({
       inclusive: true,
       showTitles: true,
+      showAutomated: false,
       compareTray: [],
     });
   });
@@ -71,11 +72,13 @@ describe('prefs store', () => {
     expect(() => {
       store.setInclusive(false);
       store.setShowTitles(false);
+      store.setShowAutomated(true);
       store.toggleTray('sess-a');
     }).not.toThrow();
     expect(store.getSnapshot()).toEqual({
       inclusive: false,
       showTitles: false,
+      showAutomated: true,
       compareTray: ['sess-a'],
     });
   });
@@ -84,5 +87,58 @@ describe('prefs store', () => {
     const storage = new MemoryStorage();
     createPrefsStore(storage).setShowTitles(false);
     expect(createPrefsStore(storage).getSnapshot().showTitles).toBe(false);
+  });
+
+  describe('showAutomated', () => {
+    test('defaults to false: machine-initiated sessions are hidden until asked for', () => {
+      // The one behavioral default this whole feature turns on. An empty
+      // storage, a storage that throws and a corrupt blob must all agree.
+      expect(createPrefsStore(new MemoryStorage()).getSnapshot().showAutomated).toBe(false);
+    });
+
+    test('setShowAutomated(true) persists across a reload', () => {
+      const storage = new MemoryStorage();
+      createPrefsStore(storage).setShowAutomated(true);
+      expect(JSON.parse(storage.getItem(PREFS_STORAGE_KEY) ?? 'null')).toMatchObject({
+        showAutomated: true,
+      });
+      // A second store reading the same storage is what a page reload is.
+      expect(createPrefsStore(storage).getSnapshot().showAutomated).toBe(true);
+    });
+
+    test('a blob written before this field existed is read, not discarded', () => {
+      // Zero-migration claim: `mergePrefs` is tolerant field by field, so an
+      // existing user's inclusive/showTitles/compareTray survive untouched and
+      // only the new key falls back to its default.
+      const storage = new MemoryStorage();
+      storage.setItem(
+        PREFS_STORAGE_KEY,
+        JSON.stringify({ inclusive: false, showTitles: false, compareTray: ['sess-a'] }),
+      );
+      expect(createPrefsStore(storage).getSnapshot()).toEqual({
+        inclusive: false,
+        showTitles: false,
+        showAutomated: false,
+        compareTray: ['sess-a'],
+      });
+    });
+
+    test('a non-boolean value falls back to the default rather than being coerced', () => {
+      const storage = new MemoryStorage();
+      storage.setItem(PREFS_STORAGE_KEY, JSON.stringify({ showAutomated: 'yes' }));
+      expect(createPrefsStore(storage).getSnapshot().showAutomated).toBe(false);
+    });
+
+    test('subscribers are notified, and a no-op set does not notify', () => {
+      const store = createPrefsStore(new MemoryStorage());
+      let notifications = 0;
+      store.subscribe(() => {
+        notifications += 1;
+      });
+      store.setShowAutomated(false); // already false
+      expect(notifications).toBe(0);
+      store.setShowAutomated(true);
+      expect(notifications).toBe(1);
+    });
   });
 });

@@ -50,6 +50,13 @@ export const ProjectRefSchema = z.object({
   identity: z.enum(['remote', 'repo-root', 'cwd']),
 });
 
+/** `surface`/`automation` stay permissive strings: harness surface enums are open sets (D21). */
+export const InitiatorSchema = z.object({
+  kind: z.enum(['human', 'machine', 'unknown']),
+  surface: z.string().min(1),
+  automation: z.string().min(1).optional(),
+});
+
 export const SessionSummarySchema = z.object({
   id: z.string(),
   harness: HarnessIdSchema,
@@ -59,6 +66,7 @@ export const SessionSummarySchema = z.object({
   depth: z.number().int().min(0),
   viaCallId: z.string().optional(),
   agentType: z.string().optional(),
+  initiator: metricSchema(InitiatorSchema).optional(),
   title: z.object({ value: z.string(), contentDerived: z.literal(true) }).optional(),
   project: ProjectRefSchema,
   cwd: z.object({ first: z.string(), all: z.array(z.string()) }),

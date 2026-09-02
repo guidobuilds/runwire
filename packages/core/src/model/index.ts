@@ -1,6 +1,7 @@
 export * from './aggregate';
 export * from './diagnostic';
 export * from './harness';
+export * from './initiator';
 export * from './metric';
 export * from './rollup';
 export * from './schema';

@@ -46,6 +46,13 @@ export const ScoutEventSchema = z.union([
     depth: z.number().int().min(0).optional(),
     viaCallId: z.string().optional(),
   }),
+  z.object({
+    kind: z.literal('initiator'),
+    initiatorKind: z.enum(['human', 'machine', 'unknown']),
+    surface: z.string().min(1),
+    automation: z.string().min(1).optional(),
+    confidence: z.enum(['high', 'medium', 'low']),
+  }),
   z.object({ kind: z.literal('observed'), at: z.string() }),
   z.object({ kind: z.literal('model'), model: z.string().min(1), at: z.string().optional() }),
   z.object({ kind: z.literal('mode'), mode: z.string().min(1), at: z.string().optional() }),

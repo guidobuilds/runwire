@@ -93,6 +93,7 @@ describe('AppShell', () => {
     prefs.clearTray();
     prefs.setInclusive(true);
     prefs.setShowTitles(true);
+    prefs.setShowAutomated(false);
   });
 
   test('renders the brand, sidebar nav, breadcrumb and both display toggles', async () => {
@@ -129,6 +130,10 @@ describe('AppShell', () => {
     expect(screen.getByRole('button', { name: 'Inclusive', pressed: true })).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Exclusive', pressed: false })).not.toBeNull();
     expect(screen.getByRole('switch', { name: 'Titles' })).not.toBeNull();
+    // The Automated switch sits with the other global display preferences, not
+    // in the session toolbar: it applies on Projects and Harnesses too, and
+    // "Clear filters" must never be able to reach it.
+    expect(screen.getByRole('switch', { name: 'Automated' })).not.toBeNull();
     // The status strip is part of the shell, not of any single view.
     expect(screen.getByRole('button', { name: 'Rescan' })).not.toBeNull();
   });
@@ -225,6 +230,27 @@ describe('AppShell', () => {
     );
     expect(JSON.parse(localStorage.getItem(prefs.PREFS_STORAGE_KEY) ?? '{}')).toMatchObject({
       showTitles: false,
+    });
+  });
+
+  test('the Automated toggle defaults to off and writes through to the prefs store', async () => {
+    mount();
+    expect(await screen.findByText('projects view')).not.toBeNull();
+
+    // Default OFF is the behavioral decision this whole feature turns on: on a
+    // real machine most root sessions are SDK/CI/dispatch runs no person
+    // started, and they stay out of the lists and the totals until asked for.
+    expect(screen.getByRole('switch', { name: 'Automated' }).getAttribute('aria-checked')).toBe(
+      'false',
+    );
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Automated' }));
+
+    expect(screen.getByRole('switch', { name: 'Automated' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    expect(JSON.parse(localStorage.getItem(prefs.PREFS_STORAGE_KEY) ?? '{}')).toMatchObject({
+      showAutomated: true,
     });
   });
 

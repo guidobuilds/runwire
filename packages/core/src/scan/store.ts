@@ -1,5 +1,6 @@
 import type { AdapterContext, HarnessAdapter, SourceRef } from '../adapter/types';
 import type { HarnessAggregate, ProjectAggregate } from '../model/aggregate';
+import { isMachineInitiated } from '../model/initiator';
 import type { SessionRollup } from '../model/rollup';
 import type { SessionSummary } from '../model/session';
 import type { SessionTrace } from '../model/trace';
@@ -16,6 +17,23 @@ import {
 const DEFAULT_TRACE_LRU_SIZE = 16;
 
 type TraceCacheEntry = { key: string; trace: SessionTrace };
+
+/**
+ * How a caller wants the root set narrowed.
+ *
+ * `excludeAutomated` is **required**, not optional with a default, and that is
+ * the whole point of this type: `getRoots` is the single seam every list and
+ * every aggregate in the product flows through (`getProjects`, `getHarnesses`,
+ * and the three `/api` list routes), so "did this call site decide?" has to be
+ * a compiler question rather than a review question. An optional flag would let
+ * a new call site silently inherit the unfiltered set and disagree with every
+ * other surface about how many sessions exist — the exact class of bug this
+ * feature is about.
+ */
+export type RootsQuery = {
+  /** Drop roots we positively know a machine started (see `isMachineInitiated`). */
+  excludeAutomated: boolean;
+};
 
 /**
  * The in-memory store behind Scout's API (docs/ARCHITECTURE.md §5, §8). No
@@ -55,8 +73,21 @@ export class ScoutStore {
     return this.state.summaries;
   }
 
-  getRoots(): SessionSummary[] {
-    return this.state.summaries.filter((s) => !s.parentId);
+  /**
+   * Root sessions, optionally without the machine-initiated ones.
+   *
+   * The narrowing lives here rather than in each consumer because everything
+   * that counts sessions reads this method: filter once and the session list,
+   * the project rollup, the harness rollup and the shell's counts all move
+   * together. Note what is deliberately NOT narrowed: `state.summaries` is
+   * untouched, so `getSession`/`getSubtree`/`getTrace` still resolve a hidden
+   * session by id — hiding it from lists must never make a session the user
+   * explicitly asked for unreachable.
+   */
+  getRoots(query: RootsQuery): SessionSummary[] {
+    const roots = this.state.summaries.filter((s) => !s.parentId);
+    if (!query.excludeAutomated) return roots;
+    return roots.filter((s) => !isMachineInitiated(s));
   }
 
   getSession(id: string): SessionSummary | undefined {
@@ -88,8 +119,15 @@ export class ScoutStore {
     return this.state.summaries.flatMap((s) => s.diagnostics);
   }
 
-  getProjects(): ProjectAggregate[] {
-    const roots = this.getRoots();
+  /**
+   * Projects rolled up from the root set `query` selects. A project is not a
+   * first-class record anywhere in Scout — it exists exactly as long as some
+   * root session claims it — so excluding automated roots makes a project whose
+   * sessions are *all* machine-initiated disappear entirely rather than appear
+   * with `sessionCount: 0`. That is the intended behavior, not a side effect.
+   */
+  getProjects(query: RootsQuery): ProjectAggregate[] {
+    const roots = this.getRoots(query);
     const byKey = new Map<string, ProjectAggregate>();
     for (const root of roots) {
       const rollup = this.state.rollups.get(root.id);
@@ -117,8 +155,9 @@ export class ScoutStore {
     return [...byKey.values()];
   }
 
-  getHarnesses(): HarnessAggregate[] {
-    const roots = this.getRoots();
+  /** Harnesses rolled up from the root set `query` selects (see `getProjects`). */
+  getHarnesses(query: RootsQuery): HarnessAggregate[] {
+    const roots = this.getRoots(query);
     const byHarness = new Map<string, HarnessAggregate>();
     for (const root of roots) {
       const rollup = this.state.rollups.get(root.id);

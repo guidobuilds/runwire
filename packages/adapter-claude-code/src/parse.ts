@@ -2,13 +2,13 @@ import { basename, dirname, join } from 'node:path';
 import type { AdapterContext, ScoutEvent, SourceRef } from '@scout/core';
 import { project, readLines } from '@scout/core';
 import { claudeCodeAllowlist } from './allowlist';
+import { classifyInitiator } from './initiator';
 import { type ClaudeCodeRecord, claudeCodeRecordSchema, parseMetaJson } from './schema';
 import { claudeCodeToolCategory, hookEventName } from './tool-category';
 
 const KNOWN_IGNORED_TYPES = new Set([
   'last-prompt',
   'agent-name',
-  'agent-setting',
   'mode',
   'atis-latch',
   'bridge-session',
@@ -26,7 +26,17 @@ const HANDLED_TYPES = new Set([
   'cost-state',
   'ai-title',
   'attachment',
+  // Read for its *presence* only (the dispatch marker, see DISPATCH_MARKER_TYPE);
+  // its `agentSetting` payload is not allowlisted and never reaches here.
+  'agent-setting',
 ]);
+
+/**
+ * Claude Code writes this record when the session was dispatched by another
+ * agent rather than opened by a person. Orthogonal to `entrypoint`, which
+ * reports `cli` for such sessions just like a real terminal session.
+ */
+const DISPATCH_MARKER_TYPE = 'agent-setting';
 
 type Parsed = { record: ClaudeCodeRecord; line: number };
 
@@ -107,6 +117,13 @@ export async function* parse(ref: SourceRef, ctx: AdapterContext): AsyncIterable
   const sawUnexpectedSidechain =
     ref.kind === 'root' && parsed.some((p) => p.record.isSidechain === true);
 
+  // `entrypoint` is a session-wide fact repeated on most records; the first
+  // observed value is the session's surface. The dispatch marker can appear
+  // anywhere in the file, so both need the same whole-file pre-pass the
+  // `meta` event already requires.
+  const entrypoint = parsed.find((p) => p.record.entrypoint)?.record.entrypoint;
+  const dispatched = parsed.some((p) => p.record.type === DISPATCH_MARKER_TYPE);
+
   yield {
     kind: 'meta',
     sourceId: ref.sourceId,
@@ -117,6 +134,17 @@ export async function* parse(ref: SourceRef, ctx: AdapterContext): AsyncIterable
     git: initialBranch ? { branch: initialBranch } : undefined,
     at: initialAt,
   };
+
+  const initiator = classifyInitiator({ entrypoint, dispatched });
+  if (initiator) {
+    yield {
+      kind: 'initiator',
+      initiatorKind: initiator.kind,
+      surface: initiator.surface,
+      automation: initiator.automation,
+      confidence: initiator.confidence,
+    };
+  }
 
   for (const d of preDiagnostics) yield d;
 

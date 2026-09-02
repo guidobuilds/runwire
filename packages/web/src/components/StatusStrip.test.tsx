@@ -42,7 +42,11 @@ vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit): Pro
       diagnostics: [],
     });
   }
-  if (url.includes('/api/projects')) return json(projectsBody);
+  // `projectsBody` stays the bare aggregate array each test cares about; the
+  // route's envelope (added so the Projects grid can disclose what the
+  // automated filter removed) is wrapped on here.
+  if (url.includes('/api/projects'))
+    return json({ projects: projectsBody, hiddenProjects: 0, hiddenAutomated: 0 });
   if (url.includes('/api/status')) return json(statusBody);
   return json({ error: 'unexpected request' }, 404);
 });

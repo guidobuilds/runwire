@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useHarnesses, useHarnessSessions, useStatus } from '../api/queries';
 import type { HarnessAggregate, StatusResponse } from '../api/types';
+import { AutomatedDisclosure } from '../components/AutomatedDisclosure';
 import { EmptyState, useHasData } from '../components/EmptyState';
 import {
   GroupCard,
@@ -116,7 +117,10 @@ function HarnessesIndexRoute() {
     void navigate({ to: '/harnesses/$id', params: { id } });
   };
 
-  const merged = mergeInstalledHarnesses(harnesses.data ?? [], status.data?.adapters ?? []);
+  const merged = mergeInstalledHarnesses(
+    harnesses.data?.harnesses ?? [],
+    status.data?.adapters ?? [],
+  );
 
   return (
     <section className="space-y-4">
@@ -131,6 +135,21 @@ function HarnessesIndexRoute() {
         error={harnesses.error}
         refetch={harnesses.refetch}
       >
+        {/*
+          A harness card survives the filter far more often than a project card
+          does (it only vanishes when *every* one of its roots is
+          machine-started), but its `sessionCount` and usage totals still lose
+          the hidden sessions — 383 narrows to 65 on real data with the card
+          itself unchanged. `visibleGroups` counts real aggregates only, not the
+          installed-but-empty placeholders `mergeInstalledHarnesses` adds, so
+          the "N of M" arithmetic matches what the server filtered.
+        */}
+        <AutomatedDisclosure
+          visibleGroups={harnesses.data?.harnesses.length ?? 0}
+          hiddenGroups={harnesses.data?.hiddenHarnesses ?? 0}
+          hiddenAutomated={harnesses.data?.hiddenAutomated ?? 0}
+          groupNoun={['harness', 'harnesses']}
+        />
         <GroupGrid>
           {sortByLatestActivityDesc(merged).map((aggregate) =>
             aggregate.emptyVariant === 'installed-no-sessions' ? (

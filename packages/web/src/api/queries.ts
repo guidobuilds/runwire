@@ -1,5 +1,6 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { InferResponseType } from 'hono/client';
+import { usePrefs } from '../state/prefs';
 import { api, unwrap } from './client';
 import type {
   Capability,
@@ -33,15 +34,44 @@ function pathParam(value: string): string {
   return encodeURIComponent(value);
 }
 
+/**
+ * The `?automated=` value for a given `showAutomated` preference.
+ *
+ * Only the literal `exclude` narrows anything server-side, so "show them" is
+ * spelled by sending nothing at all — the request for the unfiltered view is
+ * byte-identical to what every client sent before this feature existed.
+ */
+function automatedQuery(showAutomated: boolean): { automated?: string } {
+  return showAutomated ? {} : { automated: 'exclude' };
+}
+
+/**
+ * Query keys.
+ *
+ * The five keys that take `showAutomated` are exactly the five whose response
+ * body changes with the preference (`/projects`, `/harnesses`, the two scoped
+ * session lists, and the unscoped one). Leaving the flag out of even one of
+ * them is a **silent** bug rather than a loud one: react-query would happily
+ * serve the cached payload from the other setting, so a screen would keep
+ * showing the old row set and the old totals with no error anywhere.
+ *
+ * The other four keys are deliberately unkeyed on it because their responses
+ * genuinely do not vary: `status` is adapter facts, and `session`, `trace` and
+ * `compareSessions` all address sessions by explicit id, which the server
+ * resolves regardless of the filter. Keying those on the flag would only buy
+ * needless refetches on every toggle.
+ */
 export const queryKeys = {
   status: ['status'] as const,
-  projects: ['projects'] as const,
-  harnesses: ['harnesses'] as const,
-  projectSessions: (key: string) => ['projects', key, 'sessions'] as const,
-  harnessSessions: (id: string) => ['harnesses', id, 'sessions'] as const,
+  projects: (showAutomated: boolean) => ['projects', { showAutomated }] as const,
+  harnesses: (showAutomated: boolean) => ['harnesses', { showAutomated }] as const,
+  projectSessions: (key: string, showAutomated: boolean) =>
+    ['projects', key, 'sessions', { showAutomated }] as const,
+  harnessSessions: (id: string, showAutomated: boolean) =>
+    ['harnesses', id, 'sessions', { showAutomated }] as const,
   session: (id: string) => ['sessions', id] as const,
   compareSessions: (ids: string[]) => ['sessions', 'compare', ids.join(',')] as const,
-  allSessions: ['sessions', 'all'] as const,
+  allSessions: (showAutomated: boolean) => ['sessions', 'all', { showAutomated }] as const,
   trace: (id: string) => ['sessions', id, 'trace'] as const,
 };
 
@@ -52,38 +82,67 @@ export function useStatus() {
   });
 }
 
+/**
+ * Whether machine-initiated sessions are in scope for this render.
+ *
+ * Read from the preference *inside* each hook rather than passed in by callers:
+ * `SessionTable` alone is mounted from three routes, and `useProjectSessions`
+ * is additionally called once per card on the Projects index. Threading a
+ * parameter through all of those means every present and future call site has
+ * to remember it, and forgetting at one of them is invisible (that screen just
+ * quietly disagrees with the rest of the app about how many sessions exist).
+ * Sourcing it here makes the flag impossible to omit.
+ */
+function useShowAutomated(): boolean {
+  return usePrefs().showAutomated;
+}
+
 export function useProjects() {
+  const showAutomated = useShowAutomated();
   return useQuery({
-    queryKey: queryKeys.projects,
+    queryKey: queryKeys.projects(showAutomated),
     queryFn: async () =>
-      unwrap<InferResponseType<typeof api.api.projects.$get>>(await api.api.projects.$get()),
+      unwrap<InferResponseType<typeof api.api.projects.$get>>(
+        await api.api.projects.$get({ query: automatedQuery(showAutomated) }),
+      ),
   });
 }
 
 export function useHarnesses() {
+  const showAutomated = useShowAutomated();
   return useQuery({
-    queryKey: queryKeys.harnesses,
+    queryKey: queryKeys.harnesses(showAutomated),
     queryFn: async () =>
-      unwrap<InferResponseType<typeof api.api.harnesses.$get>>(await api.api.harnesses.$get()),
+      unwrap<InferResponseType<typeof api.api.harnesses.$get>>(
+        await api.api.harnesses.$get({ query: automatedQuery(showAutomated) }),
+      ),
   });
 }
 
 export function useProjectSessions(key: string) {
+  const showAutomated = useShowAutomated();
   return useQuery({
-    queryKey: queryKeys.projectSessions(key),
+    queryKey: queryKeys.projectSessions(key, showAutomated),
     queryFn: async () =>
-      unwrap<InferResponseType<(typeof api.api.projects)[':key']['sessions']['$get']>>(
-        await api.api.projects[':key'].sessions.$get({ param: { key: pathParam(key) } }),
+      unwrap<SessionsListResponse>(
+        await api.api.projects[':key'].sessions.$get({
+          param: { key: pathParam(key) },
+          query: automatedQuery(showAutomated),
+        }),
       ),
   });
 }
 
 export function useHarnessSessions(id: string) {
+  const showAutomated = useShowAutomated();
   return useQuery({
-    queryKey: queryKeys.harnessSessions(id),
+    queryKey: queryKeys.harnessSessions(id, showAutomated),
     queryFn: async () =>
-      unwrap<InferResponseType<(typeof api.api.harnesses)[':id']['sessions']['$get']>>(
-        await api.api.harnesses[':id'].sessions.$get({ param: { id: pathParam(id) } }),
+      unwrap<SessionsListResponse>(
+        await api.api.harnesses[':id'].sessions.$get({
+          param: { id: pathParam(id) },
+          query: automatedQuery(showAutomated),
+        }),
       ),
   });
 }
@@ -148,9 +207,13 @@ export function useCompareSessions(ids: string[]) {
  * the one route never collide in the query cache.
  */
 export function useAllSessions() {
+  const showAutomated = useShowAutomated();
   return useQuery({
-    queryKey: queryKeys.allSessions,
-    queryFn: async () => unwrap<SessionsListResponse>(await api.api.sessions.$get()),
+    queryKey: queryKeys.allSessions(showAutomated),
+    queryFn: async () =>
+      unwrap<SessionsListResponse>(
+        await api.api.sessions.$get({ query: automatedQuery(showAutomated) }),
+      ),
   });
 }
 

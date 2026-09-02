@@ -1,6 +1,6 @@
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useHarnesses, useProjects } from '../api/queries';
-import { setInclusive, setShowTitles, usePrefs } from '../state/prefs';
+import { setInclusive, setShowAutomated, setShowTitles, usePrefs } from '../state/prefs';
 import { CommandPalette } from './CommandPalette';
 import { Badge } from './primitives/Badge';
 import { LabeledSwitch } from './primitives/LabeledSwitch';
@@ -76,9 +76,12 @@ export function AppShell() {
 
   const projects = useProjects();
   const harnesses = useHarnesses();
-  const sessionCount = projects.data?.reduce((sum, project) => sum + project.sessionCount, 0);
-  const projectCount = projects.data?.length;
-  const harnessCount = harnesses.data?.length;
+  const sessionCount = projects.data?.projects.reduce(
+    (sum, project) => sum + project.sessionCount,
+    0,
+  );
+  const projectCount = projects.data?.projects.length;
+  const harnessCount = harnesses.data?.harnesses.length;
 
   return (
     <TooltipProvider>
@@ -214,6 +217,22 @@ export function AppShell() {
                   label="Titles"
                   checked={prefs.showTitles}
                   onCheckedChange={setShowTitles}
+                />
+
+                {/*
+                 * Lives here, next to Titles, because it is the same kind of
+                 * thing: a global display preference, not a per-screen filter.
+                 * Off by default, so most of a real machine's sessions -- the
+                 * SDK/CI/dispatch ones no person started -- stay out of the
+                 * lists and the totals until asked for. It deliberately does
+                 * NOT sit in the session toolbar: it must apply on Projects
+                 * and Harnesses too, and "Clear filters" must never turn it
+                 * off (clearing filters reveals rows, it never hides them).
+                 */}
+                <LabeledSwitch
+                  label="Automated"
+                  checked={prefs.showAutomated}
+                  onCheckedChange={setShowAutomated}
                 />
 
                 <Button

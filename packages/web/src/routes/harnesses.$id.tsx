@@ -39,6 +39,7 @@ function HarnessSessionsRoute() {
             summaries={data.summaries}
             rollups={data.rollups}
             harnesses={harnesses}
+            hiddenAutomated={data.hiddenAutomated}
             onOpen={(sessionId) => {
               void navigate({ to: '/sessions/$id', params: { id: sessionId } });
             }}

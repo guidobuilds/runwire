@@ -123,6 +123,20 @@ Mapping notes per harness are in each adapter document; the canonical definition
 | `output` | `output_tokens` | `output_tokens` | `outputTokens` | `tokens_output` |
 | `reasoningOutput` | `output_tokens_details.thinking_tokens` | `reasoning_output_tokens` | `reasoningTokens` | `tokens_reasoning` |
 
+Who or what started the session is a metric-wrapped classification, not part of `Usage`:
+
+```ts
+type InitiatorKind = 'human' | 'machine' | 'unknown';
+
+type Initiator = {
+  kind: InitiatorKind;
+  surface: string;      // harness's own raw value, unmapped (e.g. 'cli', 'sdk-py')
+  automation?: string;  // refinement of *how* a machine started it: 'sdk' | 'ci' | 'subagent-dispatch' | …
+};
+```
+
+Carried as `SessionSummary.initiator?: Metric<Initiator>` (§2.3). Confidence is deliberately asymmetric between the two kinds: a harness reports the *surface* a session arrived on, not who typed, so `human` can never be better than `medium` — a scripted `claude -p` in CI reports the same `cli` surface as a person at a terminal. A surface with no interactive path at all (an SDK, a CI runner) can be `high`, since no human is possible there. `unknown` is a surface value this adapter version does not recognize (`low`); the field is absent entirely when the harness recorded no signal at all. Classification itself is adapter-specific (§3.3); `core` contributes exactly one predicate, `isMachineInitiated(summary)` (`core/src/model/initiator.ts`), which every "automated" row filter in the product reads (§5, §8, §9) rather than re-deriving the verdict from `kind`/`surface` strings itself. It treats `unknown` and absent both as `false`, so a filter can only ever hide sessions positively known to be machine-started — an unrecognized or pre-signal session stays visible.
+
 ### 2.3 SessionSummary
 
 ```ts
@@ -136,6 +150,7 @@ type SessionSummary = {
   relation?: 'subagent' | 'teammate' | 'fork';
   depth: number;                      // 0 for roots
   agentType?: string;                 // e.g. "Explore", "forge-adversary" — a name, not a prompt
+  initiator?: Metric<Initiator>;      // human- vs machine-started, with the harness surface it derives from
   title?: { value: string; contentDerived: true };   // D7: the one content-derived field
   project: ProjectRef;
   cwd: { first: string; all: string[] };
@@ -238,6 +253,8 @@ type ScoutEvent =
       git?: { branch?: string; commit?: string; remote?: string }; at?: At }
   | { kind: 'link'; parentSourceId: string; relation: 'subagent' | 'teammate' | 'fork';
       agentType?: string; depth?: number; viaCallId?: string }   // viaCallId: the parent's tool call that spawned this child
+  | { kind: 'initiator'; initiatorKind: InitiatorKind; surface: string;
+      automation?: string; confidence: Confidence }    // who/what started the session (§2.2); adapter-classified, no `at`
   | { kind: 'observed'; at: At }                       // any timestamped record; feeds start/end bounds
   | { kind: 'model'; model: string; at?: At }
   | { kind: 'mode'; mode: string; at?: At }
@@ -285,6 +302,7 @@ Rules for adapters:
 - **Counts:** `apiCalls` = deduped `usage` events; `toolCalls`, `compactions` = event counts; `turns` = `turn` events, else derived from the adapter's `turn` hint absence → field absent.
 - **Version:** first/last; `flags.versionChanged` when they differ.
 - **Title:** kept only when `ctx.privacy.titles` is true; otherwise dropped before the summary exists (not hidden in the UI).
+- **Initiator:** first `initiator` event wins (an adapter describes a session's initiator once); the event's own `confidence` is kept as reported, unmodified by the reducer.
 
 ### 3.3 Confidence rules (fixed in core)
 
@@ -299,6 +317,8 @@ Rules for adapters:
 | Timing from 1 timestamp | low | `single-timestamp` |
 | Rollup with a contributor missing the field | ≤ medium | `partial: n of m` |
 | `primary` model/mode when `changes > 0` | medium | `changed n times` |
+
+`initiator`'s confidence is the one value this table does not fix: the reducer copies whatever confidence the adapter's `initiator` event reports, because the underlying signal is harness-specific (Claude Code's `entrypoint`/dispatch-marker vocabulary; a harness with no such signal simply never emits the event and `initiator` stays absent, §2.1). Each adapter document is the source of truth for its own values (see `docs/adapters/claude-code.md` "Initiator").
 
 ### 3.4 Linking and trees
 
@@ -322,7 +342,7 @@ After reducing every source of an adapter, `core` links children to parents by `
 type Capability =
   | 'usage.perCall' | 'usage.cumulative' | 'usage.cacheWrite' | 'usage.reasoning'
   | 'timing' | 'model' | 'mode' | 'effort' | 'version'
-  | 'turns' | 'toolCalls' | 'compactions' | 'subagents' | 'cost' | 'title' | 'git'
+  | 'turns' | 'toolCalls' | 'compactions' | 'subagents' | 'cost' | 'title' | 'git' | 'initiator'
   | 'trace.blocks' | 'trace.errors' | 'trace.harnessEvents' | 'trace.toolDurations';
 
 type SourceRef = {
@@ -416,9 +436,9 @@ Harness-provided git facts (Codex `git.repository_url`, Grok `git_root_dir`) are
 |---|---|
 | `GET /api/status` | scan state, last `ScanReport`, adapter list with `capabilities` and probe results |
 | `POST /api/rescan` | triggers an incremental scan; returns the report |
-| `GET /api/projects` | `ProjectAggregate[]` |
+| `GET /api/projects` | `{ projects: ProjectAggregate[], hiddenProjects, hiddenAutomated }` |
 | `GET /api/projects/:key/sessions` | root `SessionSummary[]` + rollups for that project |
-| `GET /api/harnesses` | `HarnessAggregate[]` |
+| `GET /api/harnesses` | `{ harnesses: HarnessAggregate[], hiddenHarnesses, hiddenAutomated }` |
 | `GET /api/harnesses/:id/sessions` | root summaries + rollups for that harness |
 | `GET /api/sessions/:id` | summary, rollup, full subtree (summaries + rollups), diagnostics |
 | `GET /api/sessions?ids=a,b,c` | summaries + rollups for the compare view |
@@ -426,6 +446,8 @@ Harness-provided git facts (Codex `git.repository_url`, Grok `git_root_dir`) are
 | `GET /api/traces?ids=a,b,c` | one `SessionTrace` per id for stacked timelines |
 | `GET /api/diagnostics` | aggregated diagnostics for the last scan |
 | `GET /*` | the embedded web build |
+
+`GET /api/projects`, `GET /api/harnesses`, `GET /api/projects/:key/sessions`, `GET /api/harnesses/:id/sessions` and the no-`ids` form of `GET /api/sessions` all accept `?automated=exclude`, which drops root sessions `core`'s `isMachineInitiated` positively identifies as machine-started (row-count noise, not a cost view — see PRODUCT-UI.md §4.7). Absent or any other value means include everything; the API's own default is unchanged, only the web app defaults its preference to excluding them. Every one of those five bodies also carries the numbers the UI needs to disclose what it is not showing. The three `…/sessions` lists carry `hiddenAutomated: number`, how many roots this scope's filter removed. The two aggregate routes carry that same session count **plus** `hiddenProjects`/`hiddenHarnesses`, how many aggregates vanished entirely because every root claiming them was machine-started — two different units, reported separately on purpose, since a projects grid hides projects while `hiddenAutomated` counts sessions (PRODUCT-UI.md §4.7). All of them are differences between the same `getRoots`/`getProjects`/`getHarnesses` seam called with and without the filter, never a second predicate, so a disclosed number cannot drift from what was actually removed. `GET /api/sessions/:id` and the `?ids=` form of `GET /api/sessions` are never narrowed by this param — a deep link or the Compare tray must always resolve a session the user explicitly asked for.
 
 Compare's missing/derived cell flags (PRODUCT-UI.md §4.6) are computed client-side, per session, from `web/src/lib/capabilities.ts` — not by a server-computed comparison matrix. (A separate `incomparable` flag — different `explain()` semantics between harnesses — was proposed and dropped per D40; an earlier server-side `comparability()` matrix was removed as unused API surface once the UI's own two-treatment flagging was confirmed to never read it.)
 
@@ -446,7 +468,7 @@ No CORS headers, no auth, no cookies. The store is a plain in-memory object; the
 ```
 
 - One `SessionTable` component for both scopes; TanStack Table handles sort/filter client-side.
-- Global state in `localStorage` (wrapped in try/catch): `inclusive` (default true), `showTitles` (default true), `compareTray` (session ids). The tray survives navigation between Projects and Harnesses; the **Compare sessions** button is in the app shell.
+- Global state in `localStorage` (wrapped in try/catch): `inclusive` (default true), `showTitles` (default true), `showAutomated` (default **false** — hide sessions `core` positively knows a machine started), `compareTray` (session ids). The tray survives navigation between Projects and Harnesses; the **Compare sessions** button is in the app shell. `showAutomated` renders as an "Automated" switch in the app shell next to "Titles"; unlike the per-table toolbar filters it is applied server-side (`?automated=`, §8), because it has to move the aggregates too, and "Clear filters" does not reset it — clearing filters must only ever reveal more rows, never hide them.
 - Every `Metric` cell renders value + confidence marker; hover shows `source`/`note`. Absent values carry the `missing` / `not provided` distinction from §2.1 **in the glyph itself, not in colour and not only on hover**: `not provided` (the harness lacks the capability) renders the visible text `n/a`, `missing` (the field is absent from this session) renders `—`, and both use one tone that clears WCAG AA on both light and dark surfaces. Hover keeps explaining which is which, but a sighted user must be able to tell them apart with no pointer. (Supersedes the earlier "absent values render as `—`, lighter for not-provided" rule — user-approved 2026-08-31. Rationale, measured: the superseded pair rendered two identical em dashes at 1.48:1 and 2.63:1 against white — both far below WCAG AA 4.5:1 — and only 1.73:1 against *each other*, so in a dense table the distinction survived only in the `title` attribute. The shipped tone is `text-zinc-500` / `dark:text-zinc-400`: 4.83:1 on white and 7.56:1 on zinc-950, one tone for both states so colour carries no signal at all.)
 - The detail tree shows exclusive and inclusive columns per node.
 - **Timeline** (`components/Timeline`): one column per `TraceStep`, colored by model for `call` steps and by `ToolCategory` for `tool` steps; prose/thinking block presence, `error` and `harness` steps drawn as markers (the article's ¶, red and dotted cards); a Σ line over the columns from `cum` (field selectable: output by default, total input, cached); turn boundaries drawn as phase separators labeled `Turn n · duration`; model and mode changes as vertical rules. Hover shows the step's numbers. Hook events are hidden by default (they roughly double the step count), toggleable. Rendered as SVG for ≤ 3 000 steps, canvas above that. Axis toggle: step index (default) or time (D33).

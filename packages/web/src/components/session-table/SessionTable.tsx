@@ -106,6 +106,14 @@ export type SessionTableProps = {
    */
   harnesses: HarnessDirectory | undefined;
   /**
+   * Root sessions the global "Automated" preference removed from this scope
+   * BEFORE this component saw them. Server-side, so it is not something
+   * `applyFilters` could reproduce — the rows genuinely are not here, and
+   * neither are their tokens in any total on screen. Passed down purely so the
+   * toolbar can disclose the size of what is missing.
+   */
+  hiddenAutomated?: number;
+  /**
    * Row activation. The routes pass a router `navigate` to `/sessions/$id`;
    * keeping it a callback is what lets this component render with no router
    * context and no query client of its own.
@@ -381,7 +389,14 @@ function buildColumns({ scope, suffix, harnesses, showTitles }: ColumnBuildOptio
  * Renders from props only — no router, no query client — so the whole view
  * costs zero `['status']` query observers however many rows it draws.
  */
-export function SessionTable({ scope, summaries, rollups, harnesses, onOpen }: SessionTableProps) {
+export function SessionTable({
+  scope,
+  summaries,
+  rollups,
+  harnesses,
+  hiddenAutomated,
+  onOpen,
+}: SessionTableProps) {
   const prefs = usePrefs();
   const [filters, setFilters] = useState<SessionFilterState>(emptyFilters);
 
@@ -471,6 +486,7 @@ export function SessionTable({ scope, summaries, rollups, harnesses, onOpen }: S
         onChange={setFilters}
         matched={data.length}
         total={allRows.length}
+        hiddenAutomated={hiddenAutomated}
       />
 
       {/*
@@ -541,7 +557,14 @@ export function SessionTable({ scope, summaries, rollups, harnesses, onOpen }: S
 
       {data.length === 0 ? (
         <p className="shrink-0 text-sm text-zinc-500 dark:text-zinc-400">
-          {allRows.length === 0 ? 'No sessions here yet.' : 'No sessions match these filters.'}
+          {allRows.length > 0
+            ? 'No sessions match these filters.'
+            : // An all-automated scope (a project that only ever ran SDK
+              // sessions) is empty for a reason the toolbar filters cannot
+              // explain, and "No sessions here yet" would be a lie there.
+              hiddenAutomated && hiddenAutomated > 0
+              ? 'Every session here was started by automation. Turn on “Automated” to see them.'
+              : 'No sessions here yet.'}
         </p>
       ) : (
         <DataTablePagination table={tableApi} />

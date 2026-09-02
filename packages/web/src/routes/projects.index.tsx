@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useProjectSessions, useProjects } from '../api/queries';
 import type { ProjectAggregate } from '../api/types';
+import { AutomatedDisclosure } from '../components/AutomatedDisclosure';
 import { EmptyState, useHasData } from '../components/EmptyState';
 import {
   GroupCard,
@@ -81,8 +82,20 @@ function ProjectsIndexRoute() {
       />
 
       <QueryState isPending={projects.isPending} error={projects.error} refetch={projects.refetch}>
+        {/*
+          A project exists only as long as some root session claims it, so the
+          preference does not shrink these cards — it deletes them (184 of 204
+          on real data). Without this line the single screen that hides the most
+          is the one screen with no trace of having hidden anything.
+        */}
+        <AutomatedDisclosure
+          visibleGroups={projects.data?.projects.length ?? 0}
+          hiddenGroups={projects.data?.hiddenProjects ?? 0}
+          hiddenAutomated={projects.data?.hiddenAutomated ?? 0}
+          groupNoun={['project', 'projects']}
+        />
         <GroupGrid>
-          {sortByLatestActivityDesc(projects.data ?? []).map((aggregate) => (
+          {sortByLatestActivityDesc(projects.data?.projects ?? []).map((aggregate) => (
             <ProjectCard
               key={aggregate.project.key}
               aggregate={aggregate}

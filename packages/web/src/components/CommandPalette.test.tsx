@@ -11,14 +11,28 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, test } from 'vitest';
 import { queryKeys } from '../api/queries';
-import type { SessionSummary } from '../api/types';
+import type { InitiatorKind, SessionSummary } from '../api/types';
+import { setShowAutomated } from '../state/prefs';
 import { CommandPalette } from './CommandPalette';
 
-function makeSummary(id: string, title: string | undefined, projectName: string): SessionSummary {
+function makeSummary(
+  id: string,
+  title: string | undefined,
+  projectName: string,
+  initiatorKind?: InitiatorKind,
+): SessionSummary {
   return {
     id,
     harness: 'claude-code',
     depth: 0,
+    initiator:
+      initiatorKind === undefined
+        ? undefined
+        : {
+            value: { kind: initiatorKind, surface: initiatorKind === 'machine' ? 'sdk-py' : 'cli' },
+            confidence: 'high',
+            source: 'claude-code/initiator',
+          },
     title: title === undefined ? undefined : { value: title, contentDerived: true },
     project: { key: `${projectName}-key`, name: projectName, identity: 'remote' },
     cwd: { first: '/tmp/work', all: ['/tmp/work'] },
@@ -87,6 +101,10 @@ describe('CommandPalette', () => {
   afterEach(() => {
     cleanup();
     openedSessionId = null;
+    // `usePrefs` reads a module-level store backed by happy-dom's real
+    // localStorage, so a test that flips the preference would otherwise leak
+    // into every test after it in this file.
+    setShowAutomated(false);
   });
 
   test('is closed by default, opens on the search button, closes on Escape', async () => {
@@ -129,7 +147,7 @@ describe('CommandPalette', () => {
 
   test('searches client-side over sessions already sitting in the query cache', async () => {
     const client = new QueryClient();
-    client.setQueryData(queryKeys.projectSessions('proj-a'), {
+    client.setQueryData(queryKeys.projectSessions('proj-a', false), {
       summaries: [makeSummary('claude-code:aaa', 'Fix the flaky test', 'Scout')],
       rollups: {},
     });
@@ -152,7 +170,7 @@ describe('CommandPalette', () => {
 
   test('selecting a result navigates to the session detail route and closes the dialog', async () => {
     const client = new QueryClient();
-    client.setQueryData(queryKeys.projectSessions('proj-a'), {
+    client.setQueryData(queryKeys.projectSessions('proj-a', false), {
       summaries: [makeSummary('claude-code:aaa', 'Fix the flaky test', 'Scout')],
       rollups: {},
     });
@@ -233,6 +251,71 @@ describe('CommandPalette', () => {
         await user.tab({ shift: true });
         expect(dialog.contains(document.activeElement)).toBe(true);
       }
+    });
+  });
+
+  /*
+   * The reachable-but-awkward state the automated filter creates: the cache is
+   * NOT uniformly filtered, because `sessions/:id` (deep link, Back button) and
+   * `sessions?ids=` (Compare) deliberately resolve machine-started sessions
+   * while the lists hide them. The palette follows the preference so that
+   * "hidden means hidden" stays true everywhere the user counts things, and
+   * says how many it skipped so the way back is discoverable.
+   */
+  describe('automated sessions', () => {
+    function cacheWithBoth(): QueryClient {
+      const client = new QueryClient();
+      client.setQueryData(queryKeys.projectSessions('proj-a', false), {
+        summaries: [makeSummary('claude-code:aaa', 'Human session', 'Scout', 'human')],
+        rollups: {},
+        hiddenAutomated: 1,
+      });
+      // Only reachable because Session detail is never filtered.
+      client.setQueryData(queryKeys.session('claude-code:zzz'), {
+        summary: makeSummary('claude-code:zzz', 'Machine session', 'Scout', 'machine'),
+        rollup: undefined,
+        subtree: { summaries: [], rollups: {} },
+        diagnostics: [],
+      });
+      return client;
+    }
+
+    test('with the preference off, a machine session is not offered and the count is disclosed', async () => {
+      mount(cacheWithBoth());
+      expect(await screen.findByText('index view')).not.toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /Search/ }));
+
+      expect(await screen.findByText('Human session')).not.toBeNull();
+      expect(screen.queryByText('Machine session')).toBeNull();
+      expect(screen.getByText(/1 automated session not searched/)).not.toBeNull();
+    });
+
+    test('with the preference on, it is searchable and the disclosure disappears', async () => {
+      setShowAutomated(true);
+      mount(cacheWithBoth());
+      expect(await screen.findByText('index view')).not.toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /Search/ }));
+
+      expect(await screen.findByText('Machine session')).not.toBeNull();
+      expect(screen.getByText('Human session')).not.toBeNull();
+      expect(screen.queryByText(/automated session/)).toBeNull();
+    });
+
+    test('a session with no initiator signal is never hidden', async () => {
+      const client = new QueryClient();
+      client.setQueryData(queryKeys.session('claude-code:old'), {
+        summary: makeSummary('claude-code:old', 'Pre-entrypoint session', 'Scout'),
+        rollup: undefined,
+        subtree: { summaries: [], rollups: {} },
+        diagnostics: [],
+      });
+
+      mount(client);
+      expect(await screen.findByText('index view')).not.toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /Search/ }));
+
+      expect(await screen.findByText('Pre-entrypoint session')).not.toBeNull();
+      expect(screen.queryByText(/automated session/)).toBeNull();
     });
   });
 });

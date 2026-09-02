@@ -28,10 +28,13 @@ Records are one JSON object per line. Top-level `type` drives the mapping.
 | `permission-mode` | `mode` | `permissionMode` |
 | `cost-state` *(newer)* | `cost` | `totalCostUSD` (last one wins) |
 | `ai-title` | `meta.title` (only when `privacy.titles`) | `aiTitle` |
-| any record | `cwd`, `version` on change | `cwd`, `version`, `gitBranch` |
+| any record | `cwd`, `version` on change; `entrypoint` (first observed value wins — session-wide fact repeated on most records) feeds `initiator` (see "Initiator" below) | `cwd`, `version`, `gitBranch`, `entrypoint` |
 | `attachment` | `harnessEvent` for `attachment.type` ∈ `hook_success` / `hook_system_message` (`name = hook:<hookName>`), `command_permissions` (`permission`), `plan_mode` / `plan_mode_exit` / `auto_mode` (mode markers); other attachment types (`total_tokens_reminder`, `file`, `edited_text_file`, deltas…) ignored | `attachment.type`, `attachment.hookName` |
-| `last-prompt`, `agent-name`, `agent-setting`, `mode`, `atis-latch`, `bridge-session`, `queue-operation`, `file-history-*`, `summary` | nothing (counted as known-ignored) | — |
+| `agent-setting` | nothing directly; its mere *presence* in the file (via the already-allowlisted `type`) is the dispatch-marker signal fed into `initiator` — the record's own payload is never read | `type` only |
+| `last-prompt`, `agent-name`, `mode`, `atis-latch`, `bridge-session`, `queue-operation`, `file-history-*`, `summary` | nothing (counted as known-ignored) | — |
 | unknown `type` | counted; one aggregated `unknown-record-type` diagnostic per file | — |
+
+`promptSource` is allowlisted (kept in memory, visible in diagnostics) but is not read by any mapping above — see "Initiator" below for why.
 
 `<synthetic>` as `message.model` is ignored for model tallies and its usage is kept (it carries real numbers).
 
@@ -39,13 +42,14 @@ Records are one JSON object per line. Top-level `type` drives the mapping.
 
 ## Allowlist (projection)
 
-Generated from `src/allowlist.ts` in M2. Draft:
+Generated from `src/allowlist.ts` in M2; hand-maintained here, so this block must be kept byte-for-byte in step with the source file rather than actually generated. Draft:
 
 ```ts
 {
   type: true, subtype: true, uuid: true, parentUuid: true, requestId: true,
   timestamp: true, cwd: true, version: true, gitBranch: true,
-  isSidechain: true, isMeta: true, isCompactSummary: true, agentId: true, effort: true,
+  isSidechain: true, isMeta: true, isCompactSummary: true, agentId: true,
+  entrypoint: true, promptSource: true, effort: true,
   permissionMode: true, durationMs: true, totalCostUSD: true, aiTitle: true,
   compactMetadata: { trigger: true, preTokens: true, postTokens: true },
   message: {
@@ -58,7 +62,9 @@ Generated from `src/allowlist.ts` in M2. Draft:
 }
 ```
 
-Explicitly excluded and why: `message.content[].text|input|thinking|content` (content), everything in `attachment` except `type` and `hookName` (attachments embed file contents, hook stdout and injected context), `toolUseResult` (tool output), `lastPrompt`, `agentName`, `slug` (prompt-derived), `summary`.
+Explicitly excluded and why: `message.content[].text|input|thinking|content` (content), everything in `attachment` except `type` and `hookName` (attachments embed file contents, hook stdout and injected context), `toolUseResult` (tool output), `lastPrompt`, `agentName`, `slug` (prompt-derived), `summary`, `agentSetting` (a user-authored agent name — only the *presence* of the `agent-setting` record is read, via the already-allowlisted `type`, never its payload).
+
+`entrypoint` and `promptSource` are closed-ish enums the CLI itself emits (the surface a session arrived on, and the kind of a prompt) — fixed vocabularies with no user- or model-authored content, admissible under D7 on the same grounds as `model`/`mode`/`stop_reason`. They also survive the dev-only fixture redactor (`apps/scout/src/fixture.ts`) only when their observed value is in `CLAUDE_CODE_ENTRYPOINTS` / `CLAUDE_CODE_PROMPT_SOURCES` (`src/initiator.ts`); an unrecognized value degrades to filler, the same rule the redactor applies to `type`-adjacent enum fields, so free text can never leak into a committed fixture through either field.
 
 ## Usage mapping
 
@@ -73,6 +79,35 @@ Explicitly excluded and why: `message.content[].text|input|thinking|content` (co
 **Deduplication is mandatory.** One API response is written as several `assistant` records (text block, tool-use block…) that share `requestId` and repeat the same `usage`. In the reference session: 782 assistant records, 386 distinct `requestId`s; naive `output` sum 1 117 279 vs deduped 438 086. `usage.dedupeKey = requestId`; records without `requestId` are treated as unique.
 
 `cost` comes from the last `cost-state` record and is labeled `harness-reported`. Whether it includes subagent usage is an open question; until verified, sessions with children carry note `may include subagents`.
+
+## Initiator
+
+Classifies who or what started a session (`src/initiator.ts`, `classifyInitiator`), feeding `SessionSummary.initiator?: Metric<Initiator>` (ARCHITECTURE.md §2.2). Two signals, both allowlisted, both closed-ish enums with no user- or model-authored content:
+
+- **`entrypoint`** — a record-level field naming the *surface* the session came in on. The first observed value on the file wins (it is a session-wide fact repeated on most records).
+- **the presence of an `agent-setting` record** — the dispatch marker Claude Code writes when the session was dispatched by another agent framework rather than opened by a person. Orthogonal to `entrypoint`; only the record's *presence* is read, never its payload (`agentSetting` itself is not allowlisted).
+
+`entrypoint` values classify as follows:
+
+| Machine surfaces (`kind: 'machine'`, confidence `high`) | `automation` |
+|---|---|
+| `sdk-cli`, `sdk-ts`, `sdk-py` | `sdk` |
+| `claude-code-github-action` | `ci` |
+| `mcp`, `bench`, `local-agent`, `local_agent`, `claude-security`, `remote`, `remote_baku`, `remote_cowork`, `remote_trigger`, `remote_cowork_trigger`, `remote_desktop`, `remote_mobile` | — |
+
+| Human surfaces (`kind: 'human'`, confidence `medium`, always) |
+|---|
+| `cli`, `claude-desktop`, `claude-desktop-3p`, `claude-vscode`, `ssh-remote`, `claude_in_slack`, `claude-in-slack`, `claude-in-teams`, `claude-coworker`, `claude-coworker-terminal` |
+
+Any other observed value classifies `kind: 'unknown'` at `low` (an adapter version that does not yet recognize a new surface) rather than breaking. If no `entrypoint` was observed at all: no dispatch marker → `initiator` is left absent (the session predates the signal, or it genuinely carries none); dispatch marker present → `kind: 'machine'`, `surface: 'unknown'`, `automation: 'subagent-dispatch'`, `medium` (the marker alone says "some agent framework", not which surface). The dispatch marker only ever *upgrades* a non-machine verdict — applying it over an already-machine `entrypoint` would replace a more specific, `high`-confidence automation with a weaker one.
+
+**Confidence asymmetry, and why it's real, not a bug:** `human` can never be better than `medium`, because a harness reports the *surface* a session arrived on, not who typed — a scripted `claude -p` in CI reports `cli`, the exact same value a person types at a terminal. A machine surface can be `high` because no interactive human is possible there (no person runs `sdk-py`). This asymmetry is modeled explicitly (`InitiatorKind`'s doc comment, ARCHITECTURE.md §2.2) rather than flattened into one confidence per kind.
+
+**`promptSource` is deliberately not an input to the classification**, though it is allowlisted for diagnostics. Its `sdk` value is emitted both by genuine SDK sessions and by the `claude-desktop` surface, so it cannot separate the two — using it would misclassify the one real `claude-desktop` root observed on the reference machine as machine-started. `entrypoint` and the dispatch marker are the only two signals read.
+
+`initiator` is a declared `Capability` (ARCHITECTURE.md §4), enforced bidirectionally by the adapter contract kit like every other capability.
+
+**Measured, reference machine, real `~/.claude/projects` (2026-09-01):** 383 root sessions → 318 classified `machine` (308 by `entrypoint`, 10 by the dispatch marker alone), 64 `human`/`cli`, 1 `human`/`claude-desktop`. That is 83 % of *rows* — the machine-started sessions are noise in a session list, not a meaningful share of spend: measured separately, they account for roughly 2–3 % of total token mass on the same machine. This feature is documented and shipped as row-count/provenance cleanup, not as a cost or savings view.
 
 ## Tool categories
 
@@ -94,7 +129,7 @@ Harness event vocabulary (`harnessEventNames`): `hook:<hookEvent>` (the part of 
 
 ## Capabilities
 
-`trace.blocks`, `trace.errors`, `trace.harnessEvents`, `usage.perCall`, `usage.cacheWrite`, `usage.reasoning`, `timing`, `model`, `mode`, `effort`, `version`, `turns`, `toolCalls`, `compactions`, `subagents`, `cost` *(newer versions only — declared; absence in old files shows as "missing in this session")*, `title`, `git` (branch only).
+`usage.perCall`, `usage.cacheWrite`, `usage.reasoning`, `timing`, `model`, `mode`, `effort`, `version`, `turns`, `toolCalls`, `compactions`, `subagents`, `cost` *(newer versions only — declared; absence in old files shows as "missing in this session")*, `title`, `git` (branch only), `initiator` (see "Initiator" below), `trace.blocks`, `trace.errors`, `trace.harnessEvents`.
 
 ## Known variations
 
@@ -108,7 +143,7 @@ Harness event vocabulary (`harnessEventNames`): `hook:<hookEvent>` (the part of 
 - `tool_result.is_error` was `true` on 8 of 358 results; `stop_reason` ∈ `tool_use`, `end_turn`, `stop_sequence`.
 - Hook attachments are ~1 000 per large session (Pre/PostToolUse for every call); the timeline hides them by default.
 - `PostToolUseFailure:<tool>` is a real hook event, alongside `PreToolUse`/`PostToolUse` — found running the full machine-wide cold scan, not the earlier structure-only sample.
-- `agent-setting` (`{ type, agentSetting, sessionId }`) is a real top-level record type — a session-scoped setting marker, no timestamp or usage — added to the known-ignored list after the same cold scan.
+- `agent-setting` (`{ type, agentSetting, sessionId }`) is a real top-level record type — a session-scoped setting marker, no timestamp or usage — first found in the same cold scan. Its payload (`agentSetting`) stays unread; only its presence is now read, as the dispatch-marker signal for `initiator` (see "Initiator" above).
 
 ## Fixtures (M2)
 

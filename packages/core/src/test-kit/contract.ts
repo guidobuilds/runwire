@@ -162,6 +162,7 @@ export function adapterContract(opts: AdapterContractOptions): void {
           if (e.kind === 'cost') observed.add('cost');
           if (e.kind === 'meta' && e.title) observed.add('title');
           if (e.kind === 'meta' && e.git) observed.add('git');
+          if (e.kind === 'initiator') observed.add('initiator');
         }
       }
 

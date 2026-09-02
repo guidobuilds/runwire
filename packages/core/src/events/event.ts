@@ -1,5 +1,6 @@
 import type { DiagnosticLevel } from '../model/diagnostic';
-import type { SessionRelation } from '../model/session';
+import type { Confidence } from '../model/metric';
+import type { InitiatorKind, SessionRelation } from '../model/session';
 import type { ToolCategory } from '../model/trace';
 import type { Usage } from '../model/usage';
 
@@ -33,6 +34,24 @@ export type LinkEvent = {
   depth?: number;
   /** The parent's tool call that spawned this child. */
   viaCallId?: string;
+};
+
+/**
+ * Who started the session, as classified by the adapter (only the adapter
+ * knows its harness's surface vocabulary). Carries its own `confidence`
+ * because the strength of the signal varies per surface, not per kind — an
+ * SDK surface is `high` machine evidence while an interactive surface is only
+ * `medium` human evidence. Deliberately carries no `at`: it describes the
+ * whole session, and touching the timestamp window here would perturb
+ * timing/duration derivation in reduce.
+ */
+export type InitiatorEvent = {
+  kind: 'initiator';
+  initiatorKind: InitiatorKind;
+  /** Raw harness surface value, unmapped. */
+  surface: string;
+  automation?: string;
+  confidence: Confidence;
 };
 
 export type ObservedEvent = { kind: 'observed'; at: At };
@@ -108,6 +127,7 @@ export type DiagnosticEvent = {
 export type ScoutEvent =
   | MetaEvent
   | LinkEvent
+  | InitiatorEvent
   | ObservedEvent
   | ModelEvent
   | ModeEvent

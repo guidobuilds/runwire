@@ -10,7 +10,7 @@ import { type ReactNode, useEffect, useReducer } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Capability, Metric, SessionRollup, SessionSummary } from '../api/types';
 import type { HarnessDirectory } from '../components/session-table/model';
-import { clearTray, isInTray } from '../state/prefs';
+import { clearTray, isInTray, setShowAutomated, setTray } from '../state/prefs';
 import {
   type CompareSearchInput,
   parseCompareIds,
@@ -615,5 +615,85 @@ describe('CompareRoute — matrix, D40 cell treatments, no winner styling', () =
 
     expect(view.state.location.pathname).toBe('/compare');
     expect(screen.getByText('Trace')).not.toBeNull();
+  });
+
+  /*
+   * The tray outlives a preference change (it persists in localStorage), so
+   * "compare sessions the tables refuse to list" is a state a real user reaches
+   * -- add a machine session to the tray, then turn "Automated" off. The
+   * decision (grill trap 1/2): Compare keeps them, because every id there is an
+   * explicit choice, and labels them so the inconsistency with the lists is
+   * explained rather than mysterious. Nothing here may silently rewrite the
+   * tray.
+   */
+  describe('automated sessions the lists are hiding', () => {
+    const MACHINE = compareSummary({
+      id: 'claude-code:machine',
+      title: { value: 'SDK run', contentDerived: true },
+      initiator: {
+        value: { kind: 'machine', surface: 'sdk-py', automation: 'sdk' },
+        confidence: 'high',
+        source: 'claude-code/initiator',
+      },
+    });
+    const HUMAN = compareSummary({
+      id: 'claude-code:human',
+      title: { value: 'Typed run', contentDerived: true },
+      initiator: {
+        value: { kind: 'human', surface: 'cli' },
+        confidence: 'medium',
+        source: 'claude-code/initiator',
+      },
+    });
+
+    afterEach(() => {
+      setShowAutomated(false);
+    });
+
+    function mountBoth() {
+      harnessDirectory = HARNESSES;
+      shared.compare = {
+        data: { summaries: [MACHINE, HUMAN], rollups: {} },
+        isPending: false,
+        error: undefined,
+        refetch: () => {},
+      };
+      setTray(['claude-code:machine', 'claude-code:human']);
+      return mountCompare('/compare?ids=claude-code:machine,claude-code:human');
+    }
+
+    // The label appears twice per session (matrix column header + ribbon
+    // strip), so column identity is asserted through the per-column remove
+    // button's aria-label, which is unique.
+    const machineColumn = () =>
+      screen.findByRole('button', { name: 'Remove SDK run from comparison' });
+
+    test('renders the machine session as a full column and marks it automated', async () => {
+      mountBoth();
+      expect(await machineColumn()).not.toBeNull();
+      expect(
+        screen.getByRole('button', { name: 'Remove Typed run from comparison' }),
+      ).not.toBeNull();
+      // One badge, on the machine column only.
+      expect(screen.getAllByText('automated')).toHaveLength(1);
+      // Its data is really rendered, not a placeholder column: `sdk-py`'s row
+      // values come through the same cells every other column uses.
+      expect(screen.getAllByText('500').length).toBeGreaterThan(0);
+    });
+
+    test('the tray is not silently rewritten to drop it', async () => {
+      mountBoth();
+      expect(await machineColumn()).not.toBeNull();
+      // `CompareRoute` syncs the tray to what it is showing; showing it and
+      // dropping it from the tray would be the worst of both worlds.
+      expect(isInTray('claude-code:machine')).toBe(true);
+    });
+
+    test('with the preference on, the badge disappears (nothing is being hidden anywhere)', async () => {
+      setShowAutomated(true);
+      mountBoth();
+      expect(await machineColumn()).not.toBeNull();
+      expect(screen.queryByText('automated')).toBeNull();
+    });
   });
 });

@@ -41,6 +41,13 @@ const ROUTES: ReadonlyArray<{ pattern: RegExp; param: string; body: unknown }> =
   },
 ];
 
+/** Routes with no path param, for the `?automated=` assertions below. */
+const PLAIN_ROUTES: ReadonlySet<string> = new Set([
+  '/api/projects',
+  '/api/harnesses',
+  '/api/sessions',
+]);
+
 function toPathname(url: string): string {
   return new URL(url, 'http://localhost').pathname;
 }
@@ -50,6 +57,14 @@ function recordingFetch(input: RequestInfo | URL): Promise<Response> {
     typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
   requested.push(url);
   const pathname = toPathname(url);
+  if (PLAIN_ROUTES.has(pathname)) {
+    return Promise.resolve(
+      new Response(JSON.stringify({ summaries: [], rollups: {}, hiddenAutomated: 0 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+  }
   for (const route of ROUTES) {
     const match = route.pattern.exec(pathname);
     if (match?.[1] !== undefined) {
@@ -155,10 +170,11 @@ describe('path-param encoding in the api layer', () => {
 
   test('the query key stays the raw value, so callers cache by identity', async () => {
     const { queryKeys } = await import('./queries');
-    expect(queryKeys.projectSessions('github.com/org/repo')).toEqual([
+    expect(queryKeys.projectSessions('github.com/org/repo', false)).toEqual([
       'projects',
       'github.com/org/repo',
       'sessions',
+      { showAutomated: false },
     ]);
   });
 
@@ -188,3 +204,108 @@ describe('path-param encoding in the api layer', () => {
  * tree, driven with hostile keys against a fake network that routes `:param`
  * the way Hono does.
  */
+
+/**
+ * The `?automated=` wiring, end to end through the hooks.
+ *
+ * Two separate failure modes are pinned here, and only the first is visible in
+ * a browser: (1) the request must actually carry the param, and (2) the query
+ * KEY must carry the preference. Getting (2) wrong is silent — react-query
+ * serves the payload it already cached under the same key, so the screen keeps
+ * showing the other setting's rows and totals with no error anywhere.
+ */
+describe('the automated preference reaches the network and the cache key', () => {
+  afterEach(async () => {
+    const { setShowAutomated } = await import('../state/prefs');
+    setShowAutomated(false);
+  });
+
+  async function urlsFor(hookName: 'useProjects' | 'useHarnesses' | 'useAllSessions') {
+    const mod = await import('./queries');
+    const hook = mod[hookName];
+    const { result } = renderHook(() => hook(), { wrapper: makeWrapper() });
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+    return requested.map((url) => new URL(url, 'http://localhost'));
+  }
+
+  test.each(['useProjects', 'useHarnesses', 'useAllSessions'] as const)(
+    '%s sends automated=exclude while the preference is off (the default)',
+    async (hookName) => {
+      const urls = await urlsFor(hookName);
+      expect(urls).toHaveLength(1);
+      expect(urls[0]?.searchParams.get('automated')).toBe('exclude');
+    },
+  );
+
+  test.each(['useProjects', 'useHarnesses', 'useAllSessions'] as const)(
+    '%s sends no automated param at all once the preference is on',
+    async (hookName) => {
+      const { setShowAutomated } = await import('../state/prefs');
+      setShowAutomated(true);
+      const urls = await urlsFor(hookName);
+      expect(urls).toHaveLength(1);
+      // Not `automated=include`: the unfiltered request stays byte-identical to
+      // what every client sent before this feature existed.
+      expect(urls[0]?.searchParams.has('automated')).toBe(false);
+    },
+  );
+
+  test('the scoped session lists carry it alongside their path param', async () => {
+    const { useProjectSessions } = await import('./queries');
+    renderHook(() => useProjectSessions('github.com/org/repo'), { wrapper: makeWrapper() });
+    await waitFor(() => {
+      expect(requested.length).toBeGreaterThan(0);
+    });
+    const url = new URL(requested[0] ?? '', 'http://localhost');
+    expect(url.pathname).toBe('/api/projects/github.com%2Forg%2Frepo/sessions');
+    expect(url.searchParams.get('automated')).toBe('exclude');
+  });
+
+  test('toggling the preference refetches instead of serving the cached other-setting payload', async () => {
+    // The behavioral form of the key assertion below, on ONE QueryClient (a
+    // real app has one). If a key omitted the flag, react-query would answer
+    // the second render from cache and the screen would keep the first
+    // setting's rows and totals -- no error, no loading state, nothing to see.
+    const { useAllSessions } = await import('./queries');
+    const { setShowAutomated } = await import('../state/prefs');
+    const wrapper = makeWrapper();
+
+    const first = renderHook(() => useAllSessions(), { wrapper });
+    await waitFor(() => {
+      expect(first.result.current.isSuccess).toBe(true);
+    });
+    expect(requested).toHaveLength(1);
+
+    setShowAutomated(true);
+    await waitFor(() => {
+      expect(requested).toHaveLength(2);
+    });
+    expect(new URL(requested[1] ?? '', 'http://localhost').searchParams.has('automated')).toBe(
+      false,
+    );
+  });
+
+  test('all five affected keys change with the preference, and only those five', async () => {
+    const { queryKeys } = await import('./queries');
+    const affected = [
+      queryKeys.projects,
+      queryKeys.harnesses,
+      queryKeys.allSessions,
+      (v: boolean) => queryKeys.projectSessions('p', v),
+      (v: boolean) => queryKeys.harnessSessions('h', v),
+    ];
+    for (const build of affected) {
+      expect(JSON.stringify(build(false))).not.toBe(JSON.stringify(build(true)));
+    }
+
+    // The unfiltered routes must NOT be keyed on it: they resolve sessions by
+    // explicit id regardless of the preference, so keying them would only buy
+    // a pointless refetch on every toggle.
+    expect(queryKeys.session('s')).toEqual(['sessions', 's']);
+    expect(queryKeys.trace('s')).toEqual(['sessions', 's', 'trace']);
+    expect(queryKeys.compareSessions(['a', 'b'])).toEqual(['sessions', 'compare', 'a,b']);
+    expect(queryKeys.status).toEqual(['status']);
+  });
+});

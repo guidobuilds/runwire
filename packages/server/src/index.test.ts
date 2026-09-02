@@ -100,9 +100,16 @@ describe('GET /api/projects and /api/projects/:key/sessions', () => {
     const { app } = await scannedApp();
     const res = await app.request('/api/projects');
     expect(res.status).toBe(200);
-    const body = (await res.json()) as Array<{ project: { key: string }; sessionCount: number }>;
-    expect(Array.isArray(body)).toBe(true);
-    expect(body.length).toBeGreaterThan(0);
+    const body = (await res.json()) as {
+      projects: Array<{ project: { key: string }; sessionCount: number }>;
+      hiddenProjects: number;
+      hiddenAutomated: number;
+    };
+    expect(Array.isArray(body.projects)).toBe(true);
+    expect(body.projects.length).toBeGreaterThan(0);
+    // Unfiltered request: the disclosure is present and says nothing is hidden.
+    expect(body.hiddenProjects).toBe(0);
+    expect(body.hiddenAutomated).toBe(0);
   });
 
   test('a real project key returns its root summaries + rollups', async () => {
@@ -136,8 +143,14 @@ describe('GET /api/harnesses and /api/harnesses/:id/sessions', () => {
     const { app } = await scannedApp();
     const res = await app.request('/api/harnesses');
     expect(res.status).toBe(200);
-    const body = (await res.json()) as Array<{ harness: string }>;
-    expect(body.some((h) => h.harness === 'fake')).toBe(true);
+    const body = (await res.json()) as {
+      harnesses: Array<{ harness: string }>;
+      hiddenHarnesses: number;
+      hiddenAutomated: number;
+    };
+    expect(body.harnesses.some((h) => h.harness === 'fake')).toBe(true);
+    expect(body.hiddenHarnesses).toBe(0);
+    expect(body.hiddenAutomated).toBe(0);
   });
 
   test("harness 'fake' returns root summaries + rollups", async () => {
@@ -194,7 +207,7 @@ describe('GET /api/sessions?ids=', () => {
   // rather than deleting its coverage silently.
   test('missing ids returns every root session, not a 400', async () => {
     const { app, store } = await scannedApp();
-    const roots = store.getRoots();
+    const roots = store.getRoots({ excludeAutomated: false });
     const res = await app.request('/api/sessions');
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -316,9 +329,9 @@ describe('real Claude Code fixtures', () => {
     const { app } = await fixtureApp('subagents');
     const res = await app.request('/api/projects');
     expect(res.status).toBe(200);
-    const body = (await res.json()) as unknown[];
-    expect(Array.isArray(body)).toBe(true);
-    expect(body.length).toBeGreaterThan(0);
+    const body = (await res.json()) as { projects: unknown[] };
+    expect(Array.isArray(body.projects)).toBe(true);
+    expect(body.projects.length).toBeGreaterThan(0);
   });
 
   test('subagents fixture: GET /api/sessions/:id returns the subtree with the subagent present', async () => {

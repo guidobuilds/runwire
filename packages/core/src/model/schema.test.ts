@@ -31,6 +31,10 @@ function makeSummary(overrides: Partial<SessionSummary> = {}): SessionSummary {
     cwd: { first: '/home/u/y', all: ['/home/u/y'] },
     timing: { startedAt: metric('2026-01-01T00:00:00Z'), endedAt: metric('2026-01-01T00:10:00Z') },
     model: { primary: metric('claude-opus-5'), all: ['claude-opus-5'], changes: 0 },
+    // Optional fields must be set here or the round-trip test below is inert:
+    // z.object() silently accepts an absent optional, so an unmodelled field
+    // only fails the round-trip if the sample actually carries it.
+    initiator: metric({ kind: 'machine' as const, surface: 'sdk-py', automation: 'sdk' }),
     flags: {},
     usage: { output: metric(100) },
     counts: {},

@@ -5,6 +5,13 @@ import { discover, probe } from './discover';
 // Re-exported: apps/scout/src/fixture.ts (the dev-only redaction tool) needs
 // this adapter's own allowlist to know what to redact (docs/ARCHITECTURE.md §1).
 export { claudeCodeAllowlist } from './allowlist';
+// Re-exported for the same reason: the redactor keeps `entrypoint`/`promptSource`
+// literal values, so it needs this adapter's vocabularies to bound what it keeps.
+export {
+  CLAUDE_CODE_ENTRYPOINTS,
+  CLAUDE_CODE_PROMPT_SOURCES,
+  classifyInitiator,
+} from './initiator';
 
 import { parse } from './parse';
 import { claudeCodeHarnessEventNames, claudeCodeToolCategory } from './tool-category';
@@ -25,6 +32,7 @@ const CAPABILITIES: readonly Capability[] = [
   'cost',
   'title',
   'git',
+  'initiator',
   'trace.blocks',
   'trace.errors',
   'trace.harnessEvents',

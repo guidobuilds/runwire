@@ -8,7 +8,14 @@ import type { Projection } from '@scout/core';
  * Explicitly excluded and why: message.content[].text|input|thinking|content
  * (content), everything in `attachment` except `type`/`hookName` (attachments
  * embed file contents, hook stdout and injected context), `toolUseResult`
- * (tool output), `lastPrompt`, `agentName`, `slug` (prompt-derived), `summary`.
+ * (tool output), `lastPrompt`, `agentName`, `slug` (prompt-derived), `summary`,
+ * `agentSetting` (a user-authored agent name; only the *presence* of the
+ * `agent-setting` record is read, via the already-allowlisted `type`).
+ *
+ * `entrypoint` and `promptSource` are closed enums emitted by the CLI itself
+ * (the surface the session came in on, and the kind of prompt) - fixed
+ * vocabularies with no user- or model-authored content, which is what makes
+ * them admissible under D7. See ./initiator.ts for the value spaces.
  */
 export const claudeCodeAllowlist: Projection = {
   type: true,
@@ -24,6 +31,8 @@ export const claudeCodeAllowlist: Projection = {
   isMeta: true,
   isCompactSummary: true,
   agentId: true,
+  entrypoint: true,
+  promptSource: true,
   effort: true,
   permissionMode: true,
   durationMs: true,

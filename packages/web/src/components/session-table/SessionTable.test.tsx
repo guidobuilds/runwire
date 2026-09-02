@@ -11,7 +11,15 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { queryKeys } from '../../api/queries';
 import type { Capability, Metric, SessionRollup, SessionSummary } from '../../api/types';
-import { clearTray, isInTray, setInclusive, setShowTitles } from '../../state/prefs';
+import {
+  clearTray,
+  isInTray,
+  PREFS_STORAGE_KEY,
+  setInclusive,
+  setShowAutomated,
+  setShowTitles,
+  usePrefs,
+} from '../../state/prefs';
 import { ConnectedMetricCell } from '../primitives/MetricCell';
 import { useHarnessDirectory } from './harness-directory';
 import type { HarnessDirectory } from './model';
@@ -1256,5 +1264,147 @@ describe('useHarnessDirectory', () => {
     expect(directory?.['claude-code']?.displayName).toBe('Claude Code');
     expect(directory?.['claude-code']?.capabilities).toEqual(CAPS);
     expect(directory?.unknown).toBeUndefined();
+  });
+});
+
+/**
+ * The "Automated" preference is NOT a toolbar filter, and this suite is what
+ * keeps the two apart.
+ *
+ * `emptyFilters()` documents the invariant that every empty filter value means
+ * "no narrowing" (filters.ts). Putting the preference in there would invert
+ * that for one field: "Clear filters" would start *hiding* rows. So the
+ * preference lives in the prefs store, which "Clear filters" cannot reach.
+ */
+describe('the Automated preference vs. Clear filters', () => {
+  /** Reads the live preference through the same hook the app uses. */
+  function PrefProbe() {
+    const prefs = usePrefs();
+    return <p>showAutomated:{String(prefs.showAutomated)}</p>;
+  }
+
+  afterEach(() => {
+    setShowAutomated(false);
+  });
+
+  test('Clear filters resets the toolbar filters and leaves the preference alone', () => {
+    setShowAutomated(true);
+    withClient(
+      <>
+        <PrefProbe />
+        <SessionTable
+          scope="project"
+          summaries={SUMMARIES}
+          rollups={ROLLUPS}
+          harnesses={DIRECTORY}
+        />
+      </>,
+    );
+
+    fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'charlie' } });
+    expect(orderedLabels()).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+
+    expect(orderedLabels()).toHaveLength(4);
+    expect(screen.getByText('showAutomated:true')).toBeTruthy();
+    // And it is still the persisted value, not just the in-memory one.
+    expect(JSON.parse(localStorage.getItem(PREFS_STORAGE_KEY) ?? 'null')).toMatchObject({
+      showAutomated: true,
+    });
+  });
+
+  test('the toolbar has no automated control at all — it is a global preference', () => {
+    withClient(
+      <SessionTable
+        scope="project"
+        summaries={SUMMARIES}
+        rollups={ROLLUPS}
+        harnesses={DIRECTORY}
+      />,
+    );
+    expect(screen.queryByLabelText(/automated/i)).toBeNull();
+  });
+});
+
+/**
+ * The disclosure. The rows the preference removes are gone server-side before
+ * this component sees them, so the table cannot recount them — it is handed the
+ * number and must show it, or the default view silently drops most of a real
+ * machine's sessions with nothing on screen to say so.
+ */
+describe('hiddenAutomated disclosure', () => {
+  test('appends the count next to the session counter', () => {
+    withClient(
+      <SessionTable
+        scope="project"
+        summaries={SUMMARIES}
+        rollups={ROLLUPS}
+        harnesses={DIRECTORY}
+        hiddenAutomated={318}
+      />,
+    );
+    expect(screen.getByText('4 sessions')).toBeTruthy();
+    expect(screen.getByText(/318 automated hidden/)).toBeTruthy();
+  });
+
+  test('says nothing when nothing is hidden', () => {
+    withClient(
+      <SessionTable
+        scope="project"
+        summaries={SUMMARIES}
+        rollups={ROLLUPS}
+        harnesses={DIRECTORY}
+        hiddenAutomated={0}
+      />,
+    );
+    expect(screen.queryByText(/automated hidden/)).toBeNull();
+  });
+
+  test('the copy names it noise, never cost or savings', () => {
+    // The premise that this feature reveals ~96% of the token mass was measured
+    // and refuted: the hidden sessions are ~83% of the ROWS but only a couple of
+    // percent of the tokens. Any copy implying cost visibility would be false,
+    // so the words are pinned here rather than left to a future edit.
+    withClient(
+      <SessionTable
+        scope="project"
+        summaries={SUMMARIES}
+        rollups={ROLLUPS}
+        harnesses={DIRECTORY}
+        hiddenAutomated={318}
+      />,
+    );
+    const text = screen.getByText(/318 automated hidden/).textContent ?? '';
+    for (const forbidden of ['cost', 'spend', 'saving', '96%', '$']) {
+      expect(text.toLowerCase()).not.toContain(forbidden.toLowerCase());
+    }
+  });
+
+  test('an all-automated scope explains itself instead of claiming there is nothing here', () => {
+    withClient(
+      <SessionTable
+        scope="project"
+        summaries={[]}
+        rollups={{}}
+        harnesses={DIRECTORY}
+        hiddenAutomated={12}
+      />,
+    );
+    expect(screen.getByText(/Every session here was started by automation/)).toBeTruthy();
+    expect(screen.queryByText('No sessions here yet.')).toBeNull();
+  });
+
+  test('a genuinely empty scope still says there is nothing here', () => {
+    withClient(
+      <SessionTable
+        scope="project"
+        summaries={[]}
+        rollups={{}}
+        harnesses={DIRECTORY}
+        hiddenAutomated={0}
+      />,
+    );
+    expect(screen.getByText('No sessions here yet.')).toBeTruthy();
   });
 });

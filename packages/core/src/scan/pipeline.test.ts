@@ -58,8 +58,8 @@ describe('scan pipeline - end to end on the fake adapter', () => {
     // Projects/harnesses aggregate from a ScoutStore built on the same scan.
     const store = new ScoutStore([adapter], ctx, { projectIdentity: 'cwd' });
     await store.rescan();
-    const projects = store.getProjects();
-    const harnesses = store.getHarnesses();
+    const projects = store.getProjects({ excludeAutomated: false });
+    const harnesses = store.getHarnesses({ excludeAutomated: false });
     expect(projects.length).toBeGreaterThan(0);
     expect(harnesses).toEqual([
       expect.objectContaining({ harness: 'fake', sessionCount: 3 }), // 3 roots: root, malformed, titled

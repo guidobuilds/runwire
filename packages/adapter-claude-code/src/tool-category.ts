@@ -44,7 +44,9 @@ export const CLAUDE_CODE_HOOK_EVENTS = [
   'SessionEnd',
   'Notification',
   'PreCompact',
+  'SubagentStart',
   'SubagentStop',
+  'TeammateIdle',
 ] as const;
 
 export const claudeCodeHarnessEventNames: readonly string[] = [

@@ -19,7 +19,7 @@ describe('api client', () => {
     };
 
     const client = createApiClient(fetchImpl);
-    const data = await unwrap(await client.api.projects.$get());
+    const data = await unwrap(await client.api.projects.$get({ query: {} }));
 
     expect(recorded).toHaveLength(1);
     expect(recorded[0]?.method).toBe('GET');

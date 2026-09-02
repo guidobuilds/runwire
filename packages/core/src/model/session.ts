@@ -18,6 +18,31 @@ export type ProjectRef = {
 
 export type SessionRelation = 'subagent' | 'teammate' | 'fork';
 
+/**
+ * Who or what started the session.
+ *
+ * `human` is deliberately weaker than `machine`: a harness reports the
+ * *surface* a session came in on, not who typed. A surface like Claude Code's
+ * `cli` means "a surface capable of interaction", and a scripted `claude -p`
+ * in CI collapses onto that same value — so `human` is at best `medium`
+ * confidence while an SDK surface can be `high`. That asymmetry is real and
+ * lives in the model rather than being flattened away.
+ */
+export type InitiatorKind = 'human' | 'machine' | 'unknown';
+
+export type Initiator = {
+  kind: InitiatorKind;
+  /**
+   * The harness's own raw surface value, passed through unmapped (e.g.
+   * 'cli', 'sdk-py'). Adapters must not invent a taxonomy here: the enums
+   * are open sets and new values must survive as `kind: 'unknown'`.
+   * `'unknown'` only when the harness reported no surface at all.
+   */
+  surface: string;
+  /** Optional refinement of *how* a machine started it: 'sdk' | 'ci' | 'subagent-dispatch' | ... */
+  automation?: string;
+};
+
 export type SessionSummary = {
   /** `${harness}:${sourceId}`; stable across rescans. */
   id: string;
@@ -32,6 +57,8 @@ export type SessionSummary = {
   viaCallId?: string;
   /** e.g. "Explore", "forge-adversary" - a name, not a prompt. */
   agentType?: string;
+  /** Human- vs machine-started, with the harness surface it was derived from. */
+  initiator?: Metric<Initiator>;
   /** D7: the one content-derived field. */
   title?: { value: string; contentDerived: true };
   project: ProjectRef;

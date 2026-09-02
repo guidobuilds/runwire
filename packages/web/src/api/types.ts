@@ -9,6 +9,8 @@ export type {
   Diagnostic,
   HarnessAggregate,
   HarnessId,
+  Initiator,
+  InitiatorKind,
   Metric,
   ProjectAggregate,
   ScanReport,
@@ -56,16 +58,29 @@ export type SessionTraceResponse = Exclude<
 export type SessionsListResponse = {
   summaries: SessionSummary[];
   rollups: Record<string, SessionRollup>;
+  /**
+   * How many root sessions in THIS scope `?automated=exclude` removed, so a
+   * view can say what it is not showing. Zero whenever the preference is on.
+   *
+   * The hidden sessions are excluded from every count and every usage total on
+   * screen (that is the approved model); this number is a disclosure of the
+   * filter's own effect, not an aggregate over them.
+   */
+  hiddenAutomated: number;
 };
 
 /**
  * GET /api/sessions success body, WITH `ids` (Compare's mode): every requested
- * id that resolved (unknown ids silently dropped) + rollups. Shape-identical
- * to `SessionsListResponse` (the `comparability` matrix this branch used to
- * additionally return was removed as unused API surface — the Compare UI
- * derives its own missing/derived flags from `lib/capabilities.ts` instead;
- * see docs/DECISIONS.md D40) but kept as its own alias for call-site clarity
- * at `useCompareSessions`.
+ * id that resolved (unknown ids silently dropped) + rollups. The
+ * `comparability` matrix this branch used to additionally return was removed as
+ * unused API surface — the Compare UI derives its own missing/derived flags
+ * from `lib/capabilities.ts` instead; see docs/DECISIONS.md D40.
+ *
+ * No longer an alias of `SessionsListResponse`: this branch has no
+ * `hiddenAutomated` because it hides nothing. `?automated=` is ignored when
+ * `ids` is present — every id there is a session the user explicitly put in the
+ * Compare tray, and dropping those columns would delete the user's own
+ * selection (packages/server/src/routes.ts).
  *
  * Hand-typed rather than derived through Hono's `InferResponseType`, unlike
  * `SessionDetailResponse`/`SessionTraceResponse` above. Reason (see
@@ -78,4 +93,7 @@ export type SessionsListResponse = {
  * `api/client.ts`), so pinning `T` by hand here is exact and independent of
  * whatever Hono infers for the route as a whole.
  */
-export type CompareSessionsResponse = SessionsListResponse;
+export type CompareSessionsResponse = {
+  summaries: SessionSummary[];
+  rollups: Record<string, SessionRollup>;
+};
