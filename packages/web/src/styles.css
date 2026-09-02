@@ -116,7 +116,7 @@
   --confidence-medium: #966e31;
   --confidence-low: #b65b5b;
 
-  /* TraceStep kind (13 values, all kinds). Non-text graphical swatches
+  /* TraceStep kind (14 values, all kinds). Non-text graphical swatches
      (WCAG 1.4.11 non-text contrast, 3:1 minimum against --card); all
      measured >=3.49:1, most >=4.5:1. */
   --kind-model: #3d6fd6;
@@ -128,6 +128,7 @@
   --kind-agent: #2670a8;
   --kind-web: #0f8fae;
   --kind-mcp: #8a4fae;
+  --kind-skill: #b23d82;
   --kind-todo: #8a7a1f;
   --kind-prose: #5a5f6b;
   --kind-error: #c23f3f;
@@ -197,6 +198,7 @@
     --kind-agent: #6bb8f5;
     --kind-web: #4fd0ec;
     --kind-mcp: #d38af5;
+    --kind-skill: #f08cc9;
     --kind-todo: #e0c94f;
     --kind-prose: #a8afc0;
     --kind-error: #f57070;

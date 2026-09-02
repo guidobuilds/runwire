@@ -99,6 +99,7 @@ const KIND_LABEL: Record<KindKey, string> = {
   agent: 'Agent',
   web: 'Web',
   mcp: 'MCP',
+  skill: 'Skill',
   todo: 'Todo',
   prose: 'Other',
   error: 'Error',

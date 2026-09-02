@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { SessionSummary } from '../api/types';
-import { buildAgentTree, type TreeNode } from './tree';
+import { buildAgentTree, flattenTree, type TreeNode } from './tree';
 
 function summary(
   id: string,
@@ -91,5 +91,37 @@ describe('buildAgentTree', () => {
 
   test('returns undefined when the root id is not in the subtree', () => {
     expect(buildAgentTree('missing', [summary('r')])).toBeUndefined();
+  });
+});
+
+describe('flattenTree', () => {
+  test('DFS-orders root then each child before its own siblings', () => {
+    const tree = buildAgentTree('r', [
+      summary('r'),
+      summary('a', { parentId: 'r' }),
+      summary('a1', { parentId: 'a' }),
+      summary('b', { parentId: 'r' }),
+    ]);
+    if (!tree) throw new Error('tree must build');
+    // r -> [a, b] (both undated, id-tiebreak); a -> [a1]. DFS: r, a, a1, b
+    // (not r, a, b, a1 -- a breadth-first order would put b before a1).
+    expect(ids(flattenTree(tree))).toEqual(['r', 'a', 'a1', 'b']);
+  });
+
+  test("reuses buildAgentTree's already-applied sort convention (startedAt asc, absent-last, id tiebreak) rather than re-deriving order", () => {
+    const tree = buildAgentTree('r', [
+      summary('r'),
+      summary('late', { parentId: 'r', startedAt: '2026-08-31T12:00:00.000Z' }),
+      summary('undated', { parentId: 'r' }),
+      summary('early', { parentId: 'r', startedAt: '2026-08-31T09:00:00.000Z' }),
+    ]);
+    if (!tree) throw new Error('tree must build');
+    expect(ids(flattenTree(tree))).toEqual(['r', 'early', 'late', 'undated']);
+  });
+
+  test('a single-node tree (no children) flattens to just itself', () => {
+    const tree = buildAgentTree('r', [summary('r')]);
+    if (!tree) throw new Error('tree must build');
+    expect(ids(flattenTree(tree))).toEqual(['r']);
   });
 });

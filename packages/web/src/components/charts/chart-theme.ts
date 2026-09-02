@@ -56,6 +56,7 @@ export type KindKey =
   | 'agent'
   | 'web'
   | 'mcp'
+  | 'skill'
   | 'todo'
   | 'prose'
   | 'error'
@@ -75,6 +76,7 @@ export const KIND_KEYS: readonly KindKey[] = [
   'agent',
   'web',
   'mcp',
+  'skill',
   'todo',
   'prose',
   'error',
@@ -138,6 +140,7 @@ export const KIND_BG_CLASS: Record<KindKey, string> = {
   agent: 'bg-[var(--kind-agent)]',
   web: 'bg-[var(--kind-web)]',
   mcp: 'bg-[var(--kind-mcp)]',
+  skill: 'bg-[var(--kind-skill)]',
   todo: 'bg-[var(--kind-todo)]',
   prose: 'bg-[var(--kind-prose)]',
   error: 'bg-[var(--kind-error)]',
@@ -187,6 +190,7 @@ const FALLBACK_TOKENS: Record<string, string> = {
   '--kind-agent': '#2670a8',
   '--kind-web': '#0f8fae',
   '--kind-mcp': '#8a4fae',
+  '--kind-skill': '#b23d82',
   '--kind-todo': '#8a7a1f',
   '--kind-prose': '#5a5f6b',
   '--kind-error': '#c23f3f',

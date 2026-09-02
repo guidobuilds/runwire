@@ -6,7 +6,7 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ApiError } from '../../api/client';
@@ -40,6 +40,14 @@ const shared = vi.hoisted(() => ({
 vi.mock('../../api/queries', () => ({
   useSession: () => shared.result,
   useTrace: () => shared.traceResult,
+  // `SessionTimeline` (appended after Trace) composes its own
+  // `useSessionTimelineData`, which fetches one `useTraces`-shaped result per
+  // subtree member. No fixture here has real per-step timestamps, so every
+  // id resolves to a settled-but-empty result -- consistent with
+  // `shared.traceResult`'s own unset default (`resolveRootAnchor` stays
+  // undefined either way, so `SessionTimeline` renders its own empty state).
+  useTraces: (ids: readonly string[]) =>
+    ids.map(() => ({ isPending: false, error: null, data: undefined })),
   useAdapterCapabilities: () => shared.caps,
   useAdapterDisplayName: () => 'Fake Harness',
 }));
@@ -156,8 +164,14 @@ describe('SessionDetail', () => {
       expect(screen.getByRole('heading', { level: 2, name: heading })).not.toBeNull();
     }
     expect(screen.getByText('$1.50')).not.toBeNull();
-    expect(screen.getByText('1 h 00 min')).not.toBeNull();
-    expect(screen.getByText('Explore')).not.toBeNull();
+    // Rendered twice: the header's own "Duration" fact, and
+    // `SessionTimeline`'s `TimelineSummaryBar` (session-timeline f7-t1),
+    // which reuses this same `summary.timing.durationMs` metric rather than
+    // re-deriving a second duration figure.
+    expect(screen.getAllByText('1 h 00 min')).toHaveLength(2);
+    // Also rendered twice: `AgentTree`'s row label and `SessionTimeline`'s
+    // `AgentTrack` lane label both show the same subagent's `agentType`.
+    expect(screen.getAllByText('Explore').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('reported total disagrees with the sum of its parts')).not.toBeNull();
     expect(screen.getByText('/w/app/a.jsonl:12')).not.toBeNull();
     const diagnosticRow = screen.getByText('usage-total-mismatch').closest('tr');
@@ -217,6 +231,52 @@ describe('SessionDetail', () => {
   test('the trace card shows the explicit empty state when no trace is available', async () => {
     await renderInRouter(<SessionDetail id="fake:root" />);
     expect(screen.getByText('No trace data')).not.toBeNull();
+  });
+
+  test('SessionTimeline is rendered after Trace, with no reordering of the sections above it (session-timeline f7-t3)', async () => {
+    const view = await renderInRouter(<SessionDetail id="fake:root" />);
+    const headings = Array.from(view.container.querySelectorAll('h2')).map(
+      (heading) => heading.textContent,
+    );
+    const traceIndex = headings.indexOf('Trace');
+    const timelineIndex = headings.indexOf('Timeline');
+    expect(traceIndex).toBeGreaterThanOrEqual(0);
+    expect(timelineIndex).toBe(traceIndex + 1);
+    expect(headings.slice(0, traceIndex + 1)).toEqual([
+      'Diagnostics',
+      'Token breakdown',
+      'Counts',
+      'Agents',
+      'Trace',
+    ]);
+  });
+
+  test("TimelineSummaryBar's root-inclusive Agents count and CountsPanel's root-exclusive Subagents count are two distinct, intentionally-related numbers, not drift (session-timeline f7 fix)", async () => {
+    // LOADED's subtree is 1 root + 1 subagent (CHILD), and
+    // rollup.inclusive.counts.subagents is 1 (root-exclusive by
+    // construction -- packages/core/src/link/link.ts's `descendants` never
+    // includes the root). TimelineSummaryBar's "Agents" stat is
+    // subtree.summaries.length (root-inclusive), so on this same fixture it
+    // must be exactly one more than CountsPanel's "Subagents" row -- never
+    // equal to it. This locks in the intentional relationship documented in
+    // TimelineSummaryBar.tsx's header comment and f7's archiveWhen, so a
+    // future change to either derivation can't silently break the other
+    // without a test noticing.
+    await renderInRouter(<SessionDetail id="fake:root" />);
+
+    const subagentsRow = screen.getByText('Subagents').closest('tr');
+    expect(subagentsRow).not.toBeNull();
+    const subagentsCells = within(subagentsRow as HTMLElement).getAllByRole('cell');
+    const subagentCount = Number(subagentsCells[subagentsCells.length - 1]?.textContent);
+
+    const summaryBar = document.querySelector('[data-slot="timeline-summary-bar"]');
+    expect(summaryBar).not.toBeNull();
+    const agentsDt = within(summaryBar as HTMLElement).getByText('Agents');
+    const agentCount = Number(agentsDt.nextElementSibling?.textContent);
+
+    expect(subagentCount).toBe(1);
+    expect(agentCount).toBe(2);
+    expect(agentCount).toBe(subagentCount + 1);
   });
 
   test('no section renders a stringified object or raw JSON', async () => {

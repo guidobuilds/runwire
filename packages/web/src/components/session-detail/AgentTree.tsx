@@ -32,7 +32,7 @@ function nodeLabel(node: TreeNode): string {
  * `pl-${depth * 4}` would not be picked up). Matches the old `depth * 16px`
  * inline style exactly for depth 0..8, at the default 16px root font-size.
  */
-const DEPTH_PADDING = [
+export const DEPTH_PADDING = [
   'pl-0',
   'pl-4',
   'pl-8',
@@ -44,7 +44,7 @@ const DEPTH_PADDING = [
   'pl-32',
 ] as const;
 
-function depthPaddingClass(depth: number): string {
+export function depthPaddingClass(depth: number): string {
   const index = Math.max(0, Math.min(depth, DEPTH_PADDING.length - 1));
   // `index` is a runtime-computed clamp, so `noUncheckedIndexedAccess` can't
   // prove it's in range even though it always is; `DEPTH_PADDING[0]` is a

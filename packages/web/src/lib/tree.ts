@@ -124,3 +124,21 @@ function sortSubtree(node: TreeNode): void {
   node.children.sort(compareNodes);
   for (const child of node.children) sortSubtree(child);
 }
+
+/**
+ * DFS-ordered flat list of `root` and every descendant, for `AgentTrack`
+ * lane ordering (design.md §3.4). A plain pre-order walk — `buildAgentTree`
+ * already applies the tree's sort convention (`startedAt` ascending,
+ * absent-last, id tiebreak) to every node's `children` via `sortSubtree`
+ * before returning, so `flattenTree` reuses that order rather than
+ * re-deriving it.
+ */
+export function flattenTree(root: TreeNode): TreeNode[] {
+  const out: TreeNode[] = [];
+  const walk = (node: TreeNode): void => {
+    out.push(node);
+    for (const child of node.children) walk(child);
+  };
+  walk(root);
+  return out;
+}

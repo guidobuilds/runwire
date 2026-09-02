@@ -10,6 +10,7 @@ import type { SessionSummary } from '../../api/types';
 import { buildAgentTree } from '../../lib/tree';
 import { TraceRibbon } from '../charts/TraceRibbon';
 import { QueryState } from '../primitives/QueryState';
+import { SessionTimeline } from '../session-timeline/SessionTimeline';
 import { AgentTree } from './AgentTree';
 import { CountsPanel } from './CountsPanel';
 import { DiagnosticsList } from './DiagnosticsList';
@@ -69,7 +70,10 @@ function deriveTokenSeries(summaries: readonly SessionSummary[]): number[] {
  * Section order (design.md §5): header/meta band, diagnostics banner
  * (surfaced right under the header so it is visible before anything else —
  * brief §4.4 — rather than buried at the bottom where M4 originally put it),
- * token breakdown, counts + trend, agent tree, trace ribbon. No skill/mcp
+ * token breakdown, counts + trend, agent tree, trace ribbon, session timeline
+ * (session-timeline slug design.md §1.1: appended after Trace, no reordering
+ * of the sections above it — a new, separate elapsed-real-time view rather
+ * than a replacement for the trace ribbon's step-index axis). No skill/mcp
  * event-log card anywhere (D38).
  */
 export function SessionDetail({ id }: { id: string }) {
@@ -131,6 +135,7 @@ export function SessionDetail({ id }: { id: string }) {
               <TraceRibbon trace={trace.data} />
             </div>
           </section>
+          <SessionTimeline id={id} />
         </div>
       ) : null}
     </QueryState>

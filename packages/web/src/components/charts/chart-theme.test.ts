@@ -17,8 +17,8 @@ describe('KIND_COLOR / CONFIDENCE_COLOR / USAGE_COLOR', () => {
       expect(KIND_COLOR[key]).toBe(`var(--kind-${key})`);
       expect(KIND_COLOR[key]).not.toMatch(/#[0-9a-fA-F]{3,6}/);
     }
-    // 13 tokens (design.md §3 / f1-t3).
-    expect(KIND_KEYS.length).toBe(13);
+    // 14 tokens (design.md §3 / f1-t3, 'skill' added for the Skill tool).
+    expect(KIND_KEYS.length).toBe(14);
   });
 
   test('every confidence key maps to its own var() reference', () => {
