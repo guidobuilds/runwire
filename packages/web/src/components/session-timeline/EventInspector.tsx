@@ -13,11 +13,11 @@ import { useTimeline } from './TimelineContext';
 /**
  * Event Inspector (design.md §1.8/§3.1, f6-t1): a right-side `ui/sheet.tsx`
  * Sheet, unmodified (no vendored-file edits — the repo's binding shadcn
- * house rule), opened whenever `TimelineContext.selectedEventId` is
- * non-null. Renders key-value fields for whichever of the four event
- * families the id resolves to, plus a collapsible raw-metadata JSON block,
- * and calls `selectEvent(null)` on close (Sheet's own `onOpenChange`, not a
- * bespoke close handler).
+ * house rule), opened whenever `TimelineContext.selectedEventId` or
+ * `selectedClusterIds` is non-null. Renders key-value fields for whichever
+ * of the four event families the id resolves to, plus a collapsible
+ * raw-metadata JSON block, and calls `closeInspector()` on close (Sheet's
+ * own `onOpenChange`, not a bespoke close handler).
  *
  * Lookup mechanism (design.md leaves this open, "use your judgment"):
  * `EventInspector` takes the same four derived arrays every track already
@@ -31,14 +31,17 @@ import { useTimeline } from './TimelineContext';
  * `buildHarnessEvents`/`buildComponentEvents` classify each `ToolCategory`
  * into exactly one of the two tracks (`lib/timeline.ts`).
  *
- * Clustered marker integration (f10-t3): `HarnessTrack`/`ComponentTrack`'s
- * proximity-clustering (`clusterByProximity`, `lib/timeline.ts`) sets a
- * merged marker's `data-*-id` to its cluster's first (earliest) member's
- * real `HarnessEvent`/`ComponentEvent` id — never a synthetic cluster id —
- * so a click on a clustered marker reaches `selectEvent(id)` exactly like a
- * click on any unclustered mark, and this component's `findSelected` search
- * below resolves it with zero changes here: there is no cluster-shaped id
- * this component ever needs to special-case or that could crash a lookup.
+ * Clustered marker integration (f10-t3, revised): `HarnessTrack`/
+ * `ComponentTrack`'s proximity-clustering (`clusterByProximity`,
+ * `lib/timeline.ts`) used to set a merged marker's `data-*-id` to its
+ * cluster's first (earliest) member's id and route the click straight into
+ * `selectEvent`, so clicking a cluster silently jumped to one member and
+ * dropped every other member the count badge counted. Clicking a cluster now
+ * calls `TimelineContext.selectCluster` with every member's id, which opens
+ * a list view here (`selectedClusterIds` set, `selectedEventId` still null)
+ * — the same `findSelected` lookup, once per id — with a "Back to list" link
+ * from the detail view once one is picked (`selectEvent(id)`, which never
+ * touches `selectedClusterIds`).
  *
  * Raw-metadata block: no `<details>`/JSON-block precedent exists anywhere
  * else in this repo (grepped, zero hits), and none of the four derived
@@ -211,32 +214,119 @@ function fieldsFor(
   }
 }
 
+/**
+ * Per-list-row label (cluster list view): unlike `titleFor` (which names
+ * only the family/kind — e.g. "Harness: Read" — fine for a lone detail
+ * header), a cluster's members are all the SAME kind by construction
+ * (`clusterByProximity` buckets on `kind`), so every row would read
+ * identically without also naming the specific target/name that actually
+ * distinguishes one member from the next.
+ */
+function listLabelFor(selected: SelectableEvent): string {
+  switch (selected.source) {
+    case 'agent':
+      return selected.data.name;
+    case 'token':
+      return `${formatTokens(selected.data.delta)} tokens`;
+    case 'harness':
+      return `${HARNESS_LABEL[selected.data.kind]} — ${selected.data.name}`;
+    case 'component':
+      return `${COMPONENT_LABEL[selected.data.kind]} — ${selected.data.name}`;
+  }
+}
+
+/** The elapsed-ms moment a list row sorts/displays by — `undefined` only for an `AgentSpan` missing `start` entirely. */
+function elapsedFor(selected: SelectableEvent): number | undefined {
+  switch (selected.source) {
+    case 'agent':
+      return selected.data.start;
+    case 'token':
+      return selected.data.at;
+    case 'harness':
+      return selected.data.at;
+    case 'component':
+      return selected.data.at;
+  }
+}
+
 export function EventInspector({
   spans,
   tokenPoints,
   harnessEvents,
   componentEvents,
 }: EventInspectorProps) {
-  const { selectedEventId, selectEvent } = useTimeline();
+  const { selectedEventId, selectedClusterIds, selectEvent, closeInspector } = useTimeline();
   const spansById = new Map(spans.map((s) => [s.agentId, s]));
   const selected = selectedEventId
     ? findSelected(selectedEventId, spans, tokenPoints, harnessEvents, componentEvents)
     : undefined;
+  // A cluster click opens the list first (`selectedClusterIds` set,
+  // `selectedEventId` still null); picking a row narrows to that one event's
+  // detail view without losing the list -- `selectEvent` never clears
+  // `selectedClusterIds` (see TimelineContext), so "Back to list" below can
+  // return to it.
+  const showList = selectedClusterIds !== null && selectedEventId === null;
+  const clusterMembers = selectedClusterIds
+    ? selectedClusterIds
+        .map((id) => ({ id, event: findSelected(id, spans, tokenPoints, harnessEvents, componentEvents) }))
+        .filter(
+          (row): row is { id: string; event: SelectableEvent } => row.event !== undefined,
+        )
+    : [];
 
   return (
     <Sheet
-      open={selectedEventId !== null}
+      open={selectedEventId !== null || selectedClusterIds !== null}
       onOpenChange={(open) => {
-        if (!open) selectEvent(null);
+        if (!open) closeInspector();
       }}
     >
       <SheetContent side="right" data-slot="event-inspector">
         <SheetHeader>
-          <SheetTitle>{selected ? titleFor(selected) : 'Event not found'}</SheetTitle>
-          <SheetDescription>Event detail</SheetDescription>
+          <SheetTitle>
+            {showList
+              ? `${clusterMembers.length} events`
+              : selected
+                ? titleFor(selected)
+                : 'Event not found'}
+          </SheetTitle>
+          <SheetDescription>{showList ? 'Select one to inspect' : 'Event detail'}</SheetDescription>
         </SheetHeader>
-        {selected && (
+        {showList && (
+          <div className="flex flex-col px-4" data-slot="cluster-event-list">
+            {clusterMembers.map(({ id, event }) => {
+              const at = elapsedFor(event);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  data-cluster-event-id={id}
+                  className="flex items-center justify-between gap-4 border-b border-border py-2 text-left text-sm last:border-0 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  onClick={() => selectEvent(id)}
+                >
+                  <span className="truncate text-zinc-900 dark:text-zinc-50">
+                    {listLabelFor(event)}
+                  </span>
+                  <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
+                    {at !== undefined ? formatElapsed(at) : ''}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {!showList && selected && (
           <>
+            {selectedClusterIds && (
+              <button
+                type="button"
+                data-slot="back-to-list"
+                className="px-4 text-left text-xs text-zinc-500 hover:underline dark:text-zinc-400"
+                onClick={() => selectEvent(null)}
+              >
+                ← Back to list ({selectedClusterIds.length})
+              </button>
+            )}
             <dl className="flex flex-col gap-2 px-4 text-sm">
               {fieldsFor(selected, spansById).map(([label, value]) => (
                 <div key={label} className="flex items-baseline justify-between gap-4">

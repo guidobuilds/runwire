@@ -17,6 +17,9 @@ function Probe() {
       <div data-testid="cursor-time">{String(timeline.cursorTime)}</div>
       <div data-testid="cursor-pinned">{String(timeline.cursorPinned)}</div>
       <div data-testid="selected-event">{String(timeline.selectedEventId)}</div>
+      <div data-testid="selected-cluster">
+        {timeline.selectedClusterIds ? timeline.selectedClusterIds.join(',') : 'null'}
+      </div>
       <div data-testid="selected-range">
         {timeline.selectedRange ? timeline.selectedRange.join(',') : 'null'}
       </div>
@@ -43,6 +46,12 @@ function Probe() {
       </button>
       <button type="button" onClick={() => timeline.selectEvent(null)}>
         deselect
+      </button>
+      <button type="button" onClick={() => timeline.selectCluster(['a', 'b', 'c'])}>
+        select-cluster
+      </button>
+      <button type="button" onClick={() => timeline.closeInspector()}>
+        close-inspector
       </button>
       <button type="button" onClick={() => timeline.setSelectedRange([100, 200])}>
         set-range
@@ -71,6 +80,7 @@ describe('TimelineProvider', () => {
     expect(view.getByTestId('cursor-time').textContent).toBe('null');
     expect(view.getByTestId('cursor-pinned').textContent).toBe('false');
     expect(view.getByTestId('selected-event').textContent).toBe('null');
+    expect(view.getByTestId('selected-cluster').textContent).toBe('null');
     expect(view.getByTestId('selected-range').textContent).toBe('null');
     expect(view.getByTestId('domain').textContent).toBe('0,1000');
     expect(view.getByTestId('width').textContent).toBe('480');
@@ -171,6 +181,42 @@ describe('TimelineProvider', () => {
     expect(view.getByTestId('selected-event').textContent).toBe('evt-1');
     fireEvent.click(view.getByText('deselect'));
     expect(view.getByTestId('selected-event').textContent).toBe('null');
+  });
+
+  test('selectCluster sets selectedClusterIds and clears any selectedEventId, independently of selectEvent', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <Probe />
+      </TimelineProvider>,
+    );
+    fireEvent.click(view.getByText('select-evt-1'));
+    expect(view.getByTestId('selected-event').textContent).toBe('evt-1');
+
+    fireEvent.click(view.getByText('select-cluster'));
+    expect(view.getByTestId('selected-cluster').textContent).toBe('a,b,c');
+    expect(view.getByTestId('selected-event').textContent).toBe('null');
+
+    // Picking a member out of the open cluster (selectEvent) must not lose
+    // the cluster's own membership -- EventInspector's "Back to list" relies
+    // on selectedClusterIds surviving this.
+    fireEvent.click(view.getByText('select-evt-1'));
+    expect(view.getByTestId('selected-event').textContent).toBe('evt-1');
+    expect(view.getByTestId('selected-cluster').textContent).toBe('a,b,c');
+  });
+
+  test('closeInspector clears both selectedEventId and selectedClusterIds', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <Probe />
+      </TimelineProvider>,
+    );
+    fireEvent.click(view.getByText('select-cluster'));
+    fireEvent.click(view.getByText('select-evt-1'));
+    expect(view.getByTestId('selected-cluster').textContent).toBe('a,b,c');
+
+    fireEvent.click(view.getByText('close-inspector'));
+    expect(view.getByTestId('selected-event').textContent).toBe('null');
+    expect(view.getByTestId('selected-cluster').textContent).toBe('null');
   });
 
   test('setSelectedRange is a real setter backed by real state', () => {

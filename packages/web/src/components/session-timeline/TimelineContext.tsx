@@ -6,9 +6,14 @@ import { createContext, type ReactNode, useCallback, useContext, useMemo, useSta
  * four tracks (design.md §3.1/§3.2). One `TimelineDomain` and `xScale` drive
  * every track's x-axis; `cursorTime`/`cursorPinned` drive the single shared
  * `SharedCursor` overlay instead of four independent per-track hover states.
- * `selectedEventId` backs the `EventInspector` sheet; `selectedRange` is a
- * real setter with real state even though no MVP UI mutates it yet, so later
- * zoom/select work is additive rather than a context reshape.
+ * `selectedEventId` backs the `EventInspector` sheet's detail view;
+ * `selectedClusterIds` backs its list view (f10-t3 fix: a clustered marker
+ * click used to jump straight to its representative member, silently
+ * dropping every other member the cluster badge counted — clicking one now
+ * opens a list of every member instead, and `selectedEventId` narrows that
+ * list to one). `selectedRange` is a real setter with real state even though
+ * no MVP UI mutates it yet, so later zoom/select work is additive rather
+ * than a context reshape.
  */
 
 export type TimelineDomain = readonly [number, number]; // [0, maxElapsedMs]
@@ -23,11 +28,23 @@ export type TimelineContextValue = {
   cursorTime: number | null; // elapsed ms; hovered or pinned
   cursorPinned: boolean;
   selectedEventId: string | null;
+  /**
+   * The full member-id list of a clicked cluster, in tooltip order
+   * (earliest first) — set by `selectCluster`, independent of
+   * `selectedEventId` so `EventInspector` can show a list (this set, no
+   * event chosen yet) then narrow to a detail view (`selectedEventId` set)
+   * while keeping the list around for a "back" affordance. Never mutated by
+   * `selectEvent` — only `selectCluster` and `closeInspector` touch it — so
+   * picking a member from the open list doesn't lose its way back.
+   */
+  selectedClusterIds: readonly string[] | null;
   selectedRange: TimelineDomain | null; // reserved for later zoom/select; unused MVP (always null)
   setCursorTime: (ms: number | null) => void;
   pinCursor: (ms: number) => void;
   clearCursor: () => void;
   selectEvent: (id: string | null) => void;
+  selectCluster: (ids: readonly string[]) => void;
+  closeInspector: () => void;
   setSelectedRange: (range: TimelineDomain | null) => void;
 };
 
@@ -65,6 +82,7 @@ export function TimelineProvider({
   const [cursorTime, setCursorTimeState] = useState<number | null>(null);
   const [cursorPinned, setCursorPinned] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedClusterIds, setSelectedClusterIds] = useState<readonly string[] | null>(null);
   const [selectedRange, setSelectedRangeState] = useState<TimelineDomain | null>(null);
 
   const [domainMin, domainMax] = domain;
@@ -96,8 +114,23 @@ export function TimelineProvider({
     setCursorTimeState(null);
   }, []);
 
+  // Deliberately never touches `selectedClusterIds` -- see that field's own
+  // doc comment. A fresh single-mark click (AgentTrack/TokenTrack, or an
+  // unclustered Harness/Component mark) always finds it already `null`
+  // (the sheet is modal, so nothing else is clickable while a cluster list
+  // is open); picking a member out of an open list relies on it staying put.
   const selectEvent = useCallback((id: string | null) => {
     setSelectedEventId(id);
+  }, []);
+
+  const selectCluster = useCallback((ids: readonly string[]) => {
+    setSelectedClusterIds(ids);
+    setSelectedEventId(null);
+  }, []);
+
+  const closeInspector = useCallback(() => {
+    setSelectedEventId(null);
+    setSelectedClusterIds(null);
   }, []);
 
   // Real setter (state present) even though no MVP caller mutates it via UI
@@ -114,11 +147,14 @@ export function TimelineProvider({
       cursorTime,
       cursorPinned,
       selectedEventId,
+      selectedClusterIds,
       selectedRange,
       setCursorTime,
       pinCursor,
       clearCursor,
       selectEvent,
+      selectCluster,
+      closeInspector,
       setSelectedRange,
     }),
     [
@@ -128,11 +164,14 @@ export function TimelineProvider({
       cursorTime,
       cursorPinned,
       selectedEventId,
+      selectedClusterIds,
       selectedRange,
       setCursorTime,
       pinCursor,
       clearCursor,
       selectEvent,
+      selectCluster,
+      closeInspector,
       setSelectedRange,
     ],
   );

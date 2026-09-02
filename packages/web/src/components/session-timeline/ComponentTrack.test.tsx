@@ -245,10 +245,17 @@ describe('proximity clustering (f10-t2)', () => {
     expect(view.container.querySelectorAll('[data-component-cluster-count]').length).toBe(0);
   });
 
-  test('clicking a merged marker selects the representative (first) member, integrating with EventInspector via the existing click path', () => {
+  test('clicking a merged marker opens the full member list, not just the representative (first) member', () => {
     function SelectionProbe() {
-      const { selectedEventId } = useTimeline();
-      return <div data-testid="selection">{selectedEventId ?? 'null'}</div>;
+      const { selectedEventId, selectedClusterIds } = useTimeline();
+      return (
+        <>
+          <div data-testid="selection">{selectedEventId ?? 'null'}</div>
+          <div data-testid="cluster-selection">
+            {selectedClusterIds ? selectedClusterIds.join(',') : 'null'}
+          </div>
+        </>
+      );
     }
     const view = render(
       <TimelineProvider domain={[0, 1000]}>
@@ -263,8 +270,12 @@ describe('proximity clustering (f10-t2)', () => {
     );
     const cluster = view.container.querySelector('[data-component-cluster-count]');
     if (!cluster) throw new Error('expected a cluster marker');
+    expect(cluster.getAttribute('data-component-ids')).toBe('a,b');
     fireEvent.click(cluster);
-    expect(view.getByTestId('selection').textContent).toBe('a');
+    // A cluster click opens the list (every member's id) rather than
+    // jumping straight to the representative's own detail view.
+    expect(view.getByTestId('selection').textContent).toBe('null');
+    expect(view.getByTestId('cluster-selection').textContent).toBe('a,b');
   });
 });
 

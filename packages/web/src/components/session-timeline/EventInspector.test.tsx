@@ -94,9 +94,25 @@ function SelectButton({ id }: { id: string }) {
   );
 }
 
+function SelectClusterButton({ ids }: { ids: string[] }) {
+  const { selectCluster } = useTimeline();
+  return (
+    <button type="button" onClick={() => selectCluster(ids)}>
+      select-cluster {ids.join(',')}
+    </button>
+  );
+}
+
 function SelectionReadout() {
-  const { selectedEventId } = useTimeline();
-  return <div data-testid="selection">{selectedEventId ?? 'null'}</div>;
+  const { selectedEventId, selectedClusterIds } = useTimeline();
+  return (
+    <>
+      <div data-testid="selection">{selectedEventId ?? 'null'}</div>
+      <div data-testid="cluster-selection">
+        {selectedClusterIds ? selectedClusterIds.join(',') : 'null'}
+      </div>
+    </>
+  );
 }
 
 function renderInspector() {
@@ -113,6 +129,7 @@ function renderInspector() {
       <SelectButton id="s1#0" />
       <SelectButton id="s1#1" />
       <SelectButton id="does-not-exist" />
+      <SelectClusterButton ids={['s1#0', 's1#1']} />
       <SelectionReadout />
     </TimelineProvider>,
   );
@@ -226,6 +243,65 @@ describe('closing', () => {
     fireEvent.click(screen.getByText('select s1#0'));
     expect(screen.getByText('Harness: Exec')).not.toBeNull();
     expect(screen.queryByText('Agent: Explore')).toBeNull();
+  });
+});
+
+describe('cluster list (f10-t3 fix)', () => {
+  test('selecting a cluster opens a list of every member, not just one', async () => {
+    renderInspector();
+    fireEvent.click(screen.getByText('select-cluster s1#0,s1#1'));
+    expect(await screen.findByRole('dialog')).not.toBeNull();
+
+    expect(screen.getByText('2 events')).not.toBeNull();
+    expect(screen.getByText('Select one to inspect')).not.toBeNull();
+    expect(screen.getByText('Exec — npm test')).not.toBeNull();
+    expect(screen.getByText('MCP — mcp__github__search')).not.toBeNull();
+    // No detail fields yet -- only the list, until one is picked.
+    expect(screen.queryByText('Harness: Exec')).toBeNull();
+  });
+
+  test('picking a row from the list narrows to that event\'s detail view', async () => {
+    renderInspector();
+    fireEvent.click(screen.getByText('select-cluster s1#0,s1#1'));
+    await screen.findByRole('dialog');
+
+    fireEvent.click(screen.getByText('Exec — npm test'));
+
+    expect(screen.getByText('Harness: Exec')).not.toBeNull();
+    expect(screen.getByText('npm test')).not.toBeNull(); // Target field
+    expect(screen.getByTestId('selection').textContent).toBe('s1#0');
+    // The list membership survives the narrowing, for "Back to list".
+    expect(screen.getByTestId('cluster-selection').textContent).toBe('s1#0,s1#1');
+  });
+
+  test('"Back to list" returns from a member\'s detail view to the full list', async () => {
+    renderInspector();
+    fireEvent.click(screen.getByText('select-cluster s1#0,s1#1'));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByText('Exec — npm test'));
+    expect(screen.getByText('Harness: Exec')).not.toBeNull();
+
+    fireEvent.click(screen.getByText(/Back to list/));
+
+    expect(screen.getByText('2 events')).not.toBeNull();
+    expect(screen.getByText('Exec — npm test')).not.toBeNull();
+    expect(screen.getByText('MCP — mcp__github__search')).not.toBeNull();
+    expect(screen.getByTestId('selection').textContent).toBe('null');
+    expect(screen.getByTestId('cluster-selection').textContent).toBe('s1#0,s1#1');
+  });
+
+  test('closing the sheet from a member detail view clears both the event and the cluster selection', async () => {
+    renderInspector();
+    fireEvent.click(screen.getByText('select-cluster s1#0,s1#1'));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByText('Exec — npm test'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('selection').textContent).toBe('null');
+      expect(screen.getByTestId('cluster-selection').textContent).toBe('null');
+    });
   });
 });
 

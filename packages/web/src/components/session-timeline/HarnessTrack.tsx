@@ -81,8 +81,8 @@ function harnessTooltip(event: HarnessEvent): string {
 
 /**
  * Tooltip/aria contract for a merged marker (f10-t3): names the count
- * explicitly so clicking through to a single representative event is
- * discoverable, not a silent pick-one-of-many.
+ * explicitly so clicking through to the full member list is discoverable,
+ * not a silent pick-one-of-many.
  */
 function harnessClusterTooltip(cluster: EventCluster<HarnessEvent>): string {
   const first = cluster.members[0] ?? cluster.representative;
@@ -91,7 +91,7 @@ function harnessClusterTooltip(cluster: EventCluster<HarnessEvent>): string {
     `${cluster.members.length} ${ROW_LABEL[cluster.representative.kind]} events`,
     `First: ${formatElapsed(first.at)}`,
     `Last: ${formatElapsed(last.at)}`,
-    'Click to inspect the first event',
+    'Click to see all events',
   ].join('\n');
 }
 
@@ -115,10 +115,13 @@ export type HarnessTrackProps = {
  * same-kind dots within `CLUSTER_THRESHOLD_PX` merge into one marker with a
  * numeric count badge (`clusterByProximity`, `lib/timeline.ts`); a cluster of
  * exactly one member renders identically to the pre-clustering single-dot
- * path. A merged marker's `data-harness-id` is its first (earliest)
- * member's real event id (never a synthetic cluster id), so the existing
- * click-to-select path below resolves it through `EventInspector`'s
- * `findSelected` with zero new plumbing.
+ * path. A merged marker's `data-harness-id` is its first (earliest) member's
+ * real event id (never a synthetic cluster id) and also carries
+ * `data-harness-ids`, every member's id comma-joined in the same earliest-
+ * first order; clicking it opens the full member list via
+ * `TimelineContext.selectCluster` (bug fix, was: jump straight to the
+ * representative, silently dropping the rest of what the count badge
+ * counted) rather than `selectEvent`.
  *
  * Hover reports the pointer's real position to the shared cursor via
  * `useTimeline().setCursorTime`, using the same `pointerToElapsedMs`
@@ -134,7 +137,7 @@ export type HarnessTrackProps = {
  * on top of it.
  */
 export function HarnessTrack({ events }: HarnessTrackProps) {
-  const { xScale, width, setCursorTime, selectEvent } = useTimeline();
+  const { xScale, width, setCursorTime, selectEvent, selectCluster } = useTimeline();
 
   const handleMove = (event: ReactMouseEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -152,9 +155,23 @@ export function HarnessTrack({ events }: HarnessTrackProps) {
   // with f9's drag-vs-click suppression, which only ever suppresses the one
   // trailing native `click` after a real drag, regardless of what element
   // that click happens to land on.
+  //
+  // A cluster marker carries `data-harness-ids` (every member, comma-joined)
+  // in addition to `data-harness-id` (the representative, still used by
+  // hover/tooltip and by anything that only knows the representative's id).
+  // Clicking it opens the full member list via `selectCluster` instead of
+  // jumping straight to the representative -- f10-t3's original "click to
+  // inspect the first event" silently dropped every other member the badge
+  // counted; the list lets the user pick which one.
   const selectFromTarget = (target: EventTarget | null) => {
     const el = (target as SVGElement | null)?.closest?.('[data-harness-id]');
-    const id = el?.getAttribute('data-harness-id');
+    if (!el) return;
+    const clusterIds = el.getAttribute('data-harness-ids');
+    if (clusterIds) {
+      selectCluster(clusterIds.split(','));
+      return;
+    }
+    const id = el.getAttribute('data-harness-id');
     if (id) selectEvent(id);
   };
   const handleClick = (event: ReactMouseEvent<SVGSVGElement>) => selectFromTarget(event.target);
@@ -256,6 +273,7 @@ export function HarnessTrack({ events }: HarnessTrackProps) {
                     <g
                       key={cluster.representative.id}
                       data-harness-id={cluster.representative.id}
+                      data-harness-ids={cluster.members.map((m) => m.id).join(',')}
                       data-harness-kind={cluster.representative.kind}
                       data-harness-shape="cluster"
                       data-harness-cluster-count={count}

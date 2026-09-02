@@ -133,7 +133,7 @@ function componentTooltip(event: ComponentEvent): string {
   return lines.join('\n');
 }
 
-/** Tooltip/aria contract for a merged marker (f10-t3): names the count so the representative-event click behavior is discoverable, not a silent pick-one-of-many. */
+/** Tooltip/aria contract for a merged marker (f10-t3): names the count so the full-list click behavior is discoverable, not a silent pick-one-of-many. */
 function componentClusterTooltip(cluster: EventCluster<ComponentEvent>): string {
   const first = cluster.members[0] ?? cluster.representative;
   const last = cluster.members[cluster.members.length - 1] ?? cluster.representative;
@@ -141,7 +141,7 @@ function componentClusterTooltip(cluster: EventCluster<ComponentEvent>): string 
     `${cluster.members.length} ${COMPONENT_LABEL[cluster.representative.kind]} events`,
     `First: ${formatElapsed(first.at)}`,
     `Last: ${formatElapsed(last.at)}`,
-    'Click to inspect the first event',
+    'Click to see all events',
   ].join('\n');
 }
 
@@ -169,9 +169,12 @@ export type ComponentTrackProps = {
  * badge (`clusterByProximity`, `lib/timeline.ts`); a cluster of exactly one
  * member renders identically to the pre-clustering single-mark path. A
  * merged marker's `data-component-id` is its first (earliest) member's real
- * event id (never a synthetic cluster id), so the existing click-to-select
- * path below resolves it through `EventInspector`'s `findSelected` with
- * zero new plumbing.
+ * event id (never a synthetic cluster id) and also carries
+ * `data-component-ids`, every member's id comma-joined in the same
+ * earliest-first order; clicking it opens the full member list via
+ * `TimelineContext.selectCluster` (bug fix, was: jump straight to the
+ * representative, silently dropping the rest of what the count badge
+ * counted) rather than `selectEvent`.
  *
  * Hover reports the pointer's real position to the shared cursor via
  * `useTimeline().setCursorTime`, using the same `pointerToElapsedMs`
@@ -180,7 +183,7 @@ export type ComponentTrackProps = {
  * approximation.
  */
 export function ComponentTrack({ events }: ComponentTrackProps) {
-  const { xScale, width, setCursorTime, selectEvent } = useTimeline();
+  const { xScale, width, setCursorTime, selectEvent, selectCluster } = useTimeline();
   const cy = TRACK_HEIGHT / 2;
 
   const handleMove = (event: ReactMouseEvent<SVGSVGElement>) => {
@@ -197,9 +200,21 @@ export function ComponentTrack({ events }: ComponentTrackProps) {
   // mark (`useKeyWithClickEvents`). A cluster click goes through this exact
   // same path as a normal mark, so it cannot conflict with f9's
   // drag-vs-click suppression.
+  //
+  // A cluster marker carries `data-component-ids` (every member,
+  // comma-joined) alongside `data-component-id` (the representative);
+  // clicking it opens the full member list via `selectCluster` instead of
+  // jumping straight to the representative and silently dropping the rest of
+  // what the count badge counted -- same bug fix as `HarnessTrack`.
   const selectFromTarget = (target: EventTarget | null) => {
     const el = (target as SVGElement | null)?.closest?.('[data-component-id]');
-    const id = el?.getAttribute('data-component-id');
+    if (!el) return;
+    const clusterIds = el.getAttribute('data-component-ids');
+    if (clusterIds) {
+      selectCluster(clusterIds.split(','));
+      return;
+    }
+    const id = el.getAttribute('data-component-id');
     if (id) selectEvent(id);
   };
   const handleClick = (event: ReactMouseEvent<SVGSVGElement>) => selectFromTarget(event.target);
@@ -264,6 +279,7 @@ export function ComponentTrack({ events }: ComponentTrackProps) {
               <g
                 key={event.id}
                 data-component-id={event.id}
+                data-component-ids={cluster.members.map((m) => m.id).join(',')}
                 data-component-kind={event.kind}
                 data-component-shape={SHAPE_NAME[event.kind]}
                 data-component-cluster-count={count}
