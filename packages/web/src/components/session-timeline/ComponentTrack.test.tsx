@@ -85,6 +85,42 @@ describe('shape-primary glyphs', () => {
   });
 });
 
+describe('legend (bug fix: mcp/skill/hook had no visible name)', () => {
+  test('renders no legend when there are zero events', () => {
+    const view = renderTrack([]);
+    expect(view.container.querySelector('[data-slot="component-track-legend"]')).toBeNull();
+  });
+
+  test('lists only the kinds actually present, each with its shape and a real count, in skill/mcp/agent/hook order', () => {
+    const view = renderTrack([
+      componentEvent({ id: 'a', kind: 'hook' }),
+      componentEvent({ id: 'b', kind: 'skill', at: 500 }),
+      componentEvent({ id: 'c', kind: 'skill', at: 700 }),
+    ]);
+    const legend = view.container.querySelector('[data-slot="component-track-legend"]');
+    if (!legend) throw new Error('expected a legend');
+    const items = Array.from(legend.querySelectorAll('li'));
+    expect(items.map((li) => li.textContent)).toEqual(['Skill (2)', 'Hook (1)']);
+    // No mcp/agent entries -- neither kind occurs in this event set.
+    expect(legend.textContent).not.toContain('MCP');
+    expect(legend.textContent).not.toContain('Agent');
+
+    const skillSwatch = legend.querySelector('[data-legend-shape="skill"]');
+    expect(skillSwatch?.querySelector('circle')).not.toBeNull();
+    const hookSwatch = legend.querySelector('[data-legend-shape="hook"]');
+    const hookRect = hookSwatch?.querySelector('rect');
+    expect(hookRect).not.toBeNull();
+    expect(hookRect?.getAttribute('transform')).toBeNull(); // square, not the mcp diamond's rotation
+  });
+
+  test('legend swatches are colored via chart-theme KIND_COLOR var() references, never a literal hex', () => {
+    const view = renderTrack([componentEvent({ kind: 'mcp' })]);
+    const swatch = view.container.querySelector('[data-legend-shape="mcp"] rect');
+    expect(swatch?.getAttribute('fill')).toBe(KIND_COLOR.mcp);
+    expect(swatch?.getAttribute('fill')).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+  });
+});
+
 describe('color', () => {
   test('skill/mcp/agent/hook are colored via KIND_COLOR.skill/mcp/agent/harness-event, never a literal hex', () => {
     const view = renderTrack([

@@ -11,7 +11,7 @@ import {
   type EventCluster,
 } from '../../lib/timeline';
 import { KIND_COLOR, type KindKey } from '../charts/chart-theme';
-import { LABEL_GUTTER_WIDTH, useTimeline } from './TimelineContext';
+import { LABEL_GUTTER_PX, LABEL_GUTTER_WIDTH, useTimeline } from './TimelineContext';
 import { pointerToElapsedMs } from './useContainerWidth';
 
 const GLYPH_SIZE = 5;
@@ -57,6 +57,16 @@ const SHAPE_NAME: Record<ComponentEventKind, string> = {
   agent: 'triangle',
   hook: 'square',
 };
+
+/**
+ * Legend reading order (bug fix): this track packs all 4 kinds onto one
+ * shared row, unlike `HarnessTrack`'s one-row-per-kind layout, so there is
+ * no natural per-row label to put in the gutter -- the track used to render
+ * that gutter empty and rely on shape/color/tooltip alone, leaving mcp/
+ * skill/hook (and agent) with no visible name anywhere. Same order as
+ * `COMPONENT_LABEL`'s own key order.
+ */
+const LEGEND_ORDER: readonly ComponentEventKind[] = ['skill', 'mcp', 'agent', 'hook'];
 
 type ShapeProps = { cx: number; cy: number; color: string };
 
@@ -226,28 +236,41 @@ export function ComponentTrack({ events }: ComponentTrackProps) {
 
   const clusters = clusterByProximity(events, xScale, CLUSTER_THRESHOLD_PX);
 
+  // Legend counts (bug fix): only kinds actually present in this session get
+  // a legend entry, matching TraceRibbon's own kind-legend convention (an
+  // unused kind never appears).
+  const counts = new Map<ComponentEventKind, number>();
+  for (const event of events) counts.set(event.kind, (counts.get(event.kind) ?? 0) + 1);
+  const legendEntries = LEGEND_ORDER.filter((kind) => counts.has(kind)).map((kind) => ({
+    kind,
+    count: counts.get(kind) ?? 0,
+  }));
+
   return (
-    <div data-slot="component-track" className="flex items-center gap-2">
-      {/* Empty label-gutter placeholder cell (f8): same fixed width every
-          other track/axis row reserves, so this track's <svg> starts at the
-          identical real-pixel x-origin as AgentTrack's (visible) label
-          column. */}
-      <span aria-hidden="true" className={`${LABEL_GUTTER_WIDTH} shrink-0`} />
-      <svg
-        role="img"
-        aria-label="Component events"
-        width="100%"
-        viewBox={`0 0 ${width} ${TRACK_HEIGHT}`}
-        height={TRACK_HEIGHT}
-        preserveAspectRatio="none"
-        className="min-w-0 flex-1"
-        onMouseMove={handleMove}
-        onMouseLeave={handleLeave}
-        onClick={handleClick}
-        onKeyDown={handleKeyDown}
-      >
-        <Group>
-          {clusters.map((cluster) => {
+    <div data-slot="component-track" className="space-y-1">
+      <div className="flex items-center gap-2">
+        {/* Empty label-gutter placeholder cell (f8): same fixed width every
+            other track/axis row reserves, so this track's <svg> starts at the
+            identical real-pixel x-origin as AgentTrack's (visible) label
+            column. There is no single per-row label to put here (unlike
+            HarnessTrack) -- all 4 kinds share this one row; see the legend
+            below instead. */}
+        <span aria-hidden="true" className={`${LABEL_GUTTER_WIDTH} shrink-0`} />
+        <svg
+          role="img"
+          aria-label="Component events"
+          width="100%"
+          viewBox={`0 0 ${width} ${TRACK_HEIGHT}`}
+          height={TRACK_HEIGHT}
+          preserveAspectRatio="none"
+          className="min-w-0 flex-1"
+          onMouseMove={handleMove}
+          onMouseLeave={handleLeave}
+          onClick={handleClick}
+          onKeyDown={handleKeyDown}
+        >
+          <Group>
+            {clusters.map((cluster) => {
             if (cluster.members.length === 1) {
               const event = cluster.representative;
               const cx = xScale(event.at);
@@ -299,8 +322,33 @@ export function ComponentTrack({ events }: ComponentTrackProps) {
               </g>
             );
           })}
-        </Group>
-      </svg>
+          </Group>
+        </svg>
+      </div>
+      {legendEntries.length > 0 && (
+        <ul
+          data-slot="component-track-legend"
+          className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400"
+          style={{ paddingLeft: LABEL_GUTTER_PX }}
+        >
+          {legendEntries.map(({ kind, count }) => (
+            <li key={kind} className="inline-flex items-center gap-1">
+              <svg
+                width={12}
+                height={12}
+                viewBox="0 0 12 12"
+                aria-hidden="true"
+                data-legend-shape={kind}
+              >
+                {COMPONENT_SHAPE[kind]({ cx: 6, cy: 6, color: KIND_COLOR[COMPONENT_COLOR_KEY[kind]] })}
+              </svg>
+              <span>
+                {COMPONENT_LABEL[kind]} ({count})
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
