@@ -39,14 +39,17 @@ function renderTrack(events: HarnessEvent[], domain: TimelineDomain = [0, 1000])
 describe('rows', () => {
   test('always renders exactly three rows, labeled Read/Write/Exec, even with zero events', () => {
     const view = renderTrack([]);
-    const labels = view.container.querySelectorAll('text[data-row-label]');
-    expect(labels.length).toBe(3);
-    expect(Array.from(labels).map((l) => l.getAttribute('data-row-label'))).toEqual([
-      'read',
-      'write',
-      'exec',
+    // Labels live as real HTML text in each row's label gutter (f8/AgentTrack
+    // pattern), not as SVG <text> inside the data area -- see HarnessTrack's
+    // own doc comment for why that used to overlap with marks near t=0.
+    const rows = view.container.querySelectorAll('[data-slot="harness-track"] > div');
+    expect(rows.length).toBe(3);
+    expect(Array.from(rows).map((r) => r.querySelector('span')?.textContent)).toEqual([
+      'Read',
+      'Write',
+      'Exec',
     ]);
-    expect(Array.from(labels).map((l) => l.textContent)).toEqual(['Read', 'Write', 'Exec']);
+    expect(view.container.querySelectorAll('svg').length).toBe(3);
   });
 });
 
@@ -70,16 +73,17 @@ describe('instant vs duration marks', () => {
     expect(Number(mark?.getAttribute('width'))).toBeCloseTo(96, 5); // x(300) - x(100) = 144 - 48
   });
 
-  test('each row places its own events at the correct row (distinct cy)', () => {
+  test('each row places its own events in its own row (distinct svg, labeled to match)', () => {
     const view = renderTrack([
       harnessEvent({ id: 'r', kind: 'read', at: 0 }),
       harnessEvent({ id: 'w', kind: 'write', at: 0 }),
       harnessEvent({ id: 'e', kind: 'exec', at: 0 }),
     ]);
-    const yRead = view.container.querySelector('[data-harness-id="r"]')?.getAttribute('cy');
-    const yWrite = view.container.querySelector('[data-harness-id="w"]')?.getAttribute('cy');
-    const yExec = view.container.querySelector('[data-harness-id="e"]')?.getAttribute('cy');
-    expect(new Set([yRead, yWrite, yExec]).size).toBe(3);
+    const rowOf = (id: string) =>
+      view.container.querySelector(`[data-harness-id="${id}"]`)?.closest('svg')?.getAttribute('aria-label');
+    expect(rowOf('r')).toBe('Read events');
+    expect(rowOf('w')).toBe('Write events');
+    expect(rowOf('e')).toBe('Exec events');
   });
 });
 

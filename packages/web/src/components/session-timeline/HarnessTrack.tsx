@@ -6,6 +6,7 @@ import {
   type HarnessEvent,
   type HarnessEventKind,
 } from '../../lib/timeline';
+import { cn } from '../../lib/utils';
 import { KIND_COLOR } from '../charts/chart-theme';
 import { LABEL_GUTTER_WIDTH, useTimeline } from './TimelineContext';
 import { pointerToElapsedMs } from './useContainerWidth';
@@ -25,8 +26,6 @@ const ROW_LABEL: Record<HarnessEventKind, string> = {
 };
 
 const ROW_HEIGHT = 20;
-const ROW_GAP = 4;
-const PAD = 3;
 const MARK_HEIGHT = ROW_HEIGHT - 6;
 /** Instant-mark dot radius (f10-t1), matching ComponentTrack's `GLYPH_SIZE` shape-glyph convention so both tracks read as one visual language. */
 const DOT_RADIUS = 5;
@@ -46,10 +45,6 @@ const CLUSTER_RADIUS = DOT_RADIUS + 2;
  * space as `domain` narrows (f9), not from this threshold changing.
  */
 const CLUSTER_THRESHOLD_PX = 10;
-
-function rowY(index: number): number {
-  return index * (ROW_HEIGHT + ROW_GAP);
-}
 
 /**
  * `elapsed ms -> "m:ss"`. Local to this track — no shared elapsed-time
@@ -130,10 +125,16 @@ export type HarnessTrackProps = {
  * real-pixel-to-domain mapping `TokenTrack`/`AgentTrack` (f4) already use —
  * one consistent hover contract across every track, not a per-mark
  * approximation.
+ *
+ * Layout: one `<svg>` per row (`AgentTrack`'s per-lane pattern), each with
+ * its own real HTML label in the shared `LABEL_GUTTER_WIDTH` gutter — not a
+ * single svg spanning all three rows with Read/Write/Exec drawn as `<text>`
+ * inside the data area (the original layout), which put label text in the
+ * same coordinate space as event marks and let any mark near `t=0` render
+ * on top of it.
  */
 export function HarnessTrack({ events }: HarnessTrackProps) {
   const { xScale, width, setCursorTime, selectEvent } = useTimeline();
-  const svgHeight = ROW_ORDER.length * ROW_HEIGHT + (ROW_ORDER.length - 1) * ROW_GAP;
 
   const handleMove = (event: ReactMouseEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -166,118 +167,122 @@ export function HarnessTrack({ events }: HarnessTrackProps) {
   const durationEvents = events.filter((event) => event.durationMs !== undefined);
   const instantEvents = events.filter((event) => event.durationMs === undefined);
   const clusters = clusterByProximity(instantEvents, xScale, CLUSTER_THRESHOLD_PX);
+  const cy = ROW_HEIGHT / 2;
 
   return (
-    <div data-slot="harness-track" className="flex items-center gap-2">
-      {/* Empty label-gutter placeholder cell (f8): same fixed width every
-          other track/axis row reserves, so this track's <svg> starts at the
-          identical real-pixel x-origin as AgentTrack's (visible) label
-          column. */}
-      <span aria-hidden="true" className={`${LABEL_GUTTER_WIDTH} shrink-0`} />
-      <svg
-        role="img"
-        aria-label="Harness events"
-        width="100%"
-        viewBox={`0 0 ${width} ${svgHeight}`}
-        height={svgHeight}
-        preserveAspectRatio="none"
-        className="min-w-0 flex-1"
-        onMouseMove={handleMove}
-        onMouseLeave={handleLeave}
-        onClick={handleClick}
-        onKeyDown={handleKeyDown}
-      >
-        <Group>
-          {ROW_ORDER.map((kind, index) => (
-            <text
-              key={`label-${kind}`}
-              data-row-label={kind}
-              x={PAD}
-              y={rowY(index) + ROW_HEIGHT / 2 + 3}
-              fontSize={8}
-              className="fill-zinc-500 dark:fill-zinc-400"
-            >
-              {ROW_LABEL[kind]}
-            </text>
-          ))}
-          {durationEvents.map((event) => {
-            const rowIndex = ROW_ORDER.indexOf(event.kind);
-            const y = rowY(rowIndex) + (ROW_HEIGHT - MARK_HEIGHT) / 2;
-            const x1 = xScale(event.at);
-            const x2 = xScale(event.at + (event.durationMs ?? 0));
-            const markWidth = Math.max(x2 - x1, 2);
-            return (
-              <rect
-                key={event.id}
-                data-harness-id={event.id}
-                data-harness-kind={event.kind}
-                data-harness-shape="bar"
-                tabIndex={0}
-                x={x1}
-                y={y}
-                width={markWidth}
-                height={MARK_HEIGHT}
-                fill={KIND_COLOR[event.kind]}
-              >
-                <title>{harnessTooltip(event)}</title>
-              </rect>
-            );
-          })}
-          {clusters.map((cluster) => {
-            const rowIndex = ROW_ORDER.indexOf(cluster.representative.kind);
-            const cy = rowY(rowIndex) + ROW_HEIGHT / 2;
+    <div data-slot="harness-track" className="space-y-1">
+      {ROW_ORDER.map((kind) => (
+        // One row = one <label span> + <svg> pair (same pattern AgentTrack's
+        // per-lane rows use), instead of the old single shared <svg> with
+        // Read/Write/Exec drawn as <text> inside the data area at x=PAD: that
+        // put label text in the same coordinate space as event marks, so any
+        // mark near t=0 rendered on top of it. Splitting one row per kind
+        // moves the label into the real HTML gutter column (LABEL_GUTTER_WIDTH)
+        // that every track already reserves, outside the SVG entirely -- it
+        // can never be drawn over by a mark again.
+        <div key={kind} className="flex items-center gap-2">
+          <span
+            className={cn(
+              'shrink-0 text-xs text-zinc-500 dark:text-zinc-400',
+              LABEL_GUTTER_WIDTH,
+            )}
+          >
+            {ROW_LABEL[kind]}
+          </span>
+          <svg
+            role="img"
+            aria-label={`${ROW_LABEL[kind]} events`}
+            width="100%"
+            viewBox={`0 0 ${width} ${ROW_HEIGHT}`}
+            height={ROW_HEIGHT}
+            preserveAspectRatio="none"
+            className="min-w-0 flex-1"
+            onMouseMove={handleMove}
+            onMouseLeave={handleLeave}
+            onClick={handleClick}
+            onKeyDown={handleKeyDown}
+          >
+            <Group>
+              {durationEvents
+                .filter((event) => event.kind === kind)
+                .map((event) => {
+                  const y = (ROW_HEIGHT - MARK_HEIGHT) / 2;
+                  const x1 = xScale(event.at);
+                  const x2 = xScale(event.at + (event.durationMs ?? 0));
+                  const markWidth = Math.max(x2 - x1, 2);
+                  return (
+                    <rect
+                      key={event.id}
+                      data-harness-id={event.id}
+                      data-harness-kind={event.kind}
+                      data-harness-shape="bar"
+                      tabIndex={0}
+                      x={x1}
+                      y={y}
+                      width={markWidth}
+                      height={MARK_HEIGHT}
+                      fill={KIND_COLOR[event.kind]}
+                    >
+                      <title>{harnessTooltip(event)}</title>
+                    </rect>
+                  );
+                })}
+              {clusters
+                .filter((cluster) => cluster.representative.kind === kind)
+                .map((cluster) => {
+                  if (cluster.members.length === 1) {
+                    const event = cluster.representative;
+                    const cx = xScale(event.at);
+                    return (
+                      <circle
+                        key={event.id}
+                        data-harness-id={event.id}
+                        data-harness-kind={event.kind}
+                        data-harness-shape="dot"
+                        tabIndex={0}
+                        cx={cx}
+                        cy={cy}
+                        r={DOT_RADIUS}
+                        fill={KIND_COLOR[event.kind]}
+                      >
+                        <title>{harnessTooltip(event)}</title>
+                      </circle>
+                    );
+                  }
 
-            if (cluster.members.length === 1) {
-              const event = cluster.representative;
-              const cx = xScale(event.at);
-              return (
-                <circle
-                  key={event.id}
-                  data-harness-id={event.id}
-                  data-harness-kind={event.kind}
-                  data-harness-shape="dot"
-                  tabIndex={0}
-                  cx={cx}
-                  cy={cy}
-                  r={DOT_RADIUS}
-                  fill={KIND_COLOR[event.kind]}
-                >
-                  <title>{harnessTooltip(event)}</title>
-                </circle>
-              );
-            }
-
-            const cx = xScale(cluster.representative.at);
-            const count = cluster.members.length;
-            return (
-              <g
-                key={cluster.representative.id}
-                data-harness-id={cluster.representative.id}
-                data-harness-kind={cluster.representative.kind}
-                data-harness-shape="cluster"
-                data-harness-cluster-count={count}
-                tabIndex={0}
-              >
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={CLUSTER_RADIUS}
-                  fill={KIND_COLOR[cluster.representative.kind]}
-                />
-                <text
-                  x={cx + CLUSTER_RADIUS + 2}
-                  y={cy + 3}
-                  fontSize={7}
-                  className="fill-zinc-700 font-semibold dark:fill-zinc-200"
-                >
-                  {count}
-                </text>
-                <title>{harnessClusterTooltip(cluster)}</title>
-              </g>
-            );
-          })}
-        </Group>
-      </svg>
+                  const cx = xScale(cluster.representative.at);
+                  const count = cluster.members.length;
+                  return (
+                    <g
+                      key={cluster.representative.id}
+                      data-harness-id={cluster.representative.id}
+                      data-harness-kind={cluster.representative.kind}
+                      data-harness-shape="cluster"
+                      data-harness-cluster-count={count}
+                      tabIndex={0}
+                    >
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r={CLUSTER_RADIUS}
+                        fill={KIND_COLOR[cluster.representative.kind]}
+                      />
+                      <text
+                        x={cx + CLUSTER_RADIUS + 2}
+                        y={cy + 3}
+                        fontSize={7}
+                        className="fill-zinc-700 font-semibold dark:fill-zinc-200"
+                      >
+                        {count}
+                      </text>
+                      <title>{harnessClusterTooltip(cluster)}</title>
+                    </g>
+                  );
+                })}
+            </Group>
+          </svg>
+        </div>
+      ))}
     </div>
   );
 }
