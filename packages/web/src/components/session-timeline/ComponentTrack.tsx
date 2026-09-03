@@ -1,16 +1,18 @@
 import { Group } from '@visx/group';
 import type {
+  FocusEvent as ReactFocusEvent,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   ReactNode,
 } from 'react';
+import { useRef } from 'react';
 import {
   type ComponentEvent,
   type ComponentEventKind,
   clusterByProximity,
   type EventCluster,
 } from '../../lib/timeline';
-import { KIND_COLOR, type KindKey } from '../charts/chart-theme';
+import { HOVER_DIM_OPACITY, KIND_COLOR, type KindKey } from '../charts/chart-theme';
 import { LABEL_GUTTER_PX, LABEL_GUTTER_WIDTH, useTimeline } from './TimelineContext';
 import { pointerToElapsedMs } from './useContainerWidth';
 
@@ -68,7 +70,16 @@ const SHAPE_NAME: Record<ComponentEventKind, string> = {
  */
 const LEGEND_ORDER: readonly ComponentEventKind[] = ['skill', 'mcp', 'agent', 'hook'];
 
-type ShapeProps = { cx: number; cy: number; color: string };
+/**
+ * `opacity` (timeline-chart-usability f1-t5): optional so the legend's own
+ * swatch call sites (`{ cx, cy, color }`, no opacity arg) keep rendering at
+ * full opacity unconditionally — only the track's own data marks ever pass
+ * an explicit value, computed from `TimelineContext.hoveredAgentId`
+ * (`HOVER_DIM_OPACITY` when a different agent's row is hovered, `undefined`
+ * otherwise, same "omit the attribute rather than force opacity 1" contract
+ * `TokenTrack`'s parallel marks already use).
+ */
+type ShapeProps = { cx: number; cy: number; color: string; opacity?: number };
 
 /**
  * design.md §1.6: shape is the PRIMARY differentiator, color secondary —
@@ -82,30 +93,35 @@ type ShapeProps = { cx: number; cy: number; color: string };
  * this map is built fresh, not adapted from something else.
  */
 const COMPONENT_SHAPE: Record<ComponentEventKind, (props: ShapeProps) => ReactNode> = {
-  skill: ({ cx, cy, color }) => <circle cx={cx} cy={cy} r={GLYPH_SIZE} fill={color} />,
-  mcp: ({ cx, cy, color }) => (
+  skill: ({ cx, cy, color, opacity }) => (
+    <circle cx={cx} cy={cy} r={GLYPH_SIZE} fill={color} opacity={opacity} />
+  ),
+  mcp: ({ cx, cy, color, opacity }) => (
     <rect
       x={cx - GLYPH_SIZE}
       y={cy - GLYPH_SIZE}
       width={GLYPH_SIZE * 2}
       height={GLYPH_SIZE * 2}
       fill={color}
+      opacity={opacity}
       transform={`rotate(45 ${cx} ${cy})`}
     />
   ),
-  agent: ({ cx, cy, color }) => (
+  agent: ({ cx, cy, color, opacity }) => (
     <polygon
       points={`${cx},${cy - GLYPH_SIZE} ${cx + GLYPH_SIZE},${cy + GLYPH_SIZE} ${cx - GLYPH_SIZE},${cy + GLYPH_SIZE}`}
       fill={color}
+      opacity={opacity}
     />
   ),
-  hook: ({ cx, cy, color }) => (
+  hook: ({ cx, cy, color, opacity }) => (
     <rect
       x={cx - GLYPH_SIZE}
       y={cy - GLYPH_SIZE}
       width={GLYPH_SIZE * 2}
       height={GLYPH_SIZE * 2}
       fill={color}
+      opacity={opacity}
     />
   ),
 };
@@ -191,16 +207,91 @@ export type ComponentTrackProps = {
  * real-pixel-to-domain mapping `TokenTrack`/`AgentTrack` (f4) already use —
  * one consistent hover contract across every track, not a per-mark
  * approximation.
+ *
+ * Hover-dim + tooltip wiring (timeline-chart-usability design.md §1/§3,
+ * f1-t5): every mark (single-member or a merged cluster) renders at
+ * `HOVER_DIM_OPACITY` when `hoveredAgentId` names a different agent than the
+ * mark's own (`cluster.representative.agentId` for a cluster) -- the count
+ * badge `<text>` never dims, staying legible. `hoveredMark` (the shared
+ * `MarkTooltip` overlay's content) is populated by hit-testing `event.target`
+ * on every `onMouseMove` tick, reusing the same `data-component-id`/
+ * `data-component-ids` hit-test `selectFromTarget` already does, and cleared
+ * on `onMouseLeave`; each mark also carries `onFocus`/`onBlur` for keyboard
+ * parity. There is no longer a native SVG `<title>` anywhere on this track --
+ * `componentTooltip`/`componentClusterTooltip` back `hoveredMark.content`
+ * instead.
  */
 export function ComponentTrack({ events }: ComponentTrackProps) {
-  const { xScale, width, setCursorTime, selectEvent, selectCluster } = useTimeline();
+  const {
+    xScale,
+    width,
+    setCursorTime,
+    selectEvent,
+    selectCluster,
+    hoveredAgentId,
+    setHoveredMark,
+  } = useTimeline();
   const cy = TRACK_HEIGHT / 2;
+
+  const clusters = clusterByProximity(events, xScale, CLUSTER_THRESHOLD_PX);
+
+  // Last hit-tested `data-component-id` (or `null` when no mark is under the
+  // pointer), tracked outside React state so `handleMove` can skip the
+  // hit-test/`setHoveredMark` call entirely when it's unchanged across
+  // consecutive mousemove ticks over the same mark -- `setHoveredMark` always
+  // takes a fresh `HoveredMark` object literal, so calling it unconditionally
+  // would change context-value identity (and re-render every consumer,
+  // including `MarkTooltip`) on every single pointer-move tick, not just on
+  // real hover transitions (timeline-chart-usability design.md §3 perf note;
+  // same technique as `TokenTrack`'s own `hoveredMarkIdRef`).
+  const hoveredMarkIdRef = useRef<string | null>(null);
 
   const handleMove = (event: ReactMouseEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     setCursorTime(pointerToElapsedMs(event.clientX, rect, width, xScale));
+
+    const el = (event.target as SVGElement | null)?.closest?.('[data-component-id]');
+    const id = el?.getAttribute('data-component-id') ?? null;
+    if (id === hoveredMarkIdRef.current) return;
+    hoveredMarkIdRef.current = id;
+    if (id === null) {
+      setHoveredMark(null);
+      return;
+    }
+    const clusterIds = el?.getAttribute('data-component-ids');
+    if (clusterIds) {
+      const cluster = clusters.find((c) => c.representative.id === id);
+      if (!cluster) return;
+      setHoveredMark({
+        content: componentClusterTooltip(cluster),
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+      return;
+    }
+    const hoveredEvent = events.find((e) => e.id === id);
+    if (!hoveredEvent) return;
+    setHoveredMark({
+      content: componentTooltip(hoveredEvent),
+      clientX: event.clientX,
+      clientY: event.clientY,
+    });
   };
-  const handleLeave = () => setCursorTime(null);
+  const handleLeave = () => {
+    setCursorTime(null);
+    hoveredMarkIdRef.current = null;
+    setHoveredMark(null);
+  };
+  const handleMarkFocus =
+    (id: string, content: string) => (event: ReactFocusEvent<SVGGElement>) => {
+      hoveredMarkIdRef.current = id;
+      const rect = event.currentTarget.getBoundingClientRect();
+      setHoveredMark({ content, clientX: rect.left, clientY: rect.top });
+    };
+  const handleMarkBlur = () => {
+    hoveredMarkIdRef.current = null;
+    setHoveredMark(null);
+  };
   // Click-to-select (f6): hit-tests via `data-component-id` on the same
   // `<svg role="img">` element the shared hover contract already uses (see
   // `session-timeline-track-hover-contract`), rather than an onClick on the
@@ -233,8 +324,6 @@ export function ComponentTrack({ events }: ComponentTrackProps) {
     event.preventDefault();
     selectFromTarget(event.target);
   };
-
-  const clusters = clusterByProximity(events, xScale, CLUSTER_THRESHOLD_PX);
 
   // Legend counts (bug fix): only kinds actually present in this session get
   // a legend entry, matching TraceRibbon's own kind-legend convention (an
@@ -271,57 +360,84 @@ export function ComponentTrack({ events }: ComponentTrackProps) {
         >
           <Group>
             {clusters.map((cluster) => {
-            if (cluster.members.length === 1) {
+              if (cluster.members.length === 1) {
+                const event = cluster.representative;
+                const cx = xScale(event.at);
+                const shape = COMPONENT_SHAPE[event.kind];
+                const color = KIND_COLOR[COMPONENT_COLOR_KEY[event.kind]];
+                const childId = event.kind === 'agent' && event.childId ? event.childId : undefined;
+                const opacity =
+                  hoveredAgentId !== null && event.agentId !== hoveredAgentId
+                    ? HOVER_DIM_OPACITY
+                    : undefined;
+                return (
+                  // This <g> is a genuine keyboard-focus target (tabIndex),
+                  // not a decorative static element -- `role="button"` (the
+                  // only role Biome would accept here) trips
+                  // `useSemanticElements` right back, wanting a literal
+                  // `<button>`, which an SVG mark inside an already-open
+                  // `<svg>` tree cannot be (design.md §0, same reasoning
+                  // `HarnessTrack`'s parallel marks use). The ancestor
+                  // `<svg role="img">`'s own `onKeyDown` (Enter/Space ->
+                  // `selectFromTarget`) already gives this mark its click
+                  // keyboard equivalent per the
+                  // `session-timeline-track-hover-contract` lesson;
+                  // `onFocus`/`onBlur` here are additive (hover-tooltip
+                  // parity only), not this mark's only interactivity.
+                  // biome-ignore lint/a11y/noStaticElementInteractions: see comment above
+                  <g
+                    key={event.id}
+                    data-component-id={event.id}
+                    data-component-kind={event.kind}
+                    data-component-shape={SHAPE_NAME[event.kind]}
+                    data-child-id={childId}
+                    tabIndex={0}
+                    onFocus={handleMarkFocus(event.id, componentTooltip(event))}
+                    onBlur={handleMarkBlur}
+                  >
+                    {shape({ cx, cy, color, opacity })}
+                  </g>
+                );
+              }
+
               const event = cluster.representative;
               const cx = xScale(event.at);
               const shape = COMPONENT_SHAPE[event.kind];
               const color = KIND_COLOR[COMPONENT_COLOR_KEY[event.kind]];
               const childId = event.kind === 'agent' && event.childId ? event.childId : undefined;
+              const count = cluster.members.length;
+              const opacity =
+                hoveredAgentId !== null && event.agentId !== hoveredAgentId
+                  ? HOVER_DIM_OPACITY
+                  : undefined;
               return (
+                // See the single-mark <g> above for why this
+                // static-element-interactions ignore is correct here.
+                // biome-ignore lint/a11y/noStaticElementInteractions: see comment on the single-mark <g> above
                 <g
                   key={event.id}
                   data-component-id={event.id}
+                  data-component-ids={cluster.members.map((m) => m.id).join(',')}
                   data-component-kind={event.kind}
                   data-component-shape={SHAPE_NAME[event.kind]}
+                  data-component-cluster-count={count}
                   data-child-id={childId}
                   tabIndex={0}
+                  onFocus={handleMarkFocus(event.id, componentClusterTooltip(cluster))}
+                  onBlur={handleMarkBlur}
                 >
-                  {shape({ cx, cy, color })}
-                  <title>{componentTooltip(event)}</title>
+                  {shape({ cx, cy: cy - 1, color, opacity })}
+                  <text
+                    x={cx + GLYPH_SIZE + 3}
+                    y={cy + 3}
+                    fontSize={7}
+                    className="fill-zinc-700 font-semibold dark:fill-zinc-200"
+                  >
+                    {count}
+                  </text>
                 </g>
               );
-            }
-
-            const event = cluster.representative;
-            const cx = xScale(event.at);
-            const shape = COMPONENT_SHAPE[event.kind];
-            const color = KIND_COLOR[COMPONENT_COLOR_KEY[event.kind]];
-            const childId = event.kind === 'agent' && event.childId ? event.childId : undefined;
-            const count = cluster.members.length;
-            return (
-              <g
-                key={event.id}
-                data-component-id={event.id}
-                data-component-ids={cluster.members.map((m) => m.id).join(',')}
-                data-component-kind={event.kind}
-                data-component-shape={SHAPE_NAME[event.kind]}
-                data-component-cluster-count={count}
-                data-child-id={childId}
-                tabIndex={0}
-              >
-                {shape({ cx, cy: cy - 1, color })}
-                <text
-                  x={cx + GLYPH_SIZE + 3}
-                  y={cy + 3}
-                  fontSize={7}
-                  className="fill-zinc-700 font-semibold dark:fill-zinc-200"
-                >
-                  {count}
-                </text>
-                <title>{componentClusterTooltip(cluster)}</title>
-              </g>
-            );
-          })}
+            })}
           </Group>
         </svg>
       </div>
@@ -340,7 +456,11 @@ export function ComponentTrack({ events }: ComponentTrackProps) {
                 aria-hidden="true"
                 data-legend-shape={kind}
               >
-                {COMPONENT_SHAPE[kind]({ cx: 6, cy: 6, color: KIND_COLOR[COMPONENT_COLOR_KEY[kind]] })}
+                {COMPONENT_SHAPE[kind]({
+                  cx: 6,
+                  cy: 6,
+                  color: KIND_COLOR[COMPONENT_COLOR_KEY[kind]],
+                })}
               </svg>
               <span>
                 {COMPONENT_LABEL[kind]} ({count})

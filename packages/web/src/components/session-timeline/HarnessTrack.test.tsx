@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render } from '@testing-library/react';
+import { useRef } from 'react';
 import { afterEach, describe, expect, test } from 'vitest';
 import type { HarnessEvent } from '../../lib/timeline';
-import { KIND_COLOR } from '../charts/chart-theme';
+import { HOVER_DIM_OPACITY, KIND_COLOR } from '../charts/chart-theme';
 import { HarnessTrack } from './HarnessTrack';
 import type { TimelineDomain } from './TimelineContext';
 import { TimelineProvider, useTimeline } from './TimelineContext';
@@ -33,6 +34,48 @@ function renderTrack(events: HarnessEvent[], domain: TimelineDomain = [0, 1000])
       <HarnessTrack events={events} />
       <CursorProbe />
     </TimelineProvider>,
+  );
+}
+
+/**
+ * happy-dom's `getBoundingClientRect` defaults to a zeroed rect unless
+ * stubbed; stub it to a known 480px-wide box aligned with the nominal
+ * viewBox width so the pixel->domain math is exact, not coincidental --
+ * matching `TokenTrack.test.tsx`'s identical stub (same `pointerToElapsedMs`
+ * contract, same track-level `onMouseMove`). Module-level so both the
+ * "shared cursor wiring" and "mark tooltip" describe blocks can reuse it.
+ */
+function stubRect(svg: SVGSVGElement, height: number): void {
+  svg.getBoundingClientRect = () =>
+    ({
+      left: 0,
+      width: 480,
+      top: 0,
+      right: 480,
+      bottom: height,
+      height,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }) as DOMRect;
+}
+
+/** Surfaces `TimelineContext`'s live `hoveredMark` in the DOM, matching `CursorProbe`'s pattern above for `cursorTime`. */
+function HoveredMarkProbe() {
+  const { hoveredMark } = useTimeline();
+  return <div data-testid="hovered-mark">{hoveredMark ? hoveredMark.content : 'null'}</div>;
+}
+
+/** Same probe, plus an exposed render count so a perf test can assert an unchanged hit does NOT trigger a context-value re-render. */
+function CountingHoveredMarkProbe() {
+  const renderCount = useRef(0);
+  renderCount.current += 1;
+  const { hoveredMark } = useTimeline();
+  return (
+    <>
+      <div data-testid="hovered-mark">{hoveredMark ? hoveredMark.content : 'null'}</div>
+      <div data-testid="render-count">{renderCount.current}</div>
+    </>
   );
 }
 
@@ -80,7 +123,10 @@ describe('instant vs duration marks', () => {
       harnessEvent({ id: 'e', kind: 'exec', at: 0 }),
     ]);
     const rowOf = (id: string) =>
-      view.container.querySelector(`[data-harness-id="${id}"]`)?.closest('svg')?.getAttribute('aria-label');
+      view.container
+        .querySelector(`[data-harness-id="${id}"]`)
+        ?.closest('svg')
+        ?.getAttribute('aria-label');
     expect(rowOf('r')).toBe('Read events');
     expect(rowOf('w')).toBe('Write events');
     expect(rowOf('e')).toBe('Exec events');
@@ -90,10 +136,17 @@ describe('instant vs duration marks', () => {
 describe('proximity clustering (f10-t2)', () => {
   test('two same-kind instant marks within the proximity threshold merge into one marker with a count badge', () => {
     // domain [0, 1000], width 480 -> x(v) = v * 0.48; at=100 -> 48px, at=110 -> 52.8px (4.8px apart, well under the 10px threshold).
-    const view = renderTrack([
-      harnessEvent({ id: 'a', kind: 'read', at: 100 }),
-      harnessEvent({ id: 'b', kind: 'read', at: 110 }),
-    ]);
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <HarnessTrack
+          events={[
+            harnessEvent({ id: 'a', kind: 'read', at: 100 }),
+            harnessEvent({ id: 'b', kind: 'read', at: 110 }),
+          ]}
+        />
+        <HoveredMarkProbe />
+      </TimelineProvider>,
+    );
     const marks = view.container.querySelectorAll('[data-harness-kind="read"]');
     expect(marks.length).toBe(1);
     const mark = marks[0];
@@ -104,7 +157,12 @@ describe('proximity clustering (f10-t2)', () => {
     // a synthetic cluster id, so EventInspector's existing lookup resolves it.
     expect(mark?.getAttribute('data-harness-id')).toBe('a');
     expect(mark?.querySelector('text')?.textContent).toBe('2');
-    expect(mark?.querySelector('title')?.textContent).toContain('2 Read events');
+    // Detail content now arrives via hoveredMark, not a native <title>
+    // (f1-t4) -- see the 'tooltip (hoveredMark, no native <title>)' describe
+    // block below for the exact full-content assertion.
+    if (!mark) throw new Error('expected a mark');
+    fireEvent.mouseMove(mark, { clientX: 10, clientY: 20 });
+    expect(view.getByTestId('hovered-mark').textContent).toContain('2 Read events');
   });
 
   test('two same-kind instant marks far apart (beyond the threshold) stay as two separate dots', () => {
@@ -216,60 +274,210 @@ describe('color', () => {
   });
 });
 
-describe('tooltip', () => {
-  test('an instant read exposes type/start/duration/target/agent via a native SVG <title>', () => {
+describe('tooltip (hoveredMark, no native <title>)', () => {
+  test('no mark renders a native SVG <title> any more (MarkTooltip replaces it)', () => {
     const view = renderTrack([
-      harnessEvent({ kind: 'read', at: 61_000, name: 'src/index.ts', agentId: 'session-x' }),
+      harnessEvent({ kind: 'read', at: 100 }),
+      harnessEvent({ kind: 'exec', at: 300, durationMs: 200 }),
     ]);
-    const title = view.container.querySelector('[data-harness-id="fake#0"] title')?.textContent;
-    expect(title).toContain('Read');
-    expect(title).toContain('Start: 1:01');
-    expect(title).toContain('Duration: instant');
-    expect(title).toContain('Target: src/index.ts');
-    expect(title).toContain('Agent: session-x');
+    expect(view.container.querySelector('title')).toBeNull();
   });
 
-  test('a duration exec exposes start, end and a formatted duration', () => {
-    const view = renderTrack([
-      harnessEvent({ kind: 'exec', at: 1000, durationMs: 2500, name: 'npm test' }),
-    ]);
-    const title = view.container.querySelector('rect[data-harness-id="fake#0"] title')?.textContent;
-    expect(title).toContain('Start: 0:01');
-    expect(title).toContain('End: 0:03');
-    expect(title).toContain('Duration: 2.5s');
-    expect(title).toContain('Target: npm test');
+  test('hovering an instant read populates TimelineContext.hoveredMark with type/start/duration/target/agent', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <HarnessTrack
+          events={[
+            harnessEvent({ kind: 'read', at: 61_000, name: 'src/index.ts', agentId: 'session-x' }),
+          ]}
+        />
+        <HoveredMarkProbe />
+      </TimelineProvider>,
+    );
+    const mark = view.container.querySelector('[data-harness-id="fake#0"]');
+    if (!mark) throw new Error('expected a mark');
+    fireEvent.mouseMove(mark, { clientX: 10, clientY: 20 });
+    const content = view.getByTestId('hovered-mark').textContent ?? '';
+    expect(content).toContain('Read');
+    expect(content).toContain('Start: 1:01');
+    expect(content).toContain('Duration: instant');
+    expect(content).toContain('Target: src/index.ts');
+    expect(content).toContain('Agent: session-x');
   });
 
-  test('an error event notes the failure in its tooltip', () => {
-    const view = renderTrack([harnessEvent({ kind: 'write', error: true })]);
-    const title = view.container.querySelector('[data-harness-id="fake#0"] title')?.textContent;
-    expect(title).toContain('Error: yes');
+  test('hovering a duration exec bar reports start, end and a formatted duration', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <HarnessTrack
+          events={[harnessEvent({ kind: 'exec', at: 1000, durationMs: 2500, name: 'npm test' })]}
+        />
+        <HoveredMarkProbe />
+      </TimelineProvider>,
+    );
+    const mark = view.container.querySelector('rect[data-harness-id="fake#0"]');
+    if (!mark) throw new Error('expected a mark');
+    fireEvent.mouseMove(mark, { clientX: 10, clientY: 20 });
+    const content = view.getByTestId('hovered-mark').textContent ?? '';
+    expect(content).toContain('Start: 0:01');
+    expect(content).toContain('End: 0:03');
+    expect(content).toContain('Duration: 2.5s');
+    expect(content).toContain('Target: npm test');
+  });
+
+  test('hovering an error event notes the failure in the reported tooltip content', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <HarnessTrack events={[harnessEvent({ kind: 'write', error: true })]} />
+        <HoveredMarkProbe />
+      </TimelineProvider>,
+    );
+    const mark = view.container.querySelector('[data-harness-id="fake#0"]');
+    if (!mark) throw new Error('expected a mark');
+    fireEvent.mouseMove(mark, { clientX: 10, clientY: 20 });
+    expect(view.getByTestId('hovered-mark').textContent).toContain('Error: yes');
+  });
+
+  test("hovering a merged cluster reports harnessClusterTooltip's exact text shape", () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <HarnessTrack
+          events={[
+            harnessEvent({ id: 'a', kind: 'read', at: 100 }),
+            harnessEvent({ id: 'b', kind: 'read', at: 110 }),
+          ]}
+        />
+        <HoveredMarkProbe />
+      </TimelineProvider>,
+    );
+    const cluster = view.container.querySelector('[data-harness-shape="cluster"]');
+    if (!cluster) throw new Error('expected a cluster marker');
+    fireEvent.mouseMove(cluster, { clientX: 10, clientY: 20 });
+    // Exact text shape per harnessClusterTooltip: "N Read events" /
+    // "First: ..." / "Last: ..." / "Click to see all events".
+    expect(view.getByTestId('hovered-mark').textContent).toBe(
+      ['2 Read events', 'First: 0:00', 'Last: 0:00', 'Click to see all events'].join('\n'),
+    );
+  });
+
+  test('leaving the row clears hoveredMark back to null', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <HarnessTrack events={[harnessEvent({ kind: 'write' })]} />
+        <HoveredMarkProbe />
+      </TimelineProvider>,
+    );
+    const mark = view.container.querySelector('[data-harness-id="fake#0"]');
+    if (!mark) throw new Error('expected a mark');
+    fireEvent.mouseMove(mark, { clientX: 10, clientY: 20 });
+    expect(view.getByTestId('hovered-mark').textContent).not.toBe('null');
+    const svg = mark.closest('svg');
+    if (!svg) throw new Error('expected an svg');
+    fireEvent.mouseLeave(svg);
+    expect(view.getByTestId('hovered-mark').textContent).toBe('null');
+  });
+});
+
+describe('hover-dim by agent (HOVER_DIM_OPACITY)', () => {
+  /** Drives `TimelineContext.hoveredAgentId` via a real user interaction, matching `TimelineContext.test.tsx`'s own button-driven pattern (never calling a context setter during another component's render). */
+  function HoverAgentDriver() {
+    const { setHoveredAgentId } = useTimeline();
+    return (
+      <button type="button" onClick={() => setHoveredAgentId('agent-a')}>
+        hover-agent-a
+      </button>
+    );
+  }
+
+  test('a plain mark whose agentId does not match hoveredAgentId dims; the matching one stays full opacity', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <HarnessTrack
+          events={[
+            harnessEvent({ id: 'a', kind: 'read', at: 100, agentId: 'agent-a' }),
+            harnessEvent({ id: 'b', kind: 'write', at: 100, agentId: 'agent-b' }),
+          ]}
+        />
+        <HoverAgentDriver />
+      </TimelineProvider>,
+    );
+    fireEvent.click(view.getByText('hover-agent-a'));
+    const matching = view.container.querySelector('[data-harness-id="a"]');
+    const nonMatching = view.container.querySelector('[data-harness-id="b"]');
+    expect(matching?.getAttribute('fill-opacity')).toBeNull();
+    expect(Number(nonMatching?.getAttribute('fill-opacity'))).toBe(HOVER_DIM_OPACITY);
+  });
+
+  test('a cluster dims its own <circle> (not its count <text>) when its representative agentId does not match hoveredAgentId', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <HarnessTrack
+          events={[
+            harnessEvent({ id: 'a', kind: 'read', at: 100, agentId: 'some-other-agent' }),
+            harnessEvent({ id: 'b', kind: 'read', at: 110, agentId: 'some-other-agent' }),
+          ]}
+        />
+        <HoverAgentDriver />
+      </TimelineProvider>,
+    );
+    fireEvent.click(view.getByText('hover-agent-a'));
+    const cluster = view.container.querySelector('[data-harness-shape="cluster"]');
+    if (!cluster) throw new Error('expected a cluster marker');
+    const circle = cluster.querySelector('circle');
+    const text = cluster.querySelector('text');
+    expect(Number(circle?.getAttribute('fill-opacity'))).toBe(HOVER_DIM_OPACITY);
+    expect(text?.getAttribute('fill-opacity')).toBeNull();
+    expect(text?.getAttribute('opacity')).toBeNull();
+  });
+});
+
+describe('unchanged-hit-skip perf (hovering the same mark repeatedly does not re-render context consumers)', () => {
+  test('two consecutive mousemove ticks on the same mark leave the render count unchanged; moving to a different mark bumps it', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <HarnessTrack
+          events={[
+            harnessEvent({ id: 'a', kind: 'read', at: 100 }),
+            harnessEvent({ id: 'b', kind: 'write', at: 600 }),
+          ]}
+        />
+        <CountingHoveredMarkProbe />
+      </TimelineProvider>,
+    );
+    const markA = view.container.querySelector('[data-harness-id="a"]');
+    const markB = view.container.querySelector('[data-harness-id="b"]');
+    if (!markA || !markB) throw new Error('expected both marks');
+
+    fireEvent.mouseMove(markA, { clientX: 10, clientY: 20 });
+    const countAfterFirstHit = Number(view.getByTestId('render-count').textContent);
+
+    fireEvent.mouseMove(markA, { clientX: 11, clientY: 20 });
+    const countAfterSecondHitSameMark = Number(view.getByTestId('render-count').textContent);
+    expect(countAfterSecondHitSameMark).toBe(countAfterFirstHit);
+
+    fireEvent.mouseMove(markB, { clientX: 12, clientY: 20 });
+    const countAfterDifferentMark = Number(view.getByTestId('render-count').textContent);
+    expect(countAfterDifferentMark).toBeGreaterThan(countAfterSecondHitSameMark);
+  });
+});
+
+describe('keyboard parity (focus/blur mirrors hover)', () => {
+  test('focusing a mark sets hoveredMark; blurring it clears back to null', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <HarnessTrack events={[harnessEvent({ kind: 'read', at: 61_000, name: 'src/index.ts' })]} />
+        <HoveredMarkProbe />
+      </TimelineProvider>,
+    );
+    const mark = view.container.querySelector('[data-harness-id="fake#0"]');
+    if (!mark) throw new Error('expected a mark');
+    fireEvent.focus(mark);
+    expect(view.getByTestId('hovered-mark').textContent).toContain('Target: src/index.ts');
+    fireEvent.blur(mark);
+    expect(view.getByTestId('hovered-mark').textContent).toBe('null');
   });
 });
 
 describe('shared cursor wiring', () => {
-  /**
-   * happy-dom's `getBoundingClientRect` defaults to a zeroed rect unless
-   * stubbed; stub it to a known 480px-wide box aligned with the nominal
-   * viewBox width so the pixel->domain math is exact, not coincidental —
-   * matching `TokenTrack.test.tsx`'s identical stub (same
-   * `pointerToElapsedMs` contract, same track-level `onMouseMove`).
-   */
-  function stubRect(svg: SVGSVGElement, height: number): void {
-    svg.getBoundingClientRect = () =>
-      ({
-        left: 0,
-        width: 480,
-        top: 0,
-        right: 480,
-        bottom: height,
-        height,
-        x: 0,
-        y: 0,
-        toJSON: () => ({}),
-      }) as DOMRect;
-  }
-
   test('hovering the track sets TimelineContext.cursorTime from the real pointer position', () => {
     const view = renderTrack([harnessEvent({ at: 456 })]);
     expect(view.getByTestId('cursor-probe').textContent).toBe('null');

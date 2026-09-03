@@ -1,10 +1,15 @@
 import { Group } from '@visx/group';
 import { scaleLinear } from '@visx/scale';
 import { AreaClosed, LinePath } from '@visx/shape';
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
+import type {
+  FocusEvent as ReactFocusEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+} from 'react';
+import { useRef } from 'react';
 import { formatTokens } from '../../lib/format';
 import type { TokenPoint } from '../../lib/timeline';
-import { KIND_COLOR } from '../charts/chart-theme';
+import { HOVER_DIM_OPACITY, KIND_COLOR } from '../charts/chart-theme';
 import { LABEL_GUTTER_WIDTH, useTimeline } from './TimelineContext';
 import { pointerToElapsedMs } from './useContainerWidth';
 
@@ -48,7 +53,17 @@ function tooltipText(point: TokenPoint): string {
 }
 
 export function TokenTrack({ points }: TokenTrackProps) {
-  const { xScale, width, setCursorTime, selectEvent } = useTimeline();
+  const { xScale, width, setCursorTime, selectEvent, hoveredAgentId, setHoveredMark } =
+    useTimeline();
+  // Last hit-tested `data-token-point` id (or `null` when no mark is under
+  // the pointer), tracked outside React state so `handleMove` can skip the
+  // hit-test/`setHoveredMark` call entirely when it's unchanged across
+  // consecutive mousemove ticks over the same mark -- `setHoveredMark` always
+  // takes a fresh `HoveredMark` object literal, so calling it unconditionally
+  // would change context-value identity (and re-render every consumer,
+  // including `MarkTooltip`) on every single pointer-move tick, not just on
+  // real hover transitions (timeline-chart-usability design.md §3 perf note).
+  const hoveredMarkIdRef = useRef<string | null>(null);
 
   if (points.length === 0) {
     return (
@@ -71,8 +86,33 @@ export function TokenTrack({ points }: TokenTrackProps) {
   const handleMove = (event: ReactMouseEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     setCursorTime(pointerToElapsedMs(event.clientX, rect, width, xScale));
+
+    const el = (event.target as SVGElement | null)?.closest?.('[data-token-point]');
+    const id = el?.getAttribute('data-token-point') ?? null;
+    if (id === hoveredMarkIdRef.current) return;
+    hoveredMarkIdRef.current = id;
+    if (id === null) {
+      setHoveredMark(null);
+      return;
+    }
+    const point = points.find((p) => p.id === id);
+    if (!point) return;
+    setHoveredMark({ content: tooltipText(point), clientX: event.clientX, clientY: event.clientY });
   };
-  const handleLeave = () => setCursorTime(null);
+  const handleLeave = () => {
+    setCursorTime(null);
+    hoveredMarkIdRef.current = null;
+    setHoveredMark(null);
+  };
+  const handleMarkFocus = (point: TokenPoint) => (event: ReactFocusEvent<SVGCircleElement>) => {
+    hoveredMarkIdRef.current = point.id;
+    const rect = event.currentTarget.getBoundingClientRect();
+    setHoveredMark({ content: tooltipText(point), clientX: rect.left, clientY: rect.top });
+  };
+  const handleMarkBlur = () => {
+    hoveredMarkIdRef.current = null;
+    setHoveredMark(null);
+  };
   // Click-to-select (f6): a per-track handler on the same `<svg role="img">`
   // element the shared hover contract already uses, hit-testing via the
   // mark's own `data-token-point` attribute rather than an onClick on the
@@ -135,17 +175,35 @@ export function TokenTrack({ points }: TokenTrackProps) {
             fill="none"
           />
           {points.map((point) => (
+            // This circle is a genuine keyboard-focus target (tabIndex +
+            // aria-label), not a decorative static element -- `role="button"`
+            // (the only role Biome would accept here) trips
+            // `useSemanticElements` right back, wanting a literal `<button>`,
+            // which an SVG mark inside an already-open `<svg>` tree cannot be
+            // (design.md §0). The ancestor `<svg role="img">`'s own
+            // `onKeyDown` (Enter/Space -> `selectFromTarget`) already gives
+            // this mark its click keyboard equivalent per the
+            // `session-timeline-track-hover-contract` lesson; `onFocus`/
+            // `onBlur` here are additive (hover-tooltip parity only), not
+            // this mark's only interactivity.
+            // biome-ignore lint/a11y/noStaticElementInteractions: see comment above
             <circle
               key={point.id}
               data-token-point={point.id}
+              aria-label={tooltipText(point)}
               tabIndex={0}
               cx={xScale(point.at)}
               cy={yScale(point.cumulative)}
               r={1.75}
               fill={KIND_COLOR.model}
-            >
-              <title>{tooltipText(point)}</title>
-            </circle>
+              fillOpacity={
+                hoveredAgentId !== null && point.agentId !== hoveredAgentId
+                  ? HOVER_DIM_OPACITY
+                  : undefined
+              }
+              onFocus={handleMarkFocus(point)}
+              onBlur={handleMarkBlur}
+            />
           ))}
         </Group>
       </svg>

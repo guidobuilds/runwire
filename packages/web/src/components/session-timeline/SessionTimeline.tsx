@@ -1,17 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { useAdapterCapabilities, useAdapterDisplayName } from '../../api/queries';
 import { buildAgentTree } from '../../lib/tree';
 import { AgentTrack } from './AgentTrack';
 import { ComponentTrack } from './ComponentTrack';
 import { EventInspector } from './EventInspector';
 import { HarnessTrack } from './HarnessTrack';
+import { MarkTooltip } from './MarkTooltip';
 import { SharedCursor } from './SharedCursor';
 import { TimelineAxis } from './TimelineAxis';
 import {
+  AGENT_ROW_HEIGHT_PRESETS,
   DEFAULT_WIDTH,
   LABEL_GUTTER_PX,
   type TimelineDomain,
   TimelineProvider,
+  useTimeline,
 } from './TimelineContext';
 import { TimelineSummaryBar } from './TimelineSummaryBar';
 import { TokenTrack } from './TokenTrack';
@@ -158,6 +161,92 @@ function TimelineBody({
   const mcpCallCount = data.componentEvents.filter((event) => event.kind === 'mcp').length;
 
   return (
+    <TimelineProvider domain={domain} width={plotWidth}>
+      {/*
+       * `TimelineSummaryBar` moved INSIDE `TimelineProvider` here
+       * (timeline-chart-usability f2-t6) so its row-density stepper can
+       * reach `agentRowHeight`/`setAgentRowHeight` -- state that lives
+       * inside the provider, per f2-t1's own design. `TimelineSummaryBar`
+       * itself still does not call `useTimeline()` directly (its own doc
+       * comment's "rendered as a sibling of TimelineProvider" note is now
+       * stale in spirit but not in mechanism: it remains a plain-props
+       * consumer, matching `isZoomed`/`onResetZoom`'s convention) -- only
+       * `TimelineTracks` below calls `useTimeline()`, then passes
+       * `agentRowHeight`/`onStepRowHeight` down as ordinary props, the same
+       * shape `TimelineBody`'s own `isZoomed`/`resetDomain` already use.
+       */}
+      <TimelineTracks
+        summary={summary}
+        capabilities={capabilities}
+        displayName={displayName}
+        isZoomed={isZoomed}
+        onResetZoom={resetDomain}
+        mcpCallCount={mcpCallCount}
+        tree={tree}
+        data={data}
+        containerRef={containerRef}
+        plotRef={plotRef}
+        handleZoom={handleZoom}
+        resetDomain={resetDomain}
+      />
+    </TimelineProvider>
+  );
+}
+
+/**
+ * Descendant of `TimelineProvider` (f2-t6): the only place in this file that
+ * calls `useTimeline()`, so `agentRowHeight`/`setAgentRowHeight` can be read
+ * here and threaded into `TimelineSummaryBar` as plain props, then also step
+ * `agentRowHeight` through `AGENT_ROW_HEIGHT_PRESETS` on the stepper's
+ * button clicks -- the same preset-array-boundary-clamped stepping logic
+ * `TimelineSummaryBar.test.tsx`'s own fixtures exercise via `onStepRowHeight`,
+ * kept in exactly one place rather than re-derived a second, possibly
+ * slightly different way inside `TimelineSummaryBar` itself.
+ */
+function TimelineTracks({
+  summary,
+  capabilities,
+  displayName,
+  isZoomed,
+  onResetZoom,
+  mcpCallCount,
+  tree,
+  data,
+  containerRef,
+  plotRef,
+  handleZoom,
+  resetDomain,
+}: {
+  summary: NonNullable<SessionTimelineData['summary']>;
+  capabilities: ReturnType<typeof useAdapterCapabilities>;
+  displayName: string;
+  isZoomed: boolean;
+  onResetZoom: () => void;
+  mcpCallCount: number;
+  tree: ReturnType<typeof buildAgentTree>;
+  data: SessionTimelineData;
+  containerRef: RefObject<HTMLDivElement | null>;
+  plotRef: RefObject<HTMLDivElement | null>;
+  handleZoom: (range: TimelineDomain) => void;
+  resetDomain: () => void;
+}) {
+  const { agentRowHeight, setAgentRowHeight } = useTimeline();
+
+  const stepRowHeight = useCallback(
+    (direction: -1 | 1) => {
+      const currentIndex = AGENT_ROW_HEIGHT_PRESETS.indexOf(agentRowHeight);
+      const baseIndex = currentIndex === -1 ? AGENT_ROW_HEIGHT_PRESETS.indexOf(22) : currentIndex;
+      const nextIndex = Math.min(
+        AGENT_ROW_HEIGHT_PRESETS.length - 1,
+        Math.max(0, baseIndex + direction),
+      );
+      const nextHeight = AGENT_ROW_HEIGHT_PRESETS[nextIndex];
+      if (nextHeight !== undefined) setAgentRowHeight(nextHeight);
+    },
+    [agentRowHeight, setAgentRowHeight],
+  );
+
+  return (
     <div className="space-y-2">
       <TimelineSummaryBar
         summary={summary.summary}
@@ -167,77 +256,78 @@ function TimelineBody({
         capabilities={capabilities}
         displayName={displayName}
         isZoomed={isZoomed}
-        onResetZoom={resetDomain}
+        onResetZoom={onResetZoom}
+        agentRowHeight={agentRowHeight}
+        onStepRowHeight={stepRowHeight}
       />
-      <TimelineProvider domain={domain} width={plotWidth}>
-        {/*
-         * The `p-3 rounded-lg border ...` styling lives on this OUTER
-         * wrapper (f8), not on the `relative` "timeline-tracks" div below,
-         * so `SharedCursor`'s percentage-of-container-width math (and the
-         * plot-width measurement above) resolves against a zero-padding
-         * content box — a padded ancestor would otherwise add a systematic
-         * padding-box offset between the cursor overlay and the real tracks
-         * beneath it.
-         */}
-        <div className="rounded-lg border border-border bg-card p-3">
-          <div data-slot="timeline-tracks" className="relative" ref={containerRef}>
-            <div className="space-y-2">
-              <TokenTrack points={data.tokenSeries} />
-              {tree ? <AgentTrack root={tree} spans={data.agentSpans} /> : null}
-              <HarnessTrack events={data.harnessEvents} />
-              <ComponentTrack events={data.componentEvents} />
-              <TimelineAxis />
-            </div>
-            {/*
-             * `SharedCursor`'s positioned ancestor: inset from the left by
-             * the exact same `LABEL_GUTTER_PX` every track row reserves for
-             * its label cell (`w-40` + `gap-2`), so this wrapper's own
-             * content-box width equals every track's plot `<svg>`'s real CSS
-             * width -- the same coordinate space `SharedCursor`'s
-             * `left: ${percent}%` is computed against. Without this inset,
-             * the cursor line would be positioned as a percentage of the
-             * FULL row width (label gutter + plot), which is wider than any
-             * track's actual plot area, systematically shifting the overlay
-             * right of the real hovered position. `ZoomBrush` (f9) shares
-             * this exact same ancestor for the same reason -- its drag
-             * selection rectangle must live in the identical coordinate
-             * space as the cursor line and every track's own marks.
-             * `ZoomBrush` also attaches its double-click-to-reset listener
-             * (f9-t3's secondary affordance) natively to `containerRef`
-             * rather than via a JSX `onDoubleClick` prop on the plain,
-             * non-interactive `timeline-tracks` div above -- see
-             * `ZoomBrush.tsx`'s own doc comment.
-             *
-             * The offset is an inline `style={{ left: LABEL_GUTTER_PX }}`
-             * (px), not a hand-typed Tailwind arbitrary-value class (f8) --
-             * genuinely derived from the same `TimelineContext.LABEL_GUTTER_PX`
-             * single source of truth every track/axis row already imports,
-             * so a future change to that constant cannot silently desync
-             * this wrapper from the rest of the layout.
-             */}
-            <div
-              data-slot="shared-cursor-inset"
-              className="pointer-events-none absolute inset-y-0 right-0"
-              style={{ left: LABEL_GUTTER_PX }}
-              ref={plotRef}
-            >
-              <SharedCursor />
-              <ZoomBrush
-                containerRef={containerRef}
-                plotRef={plotRef}
-                onZoom={handleZoom}
-                onResetZoom={resetDomain}
-              />
-            </div>
+      {/*
+       * The `p-3 rounded-lg border ...` styling lives on this OUTER
+       * wrapper (f8), not on the `relative` "timeline-tracks" div below,
+       * so `SharedCursor`'s percentage-of-container-width math (and the
+       * plot-width measurement above) resolves against a zero-padding
+       * content box — a padded ancestor would otherwise add a systematic
+       * padding-box offset between the cursor overlay and the real tracks
+       * beneath it.
+       */}
+      <div className="rounded-lg border border-border bg-card p-3">
+        <div data-slot="timeline-tracks" className="relative" ref={containerRef}>
+          <div className="space-y-2">
+            <TokenTrack points={data.tokenSeries} />
+            {tree ? <AgentTrack root={tree} spans={data.agentSpans} /> : null}
+            <HarnessTrack events={data.harnessEvents} />
+            <ComponentTrack events={data.componentEvents} />
+            <TimelineAxis />
+          </div>
+          {/*
+           * `SharedCursor`'s positioned ancestor: inset from the left by
+           * the exact same `LABEL_GUTTER_PX` every track row reserves for
+           * its label cell (`w-40` + `gap-2`), so this wrapper's own
+           * content-box width equals every track's plot `<svg>`'s real CSS
+           * width -- the same coordinate space `SharedCursor`'s
+           * `left: ${percent}%` is computed against. Without this inset,
+           * the cursor line would be positioned as a percentage of the
+           * FULL row width (label gutter + plot), which is wider than any
+           * track's actual plot area, systematically shifting the overlay
+           * right of the real hovered position. `ZoomBrush` (f9) shares
+           * this exact same ancestor for the same reason -- its drag
+           * selection rectangle must live in the identical coordinate
+           * space as the cursor line and every track's own marks.
+           * `ZoomBrush` also attaches its double-click-to-reset listener
+           * (f9-t3's secondary affordance) natively to `containerRef`
+           * rather than via a JSX `onDoubleClick` prop on the plain,
+           * non-interactive `timeline-tracks` div above -- see
+           * `ZoomBrush.tsx`'s own doc comment.
+           *
+           * The offset is an inline `style={{ left: LABEL_GUTTER_PX }}`
+           * (px), not a hand-typed Tailwind arbitrary-value class (f8) --
+           * genuinely derived from the same `TimelineContext.LABEL_GUTTER_PX`
+           * single source of truth every track/axis row already imports,
+           * so a future change to that constant cannot silently desync
+           * this wrapper from the rest of the layout.
+           */}
+          <div
+            data-slot="shared-cursor-inset"
+            className="pointer-events-none absolute inset-y-0 right-0"
+            style={{ left: LABEL_GUTTER_PX }}
+            ref={plotRef}
+          >
+            <SharedCursor />
+            <ZoomBrush
+              containerRef={containerRef}
+              plotRef={plotRef}
+              onZoom={handleZoom}
+              onResetZoom={resetDomain}
+            />
+            <MarkTooltip />
           </div>
         </div>
-        <EventInspector
-          spans={data.agentSpans}
-          tokenPoints={data.tokenSeries}
-          harnessEvents={data.harnessEvents}
-          componentEvents={data.componentEvents}
-        />
-      </TimelineProvider>
+      </div>
+      <EventInspector
+        spans={data.agentSpans}
+        tokenPoints={data.tokenSeries}
+        harnessEvents={data.harnessEvents}
+        componentEvents={data.componentEvents}
+      />
     </div>
   );
 }

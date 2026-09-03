@@ -4,6 +4,7 @@ import {
   CONFIDENCE_KEYS,
   CONFIDENCE_OPACITY,
   type ComputedStyleLike,
+  HOVER_DIM_OPACITY,
   KIND_COLOR,
   KIND_KEYS,
   resolveToken,
@@ -40,6 +41,17 @@ describe('CONFIDENCE_OPACITY', () => {
     expect(CONFIDENCE_OPACITY.high).toBe(1);
     expect(CONFIDENCE_OPACITY.medium).toBeLessThan(1);
     expect(CONFIDENCE_OPACITY.low).toBeLessThan(1);
+  });
+});
+
+describe('HOVER_DIM_OPACITY', () => {
+  test('is a plain numeric constant, distinct from both CONFIDENCE_OPACITY values (timeline-chart-usability f1-t1)', () => {
+    expect(typeof HOVER_DIM_OPACITY).toBe('number');
+    expect(HOVER_DIM_OPACITY).toBe(0.15);
+    expect(HOVER_DIM_OPACITY).not.toBe(CONFIDENCE_OPACITY.high);
+    expect(HOVER_DIM_OPACITY).not.toBe(CONFIDENCE_OPACITY.medium);
+    expect(HOVER_DIM_OPACITY).not.toBe(CONFIDENCE_OPACITY.low);
+    expect(HOVER_DIM_OPACITY).toBeLessThan(CONFIDENCE_OPACITY.low);
   });
 });
 

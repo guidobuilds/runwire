@@ -1,10 +1,27 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { scaleLinear } from '@visx/scale';
+import { useRef } from 'react';
 import { afterEach, describe, expect, test } from 'vitest';
 import type { TokenPoint } from '../../lib/timeline';
-import { KIND_COLOR } from '../charts/chart-theme';
+import { HOVER_DIM_OPACITY, KIND_COLOR } from '../charts/chart-theme';
 import { TimelineProvider, useTimeline } from './TimelineContext';
 import { TokenTrack } from './TokenTrack';
+
+/** Stubs `getBoundingClientRect` to a known 480x64 box, matching the "shared cursor wiring" tests' pattern -- happy-dom defaults to a zeroed rect otherwise. */
+function stubRect(svg: SVGSVGElement) {
+  svg.getBoundingClientRect = () =>
+    ({
+      left: 0,
+      width: 480,
+      top: 0,
+      right: 480,
+      bottom: 64,
+      height: 64,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }) as DOMRect;
+}
 
 afterEach(() => cleanup());
 
@@ -74,27 +91,192 @@ describe('data -> mark mapping', () => {
 });
 
 describe('tooltip contract (timestamp/cumulative/delta/input/output/agent/model)', () => {
-  test('every marker exposes its exact detail via a native SVG <title>, no hover needed to query it', () => {
+  /** Reads `hoveredMark` from context; renders `renders` so the perf test below can assert bail-out (no re-render) instead of a tautological call count. */
+  function Readout() {
+    const { hoveredMark } = useTimeline();
+    const renders = useRef(0);
+    renders.current += 1;
+    return (
+      <>
+        <div data-testid="mark">{hoveredMark?.content ?? 'null'}</div>
+        <div data-testid="mark-pos">
+          {hoveredMark ? `${hoveredMark.clientX},${hoveredMark.clientY}` : 'null'}
+        </div>
+        <div data-testid="render-count">{renders.current}</div>
+      </>
+    );
+  }
+
+  test('hovering a marker exposes its exact detail via the shared hoveredMark, no native <title> present', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]} width={480}>
+        <TokenTrack
+          points={[
+            point({
+              id: 'a',
+              at: 61_000,
+              cumulative: 100,
+              delta: 40,
+              input: 25,
+              output: 15,
+              agentId: 'sess-1',
+              model: 'claude-x',
+            }),
+          ]}
+        />
+        <Readout />
+      </TimelineProvider>,
+    );
+
+    // The native <title> element is gone entirely -- MarkTooltip (mounted
+    // once elsewhere) is the only tooltip surface now.
+    expect(view.container.querySelector('circle[data-token-point] title')).toBeNull();
+
+    const svg = view.container.querySelector('svg');
+    if (!svg) throw new Error('expected an svg element');
+    stubRect(svg);
+    const marker = view.container.querySelector('circle[data-token-point="a"]');
+    if (!marker) throw new Error('expected marker a');
+
+    fireEvent.mouseMove(marker, { clientX: 10, clientY: 20 });
+
+    const mark = view.getByTestId('mark').textContent;
+    expect(mark).toContain('Timestamp: 1:01');
+    expect(mark).toContain('Cumulative: 100');
+    expect(mark).toContain('Delta: 40');
+    expect(mark).toContain('Input: 25');
+    expect(mark).toContain('Output: 15');
+    expect(mark).toContain('Agent: sess-1');
+    expect(mark).toContain('Model: claude-x');
+    expect(view.getByTestId('mark-pos').textContent).toBe('10,20');
+  });
+
+  test('mouse leave clears hoveredMark back to null', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]} width={480}>
+        <TokenTrack points={[point({ id: 'a', at: 0 })]} />
+        <Readout />
+      </TimelineProvider>,
+    );
+    const svg = view.container.querySelector('svg');
+    if (!svg) throw new Error('expected an svg element');
+    stubRect(svg);
+    const marker = view.container.querySelector('circle[data-token-point="a"]');
+    if (!marker) throw new Error('expected marker a');
+
+    fireEvent.mouseMove(marker, { clientX: 10, clientY: 20 });
+    expect(view.getByTestId('mark').textContent).not.toBe('null');
+    fireEvent.mouseLeave(svg);
+    expect(view.getByTestId('mark').textContent).toBe('null');
+  });
+
+  test('unchanged-hit-skip: repeated mousemove ticks over the same marker do not re-invoke setHoveredMark (no consumer re-render), but moving to a different marker does', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]} width={480}>
+        <TokenTrack
+          points={[point({ id: 'a', at: 0 }), point({ id: 'b', at: 500, cumulative: 20 })]}
+        />
+        <Readout />
+      </TimelineProvider>,
+    );
+    const svg = view.container.querySelector('svg');
+    if (!svg) throw new Error('expected an svg element');
+    stubRect(svg);
+    const markerA = view.container.querySelector('circle[data-token-point="a"]');
+    const markerB = view.container.querySelector('circle[data-token-point="b"]');
+    if (!markerA || !markerB) throw new Error('expected markers a and b');
+
+    // First hit on `a`: hoveredMark transitions from null -> a's content, so
+    // Readout (a context consumer) is expected to re-render.
+    fireEvent.mouseMove(markerA, { clientX: 1, clientY: 1 });
+    const countAfterFirstHitOnA = Number(view.getByTestId('render-count').textContent);
+    expect(view.getByTestId('mark').textContent).toContain('Agent: s1');
+
+    // Two more ticks at the EXACT same clientX/clientY (guaranteed same hit
+    // target, and also the same `cursorTime` domain value, so this isolates
+    // the hoveredMark skip from the unrelated always-fires setCursorTime
+    // path) -- must be genuine no-ops: without the ref-based skip,
+    // `setHoveredMark` would receive a brand-new object literal each time
+    // (identity always differs even when `content` is equal), which would
+    // bump `render-count` on every single tick.
+    fireEvent.mouseMove(markerA, { clientX: 1, clientY: 1 });
+    fireEvent.mouseMove(markerA, { clientX: 1, clientY: 1 });
+    expect(Number(view.getByTestId('render-count').textContent)).toBe(countAfterFirstHitOnA);
+
+    // Moving onto a genuinely different mark IS a real transition and must
+    // re-render (proves the mechanism isn't just permanently frozen).
+    fireEvent.mouseMove(markerB, { clientX: 4, clientY: 4 });
+    expect(Number(view.getByTestId('render-count').textContent)).toBeGreaterThan(
+      countAfterFirstHitOnA,
+    );
+    expect(view.getByTestId('mark').textContent).toContain('Agent: s1');
+  });
+
+  test('keyboard parity: focusing a marker sets hoveredMark, blurring clears it', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]} width={480}>
+        <TokenTrack points={[point({ id: 'a', at: 0, agentId: 'sess-1' })]} />
+        <Readout />
+      </TimelineProvider>,
+    );
+    const marker = view.container.querySelector('circle[data-token-point="a"]');
+    if (!marker) throw new Error('expected marker a');
+
+    expect(view.getByTestId('mark').textContent).toBe('null');
+    fireEvent.focus(marker);
+    expect(view.getByTestId('mark').textContent).toContain('Agent: sess-1');
+    fireEvent.blur(marker);
+    expect(view.getByTestId('mark').textContent).toBe('null');
+  });
+});
+
+describe('hover-dim by agent (f1-t3)', () => {
+  test('with no hoveredAgentId, neither marker is dimmed (baseline unchanged)', () => {
     const view = renderTrack([
-      point({
-        id: 'a',
-        at: 61_000,
-        cumulative: 100,
-        delta: 40,
-        input: 25,
-        output: 15,
-        agentId: 'sess-1',
-        model: 'claude-x',
-      }),
+      point({ id: 'a', at: 0, agentId: 'agent-1' }),
+      point({ id: 'b', at: 500, agentId: 'agent-2' }),
     ]);
-    const title = view.container.querySelector('circle[data-token-point] title')?.textContent;
-    expect(title).toContain('Timestamp: 1:01');
-    expect(title).toContain('Cumulative: 100');
-    expect(title).toContain('Delta: 40');
-    expect(title).toContain('Input: 25');
-    expect(title).toContain('Output: 15');
-    expect(title).toContain('Agent: sess-1');
-    expect(title).toContain('Model: claude-x');
+    const a = view.container.querySelector('circle[data-token-point="a"]');
+    const b = view.container.querySelector('circle[data-token-point="b"]');
+    for (const el of [a, b]) {
+      const opacity = el?.getAttribute('fill-opacity');
+      expect(opacity === null || opacity === '1').toBe(true);
+    }
+  });
+
+  test('with a hoveredAgentId set, the non-matching marker dims to HOVER_DIM_OPACITY and the matching one stays undimmed', () => {
+    function HoverSetter() {
+      const { setHoveredAgentId } = useTimeline();
+      return (
+        <button
+          type="button"
+          data-testid="hover-agent-1"
+          onClick={() => setHoveredAgentId('agent-1')}
+        >
+          hover
+        </button>
+      );
+    }
+
+    const view = render(
+      <TimelineProvider domain={[0, 1000]} width={480}>
+        <TokenTrack
+          points={[
+            point({ id: 'a', at: 0, agentId: 'agent-1' }),
+            point({ id: 'b', at: 500, agentId: 'agent-2' }),
+          ]}
+        />
+        <HoverSetter />
+      </TimelineProvider>,
+    );
+
+    fireEvent.click(view.getByTestId('hover-agent-1'));
+
+    const a = view.container.querySelector('circle[data-token-point="a"]');
+    const b = view.container.querySelector('circle[data-token-point="b"]');
+    const aOpacity = a?.getAttribute('fill-opacity');
+    expect(aOpacity === null || aOpacity === '1').toBe(true);
+    expect(b?.getAttribute('fill-opacity')).toBe(String(HOVER_DIM_OPACITY));
   });
 });
 

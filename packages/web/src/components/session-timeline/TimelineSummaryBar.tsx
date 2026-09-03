@@ -3,6 +3,7 @@ import type { Capability, SessionRollup, SessionSummary } from '../../api/types'
 import { formatTokens } from '../../lib/format';
 import { MetricCell } from '../primitives/MetricCell';
 import { sumPresentUsage } from '../session-detail/TokenBreakdown';
+import { AGENT_ROW_HEIGHT_PRESETS } from './TimelineContext';
 
 /**
  * Compact summary line above `SessionTimeline`'s four tracks (design.md
@@ -42,6 +43,24 @@ export type TimelineSummaryBarProps = {
   isZoomed?: boolean;
   /** Restores the full-session domain (f9). Required together with `isZoomed` for the reset control to render -- see the `isZoomed && onResetZoom` guard below. */
   onResetZoom?: () => void;
+  /**
+   * `AgentTrack`'s current row height (timeline-chart-usability design.md
+   * §2, f2-t2) -- required together with `onStepRowHeight` for the
+   * row-density stepper to render, matching `isZoomed`/`onResetZoom`'s own
+   * optional-pair convention. Optional so every caller that predates f2
+   * (only this file's own tests) keeps compiling unchanged.
+   */
+  agentRowHeight?: number;
+  /**
+   * Steps `agentRowHeight` one position through `AGENT_ROW_HEIGHT_PRESETS`
+   * (`-1` = smaller/more rows, `1` = larger/fewer rows). `TimelineSummaryBar`
+   * itself computes disabled-at-the-ends state from `agentRowHeight` --
+   * it does not read `TimelineContext` directly (this component is rendered
+   * as a sibling of `TimelineProvider` in `SessionTimeline.tsx`, not a
+   * descendant of it), so both the current value and the mutator are passed
+   * down as plain props, same shape as `isZoomed`/`onResetZoom`.
+   */
+  onStepRowHeight?: (direction: -1 | 1) => void;
 };
 
 function Stat({ label, children, title }: { label: string; children: ReactNode; title?: string }) {
@@ -66,9 +85,13 @@ export function TimelineSummaryBar({
   displayName,
   isZoomed = false,
   onResetZoom,
+  agentRowHeight,
+  onStepRowHeight,
 }: TimelineSummaryBarProps) {
   const harness = summary.harness;
   const totalTokens = sumPresentUsage(rollup?.inclusive.usage ?? {});
+  const presetIndex =
+    agentRowHeight !== undefined ? AGENT_ROW_HEIGHT_PRESETS.indexOf(agentRowHeight) : -1;
 
   return (
     <div data-slot="timeline-summary-bar-row" className="flex items-start gap-3">
@@ -114,6 +137,39 @@ export function TimelineSummaryBar({
         </Stat>
         <Stat label="MCP calls">{mcpCallCount}</Stat>
       </dl>
+      {/*
+       * Row-density stepper (timeline-chart-usability design.md §2, f2-t2):
+       * an independent, orthogonal control from Reset zoom -- steps
+       * AgentTrack's row height through AGENT_ROW_HEIGHT_PRESETS, disabled
+       * at either end. Only renders once the caller supplies both
+       * `agentRowHeight` and `onStepRowHeight`, matching the Reset zoom
+       * control's own optional-pair convention below.
+       */}
+      {agentRowHeight !== undefined && onStepRowHeight ? (
+        <div
+          data-slot="row-density-stepper"
+          className="flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-card p-0.5"
+        >
+          <button
+            type="button"
+            aria-label="Show more agent rows"
+            disabled={presetIndex <= 0}
+            onClick={() => onStepRowHeight(-1)}
+            className="rounded px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            aria-label="Show fewer, taller agent rows"
+            disabled={presetIndex === -1 || presetIndex >= AGENT_ROW_HEIGHT_PRESETS.length - 1}
+            onClick={() => onStepRowHeight(1)}
+            className="rounded px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            +
+          </button>
+        </div>
+      ) : null}
       {/*
        * Reset-zoom control (f9-t3): only rendered once a drag-select (f9-t2)
        * has actually narrowed the shared domain -- `isZoomed` is computed by

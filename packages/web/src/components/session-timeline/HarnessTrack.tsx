@@ -1,5 +1,10 @@
 import { Group } from '@visx/group';
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
+import type {
+  FocusEvent as ReactFocusEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+} from 'react';
+import { useRef } from 'react';
 import {
   clusterByProximity,
   type EventCluster,
@@ -7,7 +12,7 @@ import {
   type HarnessEventKind,
 } from '../../lib/timeline';
 import { cn } from '../../lib/utils';
-import { KIND_COLOR } from '../charts/chart-theme';
+import { HOVER_DIM_OPACITY, KIND_COLOR } from '../charts/chart-theme';
 import { LABEL_GUTTER_WIDTH, useTimeline } from './TimelineContext';
 import { pointerToElapsedMs } from './useContainerWidth';
 
@@ -129,6 +134,27 @@ export type HarnessTrackProps = {
  * one consistent hover contract across every track, not a per-mark
  * approximation.
  *
+ * Mark tooltips (timeline-chart-usability design.md §3, f1-t4): no native
+ * SVG `<title>` any more -- each row's own `onMouseMove` hit-tests
+ * `event.target` via the same `[data-harness-id]` `closest()` lookup
+ * `selectFromTarget` already uses, then populates the shared
+ * `TimelineContext.hoveredMark` (rendered by the one shared `MarkTooltip`
+ * overlay) with `harnessTooltip`/`harnessClusterTooltip`'s exact text. A
+ * `useRef` tracks the last hit mark's id so repeated mousemove ticks over the
+ * *same* mark skip the hit-test/lookup/`setHoveredMark` call entirely --
+ * `setHoveredMark` always takes a fresh object literal, so calling it on
+ * every tick (as `setCursorTime` still does) would break context-value
+ * referential stability and force every consumer to re-render on every
+ * pointer-move tick, not just on real hover transitions. Each mark also
+ * carries `onFocus`/`onBlur` so keyboard users get the identical tooltip
+ * content without a hit-test (the event/cluster is already known at render
+ * time). Marks dim to `HOVER_DIM_OPACITY` when `hoveredAgentId` names some
+ * other agent (design.md §1 Decision B) -- a cluster's own agent is its
+ * representative member's `agentId` (clusters don't expose a distinct
+ * per-cluster agent field, matching how `harnessClusterTooltip` already
+ * reads `cluster.representative.kind`); dimming lands on the cluster's own
+ * `<circle>`, never its wrapping `<g>`, so the count `<text>` stays legible.
+ *
  * Layout: one `<svg>` per row (`AgentTrack`'s per-lane pattern), each with
  * its own real HTML label in the shared `LABEL_GUTTER_WIDTH` gutter — not a
  * single svg spanning all three rows with Read/Write/Exec drawn as `<text>`
@@ -137,13 +163,86 @@ export type HarnessTrackProps = {
  * on top of it.
  */
 export function HarnessTrack({ events }: HarnessTrackProps) {
-  const { xScale, width, setCursorTime, selectEvent, selectCluster } = useTimeline();
+  const {
+    xScale,
+    width,
+    setCursorTime,
+    selectEvent,
+    selectCluster,
+    hoveredAgentId,
+    setHoveredMark,
+  } = useTimeline();
+
+  const durationEvents = events.filter((event) => event.durationMs !== undefined);
+  const instantEvents = events.filter((event) => event.durationMs === undefined);
+  const clusters = clusterByProximity(instantEvents, xScale, CLUSTER_THRESHOLD_PX);
+
+  // Last hit-tested `data-harness-id` (or `null` when no mark is under the
+  // pointer), tracked outside React state so `handleMove` can skip the
+  // hit-test/lookup/`setHoveredMark` call entirely when it's unchanged across
+  // consecutive mousemove ticks over the same mark (see the module doc
+  // comment). Shared across all three rows -- one `HarnessTrack` instance,
+  // one ref.
+  const hoveredMarkIdRef = useRef<string | null>(null);
 
   const handleMove = (event: ReactMouseEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     setCursorTime(pointerToElapsedMs(event.clientX, rect, width, xScale));
+
+    const el = (event.target as SVGElement | null)?.closest?.('[data-harness-id]');
+    const id = el?.getAttribute('data-harness-id') ?? null;
+    if (id === hoveredMarkIdRef.current) return;
+    hoveredMarkIdRef.current = id;
+    if (id === null) {
+      setHoveredMark(null);
+      return;
+    }
+    if (el?.getAttribute('data-harness-ids')) {
+      const cluster = clusters.find((c) => c.representative.id === id);
+      if (!cluster) return;
+      setHoveredMark({
+        content: harnessClusterTooltip(cluster),
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+      return;
+    }
+    const found = events.find((e) => e.id === id);
+    if (!found) return;
+    setHoveredMark({
+      content: harnessTooltip(found),
+      clientX: event.clientX,
+      clientY: event.clientY,
+    });
   };
-  const handleLeave = () => setCursorTime(null);
+  const handleLeave = () => {
+    setCursorTime(null);
+    hoveredMarkIdRef.current = null;
+    setHoveredMark(null);
+  };
+  const handleMarkFocus = (harnessEvent: HarnessEvent) => (event: ReactFocusEvent<SVGElement>) => {
+    hoveredMarkIdRef.current = harnessEvent.id;
+    const rect = event.currentTarget.getBoundingClientRect();
+    setHoveredMark({
+      content: harnessTooltip(harnessEvent),
+      clientX: rect.left,
+      clientY: rect.top,
+    });
+  };
+  const handleClusterFocus =
+    (cluster: EventCluster<HarnessEvent>) => (event: ReactFocusEvent<SVGElement>) => {
+      hoveredMarkIdRef.current = cluster.representative.id;
+      const rect = event.currentTarget.getBoundingClientRect();
+      setHoveredMark({
+        content: harnessClusterTooltip(cluster),
+        clientX: rect.left,
+        clientY: rect.top,
+      });
+    };
+  const handleMarkBlur = () => {
+    hoveredMarkIdRef.current = null;
+    setHoveredMark(null);
+  };
   // Click-to-select (f6): hit-tests via `data-harness-id` on the same
   // `<svg role="img">` element the shared hover contract already uses (see
   // `session-timeline-track-hover-contract`), rather than an onClick on the
@@ -181,9 +280,6 @@ export function HarnessTrack({ events }: HarnessTrackProps) {
     selectFromTarget(event.target);
   };
 
-  const durationEvents = events.filter((event) => event.durationMs !== undefined);
-  const instantEvents = events.filter((event) => event.durationMs === undefined);
-  const clusters = clusterByProximity(instantEvents, xScale, CLUSTER_THRESHOLD_PX);
   const cy = ROW_HEIGHT / 2;
 
   return (
@@ -199,10 +295,7 @@ export function HarnessTrack({ events }: HarnessTrackProps) {
         // can never be drawn over by a mark again.
         <div key={kind} className="flex items-center gap-2">
           <span
-            className={cn(
-              'shrink-0 text-xs text-zinc-500 dark:text-zinc-400',
-              LABEL_GUTTER_WIDTH,
-            )}
+            className={cn('shrink-0 text-xs text-zinc-500 dark:text-zinc-400', LABEL_GUTTER_WIDTH)}
           >
             {ROW_LABEL[kind]}
           </span>
@@ -228,20 +321,39 @@ export function HarnessTrack({ events }: HarnessTrackProps) {
                   const x2 = xScale(event.at + (event.durationMs ?? 0));
                   const markWidth = Math.max(x2 - x1, 2);
                   return (
+                    // This rect is a genuine keyboard-focus target (tabIndex +
+                    // aria-label), not a decorative static element --
+                    // `role="button"` (the only role Biome would accept here)
+                    // trips `useSemanticElements` right back, wanting a
+                    // literal `<button>`, which an SVG mark inside an
+                    // already-open `<svg>` tree cannot be (design.md §0). The
+                    // ancestor `<svg role="img">`'s own `onKeyDown`
+                    // (Enter/Space -> `selectFromTarget`) already gives this
+                    // mark its click keyboard equivalent per the
+                    // `session-timeline-track-hover-contract` lesson;
+                    // `onFocus`/`onBlur` here are additive (hover-tooltip
+                    // parity only), not this mark's only interactivity.
+                    // biome-ignore lint/a11y/noStaticElementInteractions: see comment above
                     <rect
                       key={event.id}
                       data-harness-id={event.id}
                       data-harness-kind={event.kind}
                       data-harness-shape="bar"
+                      aria-label={harnessTooltip(event)}
                       tabIndex={0}
                       x={x1}
                       y={y}
                       width={markWidth}
                       height={MARK_HEIGHT}
                       fill={KIND_COLOR[event.kind]}
-                    >
-                      <title>{harnessTooltip(event)}</title>
-                    </rect>
+                      fillOpacity={
+                        hoveredAgentId !== null && event.agentId !== hoveredAgentId
+                          ? HOVER_DIM_OPACITY
+                          : undefined
+                      }
+                      onFocus={handleMarkFocus(event)}
+                      onBlur={handleMarkBlur}
+                    />
                   );
                 })}
               {clusters
@@ -251,25 +363,38 @@ export function HarnessTrack({ events }: HarnessTrackProps) {
                     const event = cluster.representative;
                     const cx = xScale(event.at);
                     return (
+                      // See the duration-bar <rect> above for why this
+                      // static-element-interactions ignore is correct here.
+                      // biome-ignore lint/a11y/noStaticElementInteractions: see comment on the duration-bar <rect> above
                       <circle
                         key={event.id}
                         data-harness-id={event.id}
                         data-harness-kind={event.kind}
                         data-harness-shape="dot"
+                        aria-label={harnessTooltip(event)}
                         tabIndex={0}
                         cx={cx}
                         cy={cy}
                         r={DOT_RADIUS}
                         fill={KIND_COLOR[event.kind]}
-                      >
-                        <title>{harnessTooltip(event)}</title>
-                      </circle>
+                        fillOpacity={
+                          hoveredAgentId !== null && event.agentId !== hoveredAgentId
+                            ? HOVER_DIM_OPACITY
+                            : undefined
+                        }
+                        onFocus={handleMarkFocus(event)}
+                        onBlur={handleMarkBlur}
+                      />
                     );
                   }
 
                   const cx = xScale(cluster.representative.at);
                   const count = cluster.members.length;
+                  const clusterAgentId = cluster.representative.agentId;
                   return (
+                    // See the duration-bar <rect> above for why this
+                    // static-element-interactions ignore is correct here.
+                    // biome-ignore lint/a11y/noStaticElementInteractions: see comment on the duration-bar <rect> above
                     <g
                       key={cluster.representative.id}
                       data-harness-id={cluster.representative.id}
@@ -277,13 +402,21 @@ export function HarnessTrack({ events }: HarnessTrackProps) {
                       data-harness-kind={cluster.representative.kind}
                       data-harness-shape="cluster"
                       data-harness-cluster-count={count}
+                      aria-label={harnessClusterTooltip(cluster)}
                       tabIndex={0}
+                      onFocus={handleClusterFocus(cluster)}
+                      onBlur={handleMarkBlur}
                     >
                       <circle
                         cx={cx}
                         cy={cy}
                         r={CLUSTER_RADIUS}
                         fill={KIND_COLOR[cluster.representative.kind]}
+                        fillOpacity={
+                          hoveredAgentId !== null && clusterAgentId !== hoveredAgentId
+                            ? HOVER_DIM_OPACITY
+                            : undefined
+                        }
                       />
                       <text
                         x={cx + CLUSTER_RADIUS + 2}
@@ -293,7 +426,6 @@ export function HarnessTrack({ events }: HarnessTrackProps) {
                       >
                         {count}
                       </text>
-                      <title>{harnessClusterTooltip(cluster)}</title>
                     </g>
                   );
                 })}

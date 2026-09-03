@@ -170,6 +170,20 @@ export const CONFIDENCE_OPACITY: Record<ConfidenceKey, number> = {
 };
 
 /**
+ * timeline-chart-usability design.md §1 (Decision B, hover-dim-by-agent): a
+ * mark whose `agentId` does NOT match `TimelineContext.hoveredAgentId`
+ * renders at this opacity, OVERRIDING (not multiplying) any
+ * `CONFIDENCE_OPACITY`-derived opacity it would otherwise have -- a dimmed-
+ * because-not-hovered mark should read as "dimmed" first, not as a compound
+ * of two independent opacity systems. Deliberately more aggressive than
+ * `CONFIDENCE_OPACITY`'s lowest value (`0.6`) so the two states stay visually
+ * distinct from each other. A plain numeric constant, not a token -- same
+ * "opacity is a chart-rendering choice, not a design-system color" rationale
+ * as `CONFIDENCE_OPACITY` above.
+ */
+export const HOVER_DIM_OPACITY = 0.15;
+
+/**
  * Light-scheme fallback, hand-copied from `packages/web/src/styles.css`
  * (`:root` block). Used only by `resolveToken` when a live DOM lookup comes
  * back empty (see the module doc comment above for why that happens under

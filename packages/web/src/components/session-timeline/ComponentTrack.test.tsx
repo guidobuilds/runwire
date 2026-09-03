@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render } from '@testing-library/react';
+import { useRef } from 'react';
 import { afterEach, describe, expect, test } from 'vitest';
 import type { ComponentEvent } from '../../lib/timeline';
-import { KIND_COLOR } from '../charts/chart-theme';
+import { HOVER_DIM_OPACITY, KIND_COLOR } from '../charts/chart-theme';
 import { ComponentTrack } from './ComponentTrack';
 import type { TimelineDomain } from './TimelineContext';
 import { TimelineProvider, useTimeline } from './TimelineContext';
@@ -171,28 +172,289 @@ describe('childId carried through for agent marks', () => {
   });
 });
 
-describe('tooltip', () => {
-  test('an mcp event exposes agent/operation/server-tool-detail/duration via a native SVG <title>', () => {
+/** Stubs `getBoundingClientRect` to a known 480x24 box, matching the "shared cursor wiring" describe's own stub -- happy-dom defaults to a zeroed rect otherwise. */
+function stubTrackRect(svg: SVGSVGElement): void {
+  svg.getBoundingClientRect = () =>
+    ({
+      left: 0,
+      width: 480,
+      top: 0,
+      right: 480,
+      bottom: 24,
+      height: 24,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }) as DOMRect;
+}
+
+function HoveredMarkReadout() {
+  const { hoveredMark } = useTimeline();
+  return <div data-testid="hovered-mark">{hoveredMark ? hoveredMark.content : 'null'}</div>;
+}
+
+describe('tooltip (via shared hoveredMark, no native <title> left on this track)', () => {
+  test('no native SVG <title> is rendered anywhere on the track', () => {
     const view = renderTrack([
-      componentEvent({
-        kind: 'mcp',
-        name: 'mcp__github__search',
-        detail: 'github/search',
-        durationMs: 1500,
-        agentId: 'session-x',
-      }),
+      componentEvent({ id: 'a', kind: 'mcp', at: 100 }),
+      componentEvent({ id: 'b', kind: 'skill', at: 500 }),
     ]);
-    const title = view.container.querySelector('[data-component-id="fake#0"] title')?.textContent;
-    expect(title).toContain('Agent: session-x');
-    expect(title).toContain('Operation: MCP — mcp__github__search');
-    expect(title).toContain('Detail: github/search');
-    expect(title).toContain('Duration: 1.5s');
+    expect(view.container.querySelector('title')).toBeNull();
+  });
+
+  test('hovering an mcp event sets hoveredMark.content to agent/operation/server-tool-detail/duration', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <ComponentTrack
+          events={[
+            componentEvent({
+              kind: 'mcp',
+              name: 'mcp__github__search',
+              detail: 'github/search',
+              durationMs: 1500,
+              agentId: 'session-x',
+            }),
+          ]}
+        />
+        <HoveredMarkReadout />
+      </TimelineProvider>,
+    );
+    const svg = view.container.querySelector('svg');
+    if (!svg) throw new Error('svg not found');
+    stubTrackRect(svg);
+    const mark = view.container.querySelector('[data-component-id="fake#0"]');
+    if (!mark) throw new Error('expected mark');
+    fireEvent.mouseMove(mark, { clientX: 48, clientY: 12 });
+    const content = view.getByTestId('hovered-mark').textContent;
+    expect(content).toContain('Agent: session-x');
+    expect(content).toContain('Operation: MCP — mcp__github__search');
+    expect(content).toContain('Detail: github/search');
+    expect(content).toContain('Duration: 1.5s');
   });
 
   test('a skill event with no detail/duration omits those lines entirely (never a fake blank line)', () => {
-    const view = renderTrack([componentEvent({ kind: 'skill', name: 'my-skill' })]);
-    const title = view.container.querySelector('[data-component-id="fake#0"] title')?.textContent;
-    expect(title).toBe('Agent: session-a\nOperation: Skill — my-skill');
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <ComponentTrack events={[componentEvent({ kind: 'skill', name: 'my-skill' })]} />
+        <HoveredMarkReadout />
+      </TimelineProvider>,
+    );
+    const svg = view.container.querySelector('svg');
+    if (!svg) throw new Error('svg not found');
+    stubTrackRect(svg);
+    const mark = view.container.querySelector('[data-component-id="fake#0"]');
+    if (!mark) throw new Error('expected mark');
+    fireEvent.mouseMove(mark, { clientX: 48, clientY: 12 });
+    expect(view.getByTestId('hovered-mark').textContent).toBe(
+      'Agent: session-a\nOperation: Skill — my-skill',
+    );
+  });
+
+  test('moving off a mark (mouse leaves the track) clears hoveredMark back to null', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <ComponentTrack events={[componentEvent({ kind: 'skill', name: 'my-skill' })]} />
+        <HoveredMarkReadout />
+      </TimelineProvider>,
+    );
+    const svg = view.container.querySelector('svg');
+    if (!svg) throw new Error('svg not found');
+    stubTrackRect(svg);
+    const mark = view.container.querySelector('[data-component-id="fake#0"]');
+    if (!mark) throw new Error('expected mark');
+    fireEvent.mouseMove(mark, { clientX: 48, clientY: 12 });
+    expect(view.getByTestId('hovered-mark').textContent).not.toBe('null');
+    fireEvent.mouseLeave(svg);
+    expect(view.getByTestId('hovered-mark').textContent).toBe('null');
+  });
+
+  test("hovering a cluster's marker sets hoveredMark.content to componentClusterTooltip's exact shape (count/First/Last/click-to-see-all)", () => {
+    // domain [0, 1000], width 480 -> x(v) = v * 0.48; at=100 -> 48px, at=110 -> 52.8px, well under the 10px threshold.
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <ComponentTrack
+          events={[
+            componentEvent({ id: 'a', kind: 'agent', at: 100 }),
+            componentEvent({ id: 'b', kind: 'agent', at: 110 }),
+          ]}
+        />
+        <HoveredMarkReadout />
+      </TimelineProvider>,
+    );
+    const svg = view.container.querySelector('svg');
+    if (!svg) throw new Error('svg not found');
+    stubTrackRect(svg);
+    const cluster = view.container.querySelector('[data-component-cluster-count]');
+    if (!cluster) throw new Error('expected a cluster marker');
+    fireEvent.mouseMove(cluster, { clientX: 48, clientY: 12 });
+    expect(view.getByTestId('hovered-mark').textContent).toBe(
+      '2 Agent events\nFirst: 0:00\nLast: 0:00\nClick to see all events',
+    );
+  });
+
+  describe('keyboard parity (focus/blur)', () => {
+    test('focusing a mark sets hoveredMark; blurring it clears hoveredMark', () => {
+      const view = render(
+        <TimelineProvider domain={[0, 1000]}>
+          <ComponentTrack
+            events={[componentEvent({ kind: 'hook', name: 'pre-commit', agentId: 'session-k' })]}
+          />
+          <HoveredMarkReadout />
+        </TimelineProvider>,
+      );
+      const mark = view.container.querySelector('[data-component-id="fake#0"]');
+      if (!mark) throw new Error('expected mark');
+      expect(view.getByTestId('hovered-mark').textContent).toBe('null');
+      fireEvent.focus(mark);
+      expect(view.getByTestId('hovered-mark').textContent).toContain('Agent: session-k');
+      fireEvent.blur(mark);
+      expect(view.getByTestId('hovered-mark').textContent).toBe('null');
+    });
+  });
+});
+
+describe('hover-dim by agent (timeline-chart-usability f1-t5)', () => {
+  test('a mark whose agentId does not match hoveredAgentId dims to HOVER_DIM_OPACITY; the matching one stays undimmed', () => {
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <ComponentTrack
+          events={[
+            componentEvent({ id: 'a', kind: 'skill', at: 100, agentId: 'session-a' }),
+            componentEvent({ id: 'b', kind: 'skill', at: 900, agentId: 'session-b' }),
+          ]}
+        />
+      </TimelineProvider>,
+    );
+    // No hoveredAgentId yet: neither mark is dimmed.
+    const circleA = view.container.querySelector('[data-component-id="a"] circle');
+    const circleB = view.container.querySelector('[data-component-id="b"] circle');
+    expect(circleA?.getAttribute('opacity')).toBeNull();
+    expect(circleB?.getAttribute('opacity')).toBeNull();
+  });
+
+  test('with hoveredAgentId set, the matching mark carries no opacity attribute and the non-matching mark carries HOVER_DIM_OPACITY', () => {
+    function HoverSetter({ agentId }: { agentId: string }) {
+      const { setHoveredAgentId } = useTimeline();
+      setHoveredAgentId(agentId);
+      return null;
+    }
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <ComponentTrack
+          events={[
+            componentEvent({ id: 'a', kind: 'skill', at: 100, agentId: 'session-a' }),
+            componentEvent({ id: 'b', kind: 'skill', at: 900, agentId: 'session-b' }),
+          ]}
+        />
+        <HoverSetter agentId="session-a" />
+      </TimelineProvider>,
+    );
+    const circleA = view.container.querySelector('[data-component-id="a"] circle');
+    const circleB = view.container.querySelector('[data-component-id="b"] circle');
+    expect(circleA?.getAttribute('opacity')).toBeNull();
+    expect(circleB?.getAttribute('opacity')).toBe(String(HOVER_DIM_OPACITY));
+  });
+
+  test("a cluster's shape dims/undims by its representative's agentId; the count <text> never dims", () => {
+    function HoverSetter({ agentId }: { agentId: string }) {
+      const { setHoveredAgentId } = useTimeline();
+      setHoveredAgentId(agentId);
+      return null;
+    }
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <ComponentTrack
+          events={[
+            componentEvent({ id: 'a', kind: 'agent', at: 100, agentId: 'session-other' }),
+            componentEvent({ id: 'b', kind: 'agent', at: 110, agentId: 'session-other' }),
+          ]}
+        />
+        <HoverSetter agentId="session-a" />
+      </TimelineProvider>,
+    );
+    const cluster = view.container.querySelector('[data-component-cluster-count]');
+    if (!cluster) throw new Error('expected a cluster marker');
+    const polygon = cluster.querySelector('polygon');
+    const text = cluster.querySelector('text');
+    expect(polygon?.getAttribute('opacity')).toBe(String(HOVER_DIM_OPACITY));
+    expect(text?.getAttribute('opacity')).toBeNull();
+  });
+});
+
+describe('unchanged-hit-skip perf requirement (timeline-chart-usability f1-t5)', () => {
+  test('repeated mousemove ticks over the same mark do not re-invoke setHoveredMark (no consumer re-render), but moving to a different mark does', () => {
+    function RenderCountReadout() {
+      const { hoveredMark } = useTimeline();
+      const renderCount = useRef(0);
+      renderCount.current += 1;
+      return (
+        <>
+          <div data-testid="render-count">{renderCount.current}</div>
+          <div data-testid="hovered-mark">{hoveredMark ? hoveredMark.content : 'null'}</div>
+        </>
+      );
+    }
+    const view = render(
+      <TimelineProvider domain={[0, 1000]}>
+        <ComponentTrack
+          events={[
+            componentEvent({ id: 'a', kind: 'skill', at: 100 }),
+            componentEvent({ id: 'b', kind: 'hook', at: 900 }),
+          ]}
+        />
+        <RenderCountReadout />
+      </TimelineProvider>,
+    );
+    const svg = view.container.querySelector('svg');
+    if (!svg) throw new Error('svg not found');
+    stubTrackRect(svg);
+    const markA = view.container.querySelector('[data-component-id="a"]');
+    const markB = view.container.querySelector('[data-component-id="b"]');
+    if (!markA || !markB) throw new Error('expected both marks');
+
+    const initialCount = Number(view.getByTestId('render-count').textContent);
+
+    // First mousemove onto mark A is a real transition (null -> 'a').
+    fireEvent.mouseMove(markA, { clientX: 48, clientY: 12 });
+    const countAfterFirstHit = Number(view.getByTestId('render-count').textContent);
+    expect(countAfterFirstHit).toBeGreaterThan(initialCount);
+
+    // Two more ticks at the EXACT same clientX/clientY (guaranteed same hit
+    // target, and also the same `cursorTime` domain value, so this isolates
+    // the hoveredMark skip from the unrelated always-fires setCursorTime
+    // path -- React bails out a same-value setState, but `setHoveredMark`
+    // would receive a brand-new object literal each time without the
+    // ref-based skip, bumping render-count on every tick) must be genuine
+    // no-ops.
+    fireEvent.mouseMove(markA, { clientX: 48, clientY: 12 });
+    fireEvent.mouseMove(markA, { clientX: 48, clientY: 12 });
+    expect(Number(view.getByTestId('render-count').textContent)).toBe(countAfterFirstHit);
+
+    // Moving onto a genuinely different mark IS a real transition and must
+    // re-render.
+    fireEvent.mouseMove(markB, { clientX: 432, clientY: 12 });
+    expect(Number(view.getByTestId('render-count').textContent)).toBeGreaterThan(
+      countAfterFirstHit,
+    );
+    expect(view.getByTestId('hovered-mark').textContent).toContain('Hook');
+  });
+});
+
+describe('legend unaffected by hover/tooltip wiring (timeline-chart-usability f1-t5)', () => {
+  test('the legend block still renders, its swatches stay at full opacity, and gain no hover-related attributes', () => {
+    const view = renderTrack([
+      componentEvent({ id: 'a', kind: 'skill', at: 100 }),
+      componentEvent({ id: 'b', kind: 'hook', at: 500 }),
+    ]);
+    const legend = view.container.querySelector('[data-slot="component-track-legend"]');
+    if (!legend) throw new Error('expected a legend');
+    expect(legend.querySelectorAll('li').length).toBe(2);
+    const skillSwatch = legend.querySelector('[data-legend-shape="skill"] circle');
+    const hookSwatch = legend.querySelector('[data-legend-shape="hook"] rect');
+    expect(skillSwatch?.getAttribute('opacity')).toBeNull();
+    expect(hookSwatch?.getAttribute('opacity')).toBeNull();
+    expect(legend.querySelector('[data-component-id]')).toBeNull();
+    expect(legend.querySelector('[tabindex]')).toBeNull();
   });
 });
 
@@ -258,7 +520,9 @@ describe('proximity clustering (f10-t2)', () => {
     expect(mark?.getAttribute('data-component-id')).toBe('a');
     expect(mark?.querySelector('polygon')).not.toBeNull(); // still the agent (triangle) glyph
     expect(mark?.querySelector('text')?.textContent).toBe('2');
-    expect(mark?.querySelector('title')?.textContent).toContain('2 Agent events');
+    // Tooltip content (native <title> replaced by the shared hoveredMark
+    // contract, f1-t5) is covered by the "tooltip (via shared hoveredMark...)"
+    // describe block below, including the exact componentClusterTooltip shape.
   });
 
   test('two same-kind marks far apart stay as two separate glyphs', () => {

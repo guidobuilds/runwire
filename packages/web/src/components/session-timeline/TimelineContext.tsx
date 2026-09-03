@@ -14,12 +14,41 @@ import { createContext, type ReactNode, useCallback, useContext, useMemo, useSta
  * list to one). `selectedRange` is a real setter with real state even though
  * no MVP UI mutates it yet, so later zoom/select work is additive rather
  * than a context reshape.
+ *
+ * `hoveredAgentId`/`setHoveredAgentId` and `hoveredMark`/`setHoveredMark`
+ * (timeline-chart-usability design.md §1/§3, f1-t1): `hoveredAgentId` drives
+ * cross-track hover-dim-by-agent (only `AgentTrack`'s own per-lane row is a
+ * producer; every track, including `AgentTrack` itself, is a consumer via
+ * `chart-theme.ts`'s `HOVER_DIM_OPACITY`). `hoveredMark` backs the shared
+ * `MarkTooltip` overlay -- each track's own `onMouseMove` hit-test populates
+ * it with the hovered mark's pre-built tooltip text plus the raw pointer
+ * position, replacing every track's native SVG `<title>` element.
+ *
+ * `agentRowHeight`/`setAgentRowHeight` (timeline-chart-usability design.md
+ * §2, f2-t1): the row-density stepper's state, consumed by `AgentTrack`
+ * (drives each lane's svg height + derived `BAR_HEIGHT`) and mutated by
+ * `TimelineSummaryBar`'s stepper buttons -- lifted here, not local component
+ * state, because those two are siblings under `TimelineProvider`, the same
+ * shape every other cross-track shared value already uses. Independent of
+ * the dynamic viewport-height mechanism (`useAvailableHeight.ts` +
+ * `AGENT_TRACK_MIN_HEIGHT_PX`/`AGENT_TRACK_BOTTOM_MARGIN_PX` below): the
+ * stepper answers "how many lanes fit," the height hook answers "how much of
+ * the viewport does the scroll region get" -- neither subsumes the other.
  */
 
 export type TimelineDomain = readonly [number, number]; // [0, maxElapsedMs]
 
 /** `@visx/scale`'s `scaleLinear<number>(...)` return type, named without a direct `@visx/vendor`/`d3-scale` import (neither is a declared `packages/web` dependency). */
 type LinearScale = ReturnType<typeof scaleLinear<number>>;
+
+/**
+ * Shared shape for `TimelineContextValue.hoveredMark` (timeline-chart-
+ * usability design.md §3, f1-t1): a track's own hit-tested tooltip text plus
+ * the raw pointer position that positions `MarkTooltip`'s overlay `<div>`.
+ * Exported so `MarkTooltip.tsx` and every track's own hover handler can name
+ * this type instead of re-deriving an inline object type at each call site.
+ */
+export type HoveredMark = { content: string; clientX: number; clientY: number };
 
 export type TimelineContextValue = {
   domain: TimelineDomain;
@@ -39,6 +68,12 @@ export type TimelineContextValue = {
    */
   selectedClusterIds: readonly string[] | null;
   selectedRange: TimelineDomain | null; // reserved for later zoom/select; unused MVP (always null)
+  /** Agent id (`AgentSpan.agentId`/`TokenPoint.agentId`/etc.) whose row is currently hovered in `AgentTrack`, or `null` when nothing is hovered -- see the module doc comment. */
+  hoveredAgentId: string | null;
+  /** The currently-hovered mark's tooltip content + raw pointer position, or `null` -- backs the shared `MarkTooltip` overlay. */
+  hoveredMark: HoveredMark | null;
+  /** `AgentTrack`'s current row height in px (default `22`, `AGENT_ROW_HEIGHT_PRESETS`' unchanged middle-ish default) -- see the module doc comment. */
+  agentRowHeight: number;
   setCursorTime: (ms: number | null) => void;
   pinCursor: (ms: number) => void;
   clearCursor: () => void;
@@ -46,6 +81,9 @@ export type TimelineContextValue = {
   selectCluster: (ids: readonly string[]) => void;
   closeInspector: () => void;
   setSelectedRange: (range: TimelineDomain | null) => void;
+  setHoveredAgentId: (id: string | null) => void;
+  setHoveredMark: (mark: HoveredMark | null) => void;
+  setAgentRowHeight: (px: number) => void;
 };
 
 const TimelineContext = createContext<TimelineContextValue | null>(null);
@@ -68,6 +106,30 @@ export const DEFAULT_WIDTH = 480;
 export const LABEL_GUTTER_WIDTH = 'w-40';
 export const LABEL_GUTTER_PX = 168;
 
+/**
+ * `AgentTrack` row-density presets (timeline-chart-usability design.md §2,
+ * f2-t1), px per lane. `TimelineSummaryBar`'s stepper steps `agentRowHeight`
+ * through this array in each direction, disabled at either end. `22` (index
+ * 2) is today's unchanged default, so a session that already fits needs zero
+ * interaction to look identical to before this feature.
+ */
+export const AGENT_ROW_HEIGHT_PRESETS: readonly number[] = [14, 18, 22, 28];
+
+/**
+ * Fixed floor (px) for `AgentTrack`'s bounded-scroll container, independent
+ * of whichever `agentRowHeight` preset is currently selected -- `4 * 22`,
+ * four rows at the default preset. Must hold even at the tallest preset on a
+ * very short viewport, so it is not derived from `agentRowHeight`.
+ */
+export const AGENT_TRACK_MIN_HEIGHT_PX = 88;
+
+/**
+ * Breathing room (px) `useAvailableHeight` subtracts from `window.innerHeight
+ * - containerTop`, so `AgentTrack`'s own bounded-scroll container never
+ * touches the window's bottom edge.
+ */
+export const AGENT_TRACK_BOTTOM_MARGIN_PX = 24;
+
 export type TimelineProviderProps = {
   domain: TimelineDomain;
   width?: number;
@@ -84,6 +146,9 @@ export function TimelineProvider({
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedClusterIds, setSelectedClusterIds] = useState<readonly string[] | null>(null);
   const [selectedRange, setSelectedRangeState] = useState<TimelineDomain | null>(null);
+  const [hoveredAgentId, setHoveredAgentIdState] = useState<string | null>(null);
+  const [hoveredMark, setHoveredMarkState] = useState<HoveredMark | null>(null);
+  const [agentRowHeight, setAgentRowHeightState] = useState(22);
 
   const [domainMin, domainMax] = domain;
   const xScale = useMemo(
@@ -139,6 +204,22 @@ export function TimelineProvider({
     setSelectedRangeState(range);
   }, []);
 
+  // Producer: only AgentTrack's own per-lane row calls this (design.md §1).
+  const setHoveredAgentId = useCallback((id: string | null) => {
+    setHoveredAgentIdState(id);
+  }, []);
+
+  // Producer: every track's own hover hit-test calls this instead of
+  // rendering a native SVG <title> (design.md §3).
+  const setHoveredMark = useCallback((mark: HoveredMark | null) => {
+    setHoveredMarkState(mark);
+  }, []);
+
+  // Producer: TimelineSummaryBar's row-density stepper (design.md §2, f2-t2).
+  const setAgentRowHeight = useCallback((px: number) => {
+    setAgentRowHeightState(px);
+  }, []);
+
   const value = useMemo<TimelineContextValue>(
     () => ({
       domain,
@@ -149,6 +230,9 @@ export function TimelineProvider({
       selectedEventId,
       selectedClusterIds,
       selectedRange,
+      hoveredAgentId,
+      hoveredMark,
+      agentRowHeight,
       setCursorTime,
       pinCursor,
       clearCursor,
@@ -156,6 +240,9 @@ export function TimelineProvider({
       selectCluster,
       closeInspector,
       setSelectedRange,
+      setHoveredAgentId,
+      setHoveredMark,
+      setAgentRowHeight,
     }),
     [
       domain,
@@ -166,6 +253,9 @@ export function TimelineProvider({
       selectedEventId,
       selectedClusterIds,
       selectedRange,
+      hoveredAgentId,
+      hoveredMark,
+      agentRowHeight,
       setCursorTime,
       pinCursor,
       clearCursor,
@@ -173,6 +263,9 @@ export function TimelineProvider({
       selectCluster,
       closeInspector,
       setSelectedRange,
+      setHoveredAgentId,
+      setHoveredMark,
+      setAgentRowHeight,
     ],
   );
 

@@ -182,6 +182,49 @@ describe('real fixture data', () => {
     expect(document.querySelector('[data-component-id]')).not.toBeNull();
   });
 
+  test('row-density stepper (f2-t6): clicking the "+"/"−" buttons in TimelineSummaryBar changes AgentTrack\'s real rendered row height end-to-end, through TimelineContext -- not a mocked prop', () => {
+    setup();
+    render(<SessionTimeline id="fake:root" />);
+
+    const agentSvg = () =>
+      document.querySelector('[data-slot="agent-track"] svg') as SVGSVGElement | null;
+    const agentBar = () =>
+      document.querySelector('[data-slot="agent-track"] rect[data-agent-span]');
+
+    // Default preset (22, AGENT_ROW_HEIGHT_PRESETS' unchanged middle-ish
+    // default) -- the stepper is reachable and rendered at all, proving
+    // SessionTimeline actually passes agentRowHeight/onStepRowHeight down.
+    expect(agentSvg()?.getAttribute('height')).toBe('22');
+    expect(agentBar()?.getAttribute('height')).toBe('12'); // Math.max(22-10,4)
+
+    // "Show fewer, taller agent rows" steps agentRowHeight UP one preset:
+    // AGENT_ROW_HEIGHT_PRESETS = [14, 18, 22, 28] -> 22 becomes 28.
+    fireEvent.click(screen.getByRole('button', { name: 'Show fewer, taller agent rows' }));
+    expect(agentSvg()?.getAttribute('height')).toBe('28');
+    expect(agentBar()?.getAttribute('height')).toBe('18'); // Math.max(28-10,4)
+
+    // "Show more agent rows" steps agentRowHeight DOWN one preset each
+    // click: 28 -> 22 -> 18, proving the same context state (not a second,
+    // independently-tracked value) drives both directions.
+    fireEvent.click(screen.getByRole('button', { name: 'Show more agent rows' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show more agent rows' }));
+    expect(agentSvg()?.getAttribute('height')).toBe('18');
+    expect(agentBar()?.getAttribute('height')).toBe('8'); // Math.max(18-10,4)
+  });
+
+  test('mounts exactly one MarkTooltip overlay (f1-t2): renders nothing at rest, and hovering a real mark shows exactly one tooltip node, not one per track', () => {
+    setup();
+    render(<SessionTimeline id="fake:root" />);
+    expect(document.querySelectorAll('[data-slot="mark-tooltip"]').length).toBe(0);
+
+    const harnessMark = document.querySelector('[data-harness-id]');
+    expect(harnessMark).not.toBeNull();
+    if (harnessMark) fireEvent.mouseMove(harnessMark, { clientX: 10, clientY: 10 });
+
+    const tooltips = document.querySelectorAll('[data-slot="mark-tooltip"]');
+    expect(tooltips.length).toBe(1);
+  });
+
   test("the tracks container is the shared-cursor overlay's positioned ancestor", () => {
     setup();
     render(<SessionTimeline id="fake:root" />);

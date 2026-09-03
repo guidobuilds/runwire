@@ -118,6 +118,92 @@ describe('reset-zoom control (f9-t3)', () => {
   });
 });
 
+describe('row-density stepper (timeline-chart-usability f2-t2)', () => {
+  test('does not render when agentRowHeight/onStepRowHeight are omitted (predates f2, every other test in this file)', () => {
+    render(
+      <TimelineSummaryBar
+        summary={SUMMARY}
+        rollup={makeRollup({ id: 'fake:root' })}
+        agentCount={1}
+        mcpCallCount={0}
+        capabilities={FULL_CAPS}
+        displayName="Fake Harness"
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Show more agent rows' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Show fewer, taller agent rows' })).toBeNull();
+  });
+
+  test('at the default preset (22, neither array end), both buttons are enabled and call onStepRowHeight with -1/1', () => {
+    const onStepRowHeight = vi.fn();
+    render(
+      <TimelineSummaryBar
+        summary={SUMMARY}
+        rollup={makeRollup({ id: 'fake:root' })}
+        agentCount={1}
+        mcpCallCount={0}
+        capabilities={FULL_CAPS}
+        displayName="Fake Harness"
+        agentRowHeight={22}
+        onStepRowHeight={onStepRowHeight}
+      />,
+    );
+    const fewer = screen.getByRole('button', { name: 'Show more agent rows' });
+    const more = screen.getByRole('button', { name: 'Show fewer, taller agent rows' });
+    expect((fewer as HTMLButtonElement).disabled).toBe(false);
+    expect((more as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(fewer);
+    expect(onStepRowHeight).toHaveBeenCalledWith(-1);
+    fireEvent.click(more);
+    expect(onStepRowHeight).toHaveBeenCalledWith(1);
+  });
+
+  test('at the smallest preset (14), "Show more agent rows" is disabled', () => {
+    render(
+      <TimelineSummaryBar
+        summary={SUMMARY}
+        rollup={makeRollup({ id: 'fake:root' })}
+        agentCount={1}
+        mcpCallCount={0}
+        capabilities={FULL_CAPS}
+        displayName="Fake Harness"
+        agentRowHeight={14}
+        onStepRowHeight={() => {}}
+      />,
+    );
+    expect(
+      (screen.getByRole('button', { name: 'Show more agent rows' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole('button', { name: 'Show fewer, taller agent rows' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
+  test('at the largest preset (28), "Show fewer, taller agent rows" is disabled', () => {
+    render(
+      <TimelineSummaryBar
+        summary={SUMMARY}
+        rollup={makeRollup({ id: 'fake:root' })}
+        agentCount={1}
+        mcpCallCount={0}
+        capabilities={FULL_CAPS}
+        displayName="Fake Harness"
+        agentRowHeight={28}
+        onStepRowHeight={() => {}}
+      />,
+    );
+    expect(
+      (screen.getByRole('button', { name: 'Show more agent rows' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    expect(
+      (screen.getByRole('button', { name: 'Show fewer, taller agent rows' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+});
+
 describe('absence', () => {
   test('a session with no rollup at all shows the absence glyph for duration/tokens/tool calls, not invented zeros', () => {
     render(
