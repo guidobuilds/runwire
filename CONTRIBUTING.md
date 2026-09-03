@@ -1,13 +1,18 @@
 # Contributing
 
-Scout's foundations are documented under [docs/](docs/):
+Scout's foundations are documented under [docs/](docs/). Technical docs (how the system works) and product docs (what it's for) are kept separate:
 
+**Technical — start here as a new contributor:**
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), section "Start here" — the domain model, the event catalog, and how one raw record becomes a `SessionSummary`. Read this before touching any package.
+- [docs/adapters/README.md](docs/adapters/README.md) — what any harness adapter must provide, and how to build a new one.
+- [docs/adapters/claude-code.md](docs/adapters/claude-code.md) — the worked example: where Claude Code stores sessions and exactly how each record maps to an event.
+- [docs/ENTITIES.md](docs/ENTITIES.md) — the entity catalog (properties, relationships) behind the domain model.
+- [docs/harness-survey.md](docs/harness-survey.md) — raw structure notes per harness, ahead of building its adapter.
+- [docs/DECISIONS.md](docs/DECISIONS.md) — design-review outcomes and their rationale, referenced as `D<n>` throughout the above.
+
+**Product** (brief only for now — the UI is early and changes fast, so no functional/UX documentation is maintained yet):
 - [docs/PRODUCT.md](docs/PRODUCT.md) — the product brief.
-- [docs/DECISIONS.md](docs/DECISIONS.md) — design-review outcomes and their rationale.
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the contract between packages: domain model, event catalog, adapter interface, privacy boundary.
 - [docs/PLAN.md](docs/PLAN.md) — milestones.
-
-Adding a new harness adapter starts at [docs/adapters/README.md](docs/adapters/README.md).
 
 ## Workflow
 

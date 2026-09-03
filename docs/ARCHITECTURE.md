@@ -4,6 +4,33 @@ Foundations for Scout. This document is the contract between `core`, the adapter
 
 Related: [PRODUCT.md](PRODUCT.md) (brief), [DECISIONS.md](DECISIONS.md) (review outcomes), [PLAN.md](PLAN.md) (milestones), [ENTITIES.md](ENTITIES.md) (entity catalog with properties and relationships), [adapters/README.md](adapters/README.md) (how to add a harness), [harness-survey.md](harness-survey.md) (what the source data looks like).
 
+## Start here
+
+New to Scout? Read in this order — everything else in this document is detail you can look up later, not a prerequisite:
+
+1. **§0–§3** — what `core` actually is: the domain model (the shapes every package agrees on, §2) and how raw records become that model (the event stream and the reducer, §3). This is "the app," conceptually; everything past §4 is plumbing around it.
+2. **§4, Adapter contract** — what *any* per-harness adapter must provide to plug into `core`, independent of which harness it reads. Also covered, procedurally, in [adapters/README.md](adapters/README.md).
+3. **[adapters/claude-code.md](adapters/claude-code.md)** — the concrete worked example: where Claude Code stores sessions on disk, and exactly how each raw record type maps onto the event catalog from §3.
+
+§5 onward (scan pipeline, privacy, project identity, server, web, CLI, testing, cross-platform) matter once you're touching that specific layer, not for a first read.
+
+**The one-sentence version:** Scout never calls a network API for session data — it walks known folders/files on disk (`~/.claude/projects/**`, etc.), and each *adapter* turns one harness's raw records into a stream of small, typed `ScoutEvent`s (`usage`, `model`, `toolCall`, …) using only harness-agnostic vocabulary. `core` folds that stream into a `SessionSummary` (a reducer, §3.2) and, on demand, a `SessionTrace` (a step-by-step timeline, §3.5) — the adapter never computes a metric or a rollup itself (invariant 1 below). The server exposes those two shapes over HTTP; the web app renders them.
+
+**Walkthrough — one record's journey.** Take one line from a real Claude Code session file: an `assistant` record reporting token usage for one API call.
+
+```text
+raw JSONL record            adapter.parse()                                  core reduce()                                          web app
+──────────────────  ──▶  ──────────────────────────────────────  ──▶  ─────────────────────────────────────────────────  ──▶  ──────────────────
+{ "type": "assistant",    { kind: 'usage',                             SessionSummary.usage.uncachedInput = {                  table cell:
+  "requestId": "req_1",     dedupeKey: 'req_1',                          value: 1200, confidence: 'high',                        "1.2k · high"
+  "message": {              uncachedInput: 1200,                         source: 'claude-code/assistant.usage#requestId' }
+   "usage": {                cachedInput: 300,
+    "input_tokens": 1200,    output: 84 }
+    "output_tokens": 84 } } }
+```
+
+The adapter's only job is the first arrow: read the record, apply its allowlist (§6), and emit one `usage` event with canonical field names already in place — no arithmetic beyond a direct lookup. Everything from `reduce()` onward — deduplication, confidence, rollups — is `core`'s job, identical for every harness.
+
 ## 0. Overview
 
 ```text
@@ -66,7 +93,9 @@ An adapter that imports `server` or another adapter fails CI.
 
 ## 2. Domain model
 
-All types live in `packages/core/src/model/`. They are the JSON shapes served by the API; there is no separate DTO layer.
+All types live in `packages/core/src/model/`. They are the JSON shapes served by the API; there is no separate DTO layer — what `reduce()` produces (§3.2) is exactly what the server sends and the web app renders.
+
+Four shapes matter most, in the order you'll meet them: `Metric` (§2.1, the wrapper every measured value gets), `SessionSummary` (§2.3, one session), `SessionRollup` (§2.4, a session plus its descendants) and `SessionTrace` (§2.6, one session's step-by-step timeline). Everything else in this section is a supporting type for one of those four.
 
 ### 2.1 Metric
 
@@ -108,6 +137,7 @@ type Counts = {
   turns?: Metric;        // human prompts; not rolled up
   apiCalls?: Metric;     // model requests
   toolCalls?: Metric;
+  toolCallsByCategory?: Partial<Record<ToolCategory, Metric>>;   // D65: same events as toolCalls, tallied per category; rolled up like toolCalls. Decided 2026-09-03, not yet implemented.
   compactions?: Metric;
   subagents?: Metric;    // descendants in the tree; rollup only
 };
@@ -211,7 +241,7 @@ Inclusive = exclusive + Σ descendants, field by field; confidence of a rolled-u
 The per-step view behind the timeline (D28–D35). Built on demand, never stored (D29).
 
 ```ts
-type ToolCategory = 'read' | 'write' | 'exec' | 'search' | 'plan' | 'agent' | 'web' | 'mcp' | 'other';
+type ToolCategory = 'read' | 'write' | 'exec' | 'search' | 'plan' | 'agent' | 'web' | 'mcp' | 'skill' | 'other';   // 'skill' added after D31/D38; mirrors core/src/model/trace.ts
 
 type UsageNumbers = { uncachedInput: number; cachedInput: number; cacheWrite: number; output: number; reasoningOutput: number };
 
@@ -239,8 +269,9 @@ type SessionTrace = {
 
 Every field is either a number, a boolean, an id, a model/tool/hook/mode **name** or a category. Nothing in a trace can carry text from the session.
 
+## 3. Events and the reducer
 
-Adapters emit a stream of `ScoutEvent`s per source; `core` folds them into a `SessionSummary` (D20). The adapter is a translator; the reducer owns the semantics.
+This is the processing layer that turns raw, harness-specific records into the domain model from §2. Adapters emit a stream of `ScoutEvent`s per source (§3.1); `core` folds that stream into a `SessionSummary` (§3.2, D20) and, separately, into a `SessionTrace` (§3.5). The adapter is a translator with a fixed, small vocabulary to translate into; the reducer owns all the semantics — arithmetic, deduplication, confidence, rollups. No adapter contains any of that logic, and none should ever need to.
 
 ### 3.1 Event catalog
 
@@ -299,7 +330,7 @@ Rules for adapters:
 - **Usage:** if any `usage` events: group by `dedupeKey` (events without a key are unique), keep one per key, sum per field. Else if `usageTotal` events: take the last one. Else: usage fields absent.
 - **Cross-check:** when both exist and the deduped sum differs from the last total by more than 5 % on `output`, downgrade usage to `low` with note `usage-total-mismatch` and emit a diagnostic.
 - **Model / mode:** tally; `primary` = model with the most `usage.output` attributed (fallback: most frequent), mode = most frequent; `changes` = number of transitions in event order.
-- **Counts:** `apiCalls` = deduped `usage` events; `toolCalls`, `compactions` = event counts; `turns` = `turn` events, else derived from the adapter's `turn` hint absence → field absent.
+- **Counts:** `apiCalls` = deduped `usage` events; `toolCalls`, `compactions` = event counts; `toolCallsByCategory` = the same `toolCall` events tallied by their `category` (D65, so a descendant's `mcp`/`skill` usage can be read off its summary without opening its trace); `turns` = `turn` events, else derived from the adapter's `turn` hint absence → field absent.
 - **Version:** first/last; `flags.versionChanged` when they differ.
 - **Title:** kept only when `ctx.privacy.titles` is true; otherwise dropped before the summary exists (not hidden in the UI).
 - **Initiator:** first `initiator` event wins (an adapter describes a session's initiator once); the event's own `confidence` is kept as reported, unmodified by the reducer.
@@ -336,7 +367,7 @@ After reducing every source of an adapter, `core` links children to parents by `
 
 ## 4. Adapter contract
 
-`packages/core/src/adapter/`:
+The interface every harness adapter implements, in `packages/core/src/adapter/`. This is the generic answer to "what must an adapter provide": five functions (`probe`, `discover`, `parse`, `explain`, `toolCategory`) plus three static declarations (`capabilities`, `allowlist`, `harnessEventNames`) — nothing else, and nothing computed. A new harness (§ [adapters/README.md](adapters/README.md)) means writing exactly this shape; `core`, the server and the web app never change.
 
 ```ts
 type Capability =

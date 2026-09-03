@@ -1,8 +1,34 @@
-# Adding a harness adapter
+# How a harness adapter works
 
-An adapter is a translator from one harness's on-disk format into Scout's normalized events. It never computes metrics, never keeps content, and never talks to the server. Read [ARCHITECTURE.md](../ARCHITECTURE.md) §3–§6 first.
+An adapter is a translator from one harness's on-disk format into Scout's normalized events — nothing more. It never computes a metric, never keeps prompt/response content, and never talks to the server or another adapter. Read [ARCHITECTURE.md](../ARCHITECTURE.md) §2–§4 first (domain model, event catalog, adapter contract); this document is the practical "how to build one" companion to that contract.
 
-## Checklist
+## What an adapter must provide
+
+Every adapter implements the same `HarnessAdapter` interface (ARCHITECTURE.md §4). Concretely, that's five functions and three declarations — this is the complete list of what "providing a harness" means in Scout:
+
+| Provides | Kind | Purpose |
+|---|---|---|
+| `probe(ctx)` | function | Is this harness installed on this machine, and where? Cheap: check known paths, no parsing. |
+| `discover(ctx)` | function | Stream `SourceRef`s (one per session file/row) — `stat`/`readdir` only, no file content read. This is how Scout finds sessions without parsing all of them up front. |
+| `parse(ref, ctx)` | function | Stream `ScoutEvent`s for one `SourceRef` — the actual translation (see "The shape of `parse`'s output" below). |
+| `explain(field)` | function | One sentence per usage/count field: what raw field it comes from and what it means. Powers the "why is this value shown this way" tooltip and the compare view's incomparable-metric flag. |
+| `toolCategory(name)` | function | Maps a harness-specific tool name to one of the fixed `ToolCategory` values (`read`, `write`, `exec`, …) — must be total; unknown names fall back to `other`. |
+| `capabilities` | declaration | Which dimensions this harness can report at all (per-call usage? cache-write tokens? cost? subagents?). This is what lets the UI say "not provided by this harness" instead of a wrong zero — see ARCHITECTURE.md §2.1. |
+| `allowlist` | declaration | The only fields this adapter is permitted to read out of a raw record, as data (ARCHITECTURE.md §6) — not something you're trusted to just "not read", it's mechanically enforced by `core.project()` before anything else touches the record. |
+| `harnessEventNames` | declaration | The fixed, finite vocabulary this adapter's `harnessEvent` events may use (e.g. `hook:PreToolUse`, `permission`). A free-form name is rejected by the contract test — this is what keeps hook output and command text out of the timeline. |
+
+The one thing an adapter never provides is arithmetic: it does not sum, deduplicate, or decide a confidence level. It emits raw-but-mapped numbers (canonical field names, ARCHITECTURE.md §2.2) and lets `core`'s reducer (ARCHITECTURE.md §3.2) do everything downstream. If you find yourself writing a sum or an `if (a !== b) confidence = 'low'` inside an adapter, that logic belongs in `core` instead.
+
+### The shape of `parse`'s output
+
+`parse` returns an `AsyncIterable<ScoutEvent>` — the same fixed event catalog for every harness (ARCHITECTURE.md §3.1: `meta`, `link`, `initiator`, `usage`, `toolCall`, `turn`, `model`, `mode`, `compaction`, `harnessEvent`, `diagnostic`, …). Two rules make this translation mechanical rather than creative:
+
+1. **Field names are already canonical.** `usage.uncachedInput` means the same thing whether it came from Claude Code's `input_tokens` or Codex's `input_tokens − cached_input_tokens`; the adapter's job is the lookup (or, when it had to compute something, recording that in `derived`), never inventing a new field.
+2. **Nothing free-form leaves the adapter.** Every string an event carries — a tool name, a mode, a `harnessEvent.name` — is drawn from a small, adapter-declared vocabulary. There is no field for "whatever text was in the record."
+
+For the fully worked example of this translation — real record shapes in, real events out — see [claude-code.md](claude-code.md).
+
+## Building a new adapter
 
 1. **Survey the data.** Add a section to [harness-survey.md](../harness-survey.md): where sessions live per OS, file/DB layout, record types, where model/mode/usage/timestamps/subagent links come from, which fields are content, how versions differ. Do this with structure-only inspection (keys, counts), never by reading content.
 2. **Create the package** `packages/adapter-<id>` from `packages/adapter-template`:

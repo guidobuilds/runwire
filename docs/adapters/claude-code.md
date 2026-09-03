@@ -14,6 +14,45 @@ Status: **Built (M2)**, validated against real sessions on the reference machine
 
 `sourceId`: `<sessionId>` for roots, `<sessionId>/<agentId>` for children. `parentHint` = `<sessionId>` from the directory nesting.
 
+## Data flow: from JSONL line to `SessionSummary`
+
+This section is the concrete version of the "one record's journey" walkthrough in ARCHITECTURE.md's "Start here" section — how this specific adapter's three functions (`discover`, `parse`, and `core`'s `reduce`) turn files under `~/.claude/projects/` into the fields on `SessionSummary` (ARCHITECTURE.md §2.3). Two examples cover the two kinds of mapping this adapter does: a plain field lookup (usage) and a structural one (linking a subagent to its parent).
+
+**1. Discovery.** `discover()` walks `~/.claude/projects/**` with `readdir`/`stat` only — it never opens a file. For every `<sessionId>.jsonl` it yields a `SourceRef{ sourceId: sessionId, kind: 'root' }`; for every `agent-<agentId>.jsonl` under a session's `subagents/` directory, a `SourceRef{ sourceId: '<sessionId>/<agentId>', kind: 'child', parentHint: sessionId }`. Nothing here is parsed yet — this step exists purely so a rescan (ARCHITECTURE.md §5) can skip files whose size/mtime haven't changed.
+
+**2. Parsing — a usage record.** `parse(ref, ctx)` streams the file line by line. This raw `assistant` record (content fields omitted — they're never even copied out of the line, ARCHITECTURE.md §6):
+
+```json
+{ "type": "assistant", "requestId": "req_1", "timestamp": "2026-08-30T10:00:00Z",
+  "message": { "model": "claude-opus-5",
+    "usage": { "input_tokens": 1200, "cache_read_input_tokens": 300, "output_tokens": 84 } } }
+```
+
+becomes, per the mapping table below (§ "Record types"):
+
+```ts
+{ kind: 'usage', dedupeKey: 'req_1', model: 'claude-opus-5', at: '2026-08-30T10:00:00Z',
+  uncachedInput: 1200, cachedInput: 300, output: 84 }
+```
+
+`core.reduce()` (ARCHITECTURE.md §3.2) then dedupes by `dedupeKey` — necessary here because one API call is written as several `assistant` records sharing one `requestId` (see "Usage mapping" below) — and writes the result straight onto `SessionSummary.usage.uncachedInput = { value: 1200, confidence: 'high', source: 'claude-code/assistant.usage#requestId' }`. The adapter never sums or dedupes; it only looked up `input_tokens` and named the key it repeats on.
+
+**3. Parsing — linking a subagent.** A subagent's own file sits at `<projectDir>/<sessionId>/subagents/agent-<agentId>.jsonl`, alongside `agent-<agentId>.meta.json`:
+
+```json
+{ "sessionId": "sess_1", "agentId": "ag_1", "agentType": "Explore", "spawnDepth": 1, "toolUseId": "toolu_9" }
+```
+
+`parse()` turns that into one `link` event when it processes the child source:
+
+```ts
+{ kind: 'link', parentSourceId: 'sess_1', relation: 'subagent', agentType: 'Explore', depth: 1, viaCallId: 'toolu_9' }
+```
+
+`core`'s linking step (ARCHITECTURE.md §3.4) — not this adapter — resolves `parentSourceId` against the parent's already-reduced summary, sets `SessionSummary.parentId`/`relation` on the child, and appends the child's id to the parent's `children: string[]`. The adapter only ever states *who its parent is and how it was spawned*; building the tree, computing `depth` from it, and rolling up usage across it (ARCHITECTURE.md §2.4) all happen in `core`.
+
+Every other record type in the table below follows the same pattern: a direct field lookup (or, for `initiator`, a small classification — see "Initiator" below) into one `ScoutEvent`, never more than one hop from the raw JSON.
+
 ## Record types and what is taken from them
 
 Records are one JSON object per line. Top-level `type` drives the mapping.
