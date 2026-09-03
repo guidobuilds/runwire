@@ -25,32 +25,7 @@ module.exports = {
         'An adapter package may only import @scout/core (this also forbids importing another adapter).',
       severity: 'error',
       from: { path: '^packages/adapter-' },
-      to: { path: '^(packages/(server|web)|apps/)' },
-    },
-    {
-      name: 'server-no-web-or-apps',
-      comment: 'packages/server may import core and adapters, not web or apps.',
-      severity: 'error',
-      from: { path: '^packages/server' },
-      to: { path: '^(packages/web|apps/)' },
-    },
-    {
-      name: 'web-no-adapters-or-apps',
-      comment: 'packages/web may import core and server, not adapters or apps.',
-      severity: 'error',
-      from: { path: '^packages/web' },
-      to: { path: '^(packages/adapter-|apps/)' },
-    },
-    {
-      name: 'apps-server-and-web-only',
-      comment:
-        'apps/scout may import server and web, not core or adapters directly. Narrow exception: ' +
-        'apps/scout/src/fixture.ts (the dev-only `scout fixture` redaction tool) needs an ' +
-        "adapter's own allowlist to know what to redact, so it is exempted here rather than " +
-        'widening this rule for the real serve/scan/doctor commands too (docs/ARCHITECTURE.md §1).',
-      severity: 'error',
-      from: { path: '^apps/', pathNot: '^apps/scout/src/fixture' },
-      to: { path: '^packages/(core|adapter-)' },
+      to: { path: '^packages/(?!core)' },
     },
   ],
   options: {

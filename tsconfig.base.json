@@ -20,9 +20,7 @@
     "paths": {
       "@scout/core": ["./packages/core/src/index.ts"],
       "@scout/core/test-kit": ["./packages/core/src/test-kit/index.ts"],
-      "@scout/adapter-claude-code": ["./packages/adapter-claude-code/src/index.ts"],
-      "@scout/server": ["./packages/server/src/index.ts"],
-      "@scout/web": ["./packages/web/src/index.ts"]
+      "@scout/adapter-claude-code": ["./packages/adapter-claude-code/src/index.ts"]
     }
   }
 }
