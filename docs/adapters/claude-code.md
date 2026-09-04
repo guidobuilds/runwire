@@ -52,7 +52,7 @@ Records are one JSON object per line. Top-level `type` drives the mapping.
 
 | `type` | Produces | Fields used |
 |---|---|---|
-| `assistant` | `Step kind=call`, one per `requestId` (`model`, token columns; `<synthetic>` models keep usage, `model` undefined) → token totals, `api_calls`, `model_primary`, `effort`; `Step kind=model-change` (`from_value`/`to_value`) on non-synthetic transitions → `model_changes`; `Step kind=tool` per `tool_use` block (`tool_name`, `tool_category`, `call_id = id`), emitted regardless of `requestId` dedup → `tool_calls`, `session_tool_counts` | `requestId`, `timestamp`, `effort`, `message.model`, `message.usage.{input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, output_tokens_details.thinking_tokens}`, `message.content[].{type, name, id}` |
+| `assistant` | `Step kind=call`, one per `requestId` (`model`, token columns; `<synthetic>` models keep usage, `model` undefined) → token totals, `api_calls`, `model_primary`, `effort`; `Step kind=model-change` (`from_value`/`to_value`) on non-synthetic transitions → `model_changes`; `Step kind=tool` per `tool_use` block (`tool_name`, `tool_category`, `call_id = id`, `skill_name` when the tool is `Skill`), emitted regardless of `requestId` dedup → `tool_calls`, `session_tool_counts` | `requestId`, `timestamp`, `effort`, `message.model`, `message.usage.{input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, output_tokens_details.thinking_tokens}`, `message.content[].{type, name, id, input.skill}` |
 | `user` | `Step kind=turn` → `turns` when not `isMeta` and no `tool_result` block (only when the file has no `system/turn_duration` records); each `tool_result` block pairs strictly by `tool_use_id` with the pending `tool` step (`error = is_error`, `duration_ms` from both timestamps); an unmatched result is not a step (diagnostic `unpaired-tool-result`) | `timestamp`, `isMeta`, `message.content[].{type, tool_use_id, is_error}` |
 | `system` / `subtype: compact_boundary` | `Step kind=compaction` (`compaction_trigger`, `pre_tokens`, `post_tokens`) → `compactions` | `compactMetadata.{trigger, preTokens, postTokens}` |
 | `system` / `subtype: turn_duration` | `Step kind=turn` with `duration_ms` (replaces the `user`-derived turns when present) | `durationMs`, `timestamp` |
@@ -85,13 +85,13 @@ Mirror of `src/allowlist.ts`; kept in step by hand.
     role: true, model: true, stop_reason: true,
     usage: { input_tokens: true, cache_read_input_tokens: true, cache_creation_input_tokens: true,
              output_tokens: true, output_tokens_details: { thinking_tokens: true } },
-    content: [{ type: true, name: true, id: true, tool_use_id: true, is_error: true }],   // arrays: projection applied per element
+    content: [{ type: true, name: true, id: true, tool_use_id: true, is_error: true, input: { skill: true } }],   // arrays: projection applied per element
   },
   attachment: { type: true, hookName: true },
 }
 ```
 
-Explicitly excluded: `message.content[].text|input|thinking|content` (content), everything in `attachment` except `type` and `hookName` (attachments embed file contents, hook stdout and injected context), `toolUseResult` (tool output), `lastPrompt`, `agentName`, `slug` (prompt-derived), `summary`, `agentSetting` (a user-authored agent name — only the *presence* of the `agent-setting` record is read).
+Explicitly excluded: `message.content[].text|thinking|content` (content) and the rest of `input` (`input.args|input.command|input.content` — `input.skill` is now the sole allowlisted `input` key), everything in `attachment` except `type` and `hookName` (attachments embed file contents, hook stdout and injected context), `toolUseResult` (tool output), `lastPrompt`, `agentName`, `slug` (prompt-derived), `summary`, `agentSetting` (a user-authored agent name — only the *presence* of the `agent-setting` record is read).
 
 `entrypoint` and `promptSource` are closed-ish enums the CLI emits — no user- or model-authored content, admissible under D7 like `model`/`mode`/`stop_reason`. The dev-only fixture redactor (`scout fixture`) keeps their value only when it is in `CLAUDE_CODE_ENTRYPOINTS` / `CLAUDE_CODE_PROMPT_SOURCES` (`src/initiator.ts`); anything else degrades to filler.
 
@@ -151,11 +151,13 @@ Measured (reference machine, 2026-09-01): 383 roots → 318 `machine` (308 by `e
 | `skill` | `Skill` |
 | `other` | everything else (`Artifact`, `SendUserFile`, …) |
 
+A `Skill` tool step also carries `Step.skillName`, the value of `message.content[].input.skill` (metadata only — the rest of the tool_use `input` is never read, D7). Non-`skill` categories leave `skillName` undefined.
+
 Harness event vocabulary (`claudeCodeHarnessEventNames`): `hook:<hookEvent>` (the part of `hookName` before `:`; e.g. `hook:PreToolUse`, `hook:Stop`, `hook:UserPromptSubmit`), `permission`, `plan-mode`, `plan-mode-exit`, `auto-mode`. The tool name after the colon is dropped so the vocabulary stays finite.
 
 ## Capabilities
 
-`usage.perCall`, `usage.cumulative`, `usage.cacheWrite`, `usage.reasoning`, `timing`, `model`, `mode`, `effort`, `version`, `turns`, `toolCalls`, `compactions`, `subagents`, `cost` *(newer versions only — declared; absence in old files shows as NULL)*, `title`, `git` (branch only), `initiator`, `steps.errors` (tool `error` flag), `steps.harness` (`harness` steps), `steps.toolDurations` (`tool.durationMs`). No `trace.*` successor (ARCHITECTURE §3 dropped it).
+`usage.perCall`, `usage.cumulative`, `usage.cacheWrite`, `usage.reasoning`, `timing`, `model`, `mode`, `effort`, `version`, `turns`, `toolCalls`, `compactions`, `subagents`, `cost` *(newer versions only — declared; absence in old files shows as NULL)*, `title`, `git` (branch only), `initiator`, `steps.errors` (tool `error` flag), `steps.harness` (`harness` steps), `steps.toolDurations` (`tool.durationMs`). `toolCalls` now also gates `Step.skillName` for `skill`-category tool steps. No `trace.*` successor (ARCHITECTURE §3 dropped it).
 
 ## Known variations
 

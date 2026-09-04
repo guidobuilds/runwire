@@ -99,6 +99,7 @@ type Step = {
   sessionId: string; seq: number; at?: string; kind: StepKind;
   model?: string;                                                              // call
   toolCategory?: ToolCategory; toolName?: string; callId?: string;             // tool; harness uses toolName = event name
+  skillName?: string;                                                          // tool (skill) — metadata only, never the rest of input (D7)
   childId?: string;                                                            // tool (agent) — filled by core, §6
   durationMs?: number; error?: boolean;                                        // tool, turn
   uncachedInput?: number; cachedInput?: number; cacheWrite?: number; output?: number; reasoningOutput?: number;  // call
@@ -125,6 +126,7 @@ type Diagnostic = { level: 'info' | 'warn' | 'error'; code: string; message: str
 | `initiator_*` | Per D47/D48. |
 | `title` | Only if `ctx.privacy.titles`. |
 | `steps` | Source order, `seq` from 0. `call` carries its own usage; `tool` carries `call_id`, `error`, `duration_ms` from the paired result. |
+| `skill_name` | Tool steps of category `skill` carry the skill name (`message.content[].input.skill`); metadata only, never the rest of the tool_use `input` (D7). |
 | `session_tool_counts` | `tool` steps tallied per `tool_category`. |
 | `parent_id`, `relation`, `agent_type`, `depth` | From the harness's own linkage (e.g. subagent directory, `.meta`). |
 | project | Per D8/D9: normalized remote → repo root → cwd, via `ctx.fs` only. |
@@ -145,7 +147,7 @@ sessions(id PK, harness_id → harnesses, project_key → projects, parent_id �
          turns, api_calls, tool_calls, compactions, cost_usd,
          initiator_kind, initiator_surface, initiator_automation, resumed, forked_from,
          harness_version_first, harness_version_last, source_path UNIQUE, source_size, source_mtime)
-steps(session_id → sessions, seq, at, kind, model, tool_category, tool_name, call_id, child_id, duration_ms, error,
+steps(session_id → sessions, seq, at, kind, model, tool_category, tool_name, skill_name, call_id, child_id, duration_ms, error,
       uncached_input, cached_input, cache_write, output, reasoning_output,
       compaction_trigger, pre_tokens, post_tokens, from_value, to_value, PK (session_id, seq))
 session_tool_counts(session_id → sessions, category, count, PK (session_id, category))
@@ -157,7 +159,7 @@ rollups(session_id PK → sessions, uncached_input, cached_input, cache_write, o
 | `steps.kind` | Columns used |
 |---|---|
 | `call` | `model`, `uncached_input` … `reasoning_output` |
-| `tool` | `tool_category`, `tool_name`, `call_id`, `child_id`, `duration_ms`, `error` |
+| `tool` | `tool_category`, `tool_name`, `skill_name`, `call_id`, `child_id`, `duration_ms`, `error` |
 | `turn` | `duration_ms` |
 | `harness` | `tool_name` (event name, e.g. `hook:PreToolUse`) |
 | `compaction` | `compaction_trigger`, `pre_tokens`, `post_tokens` |
@@ -192,6 +194,7 @@ Rollups are a table (`rollups`, §5) recomputed by core after each import: inclu
 | Canary fixture | `fixtures/<harness>/canary/`: every content field = `SCOUT_CANARY_<n>`. The sentinel must appear in no bundle field. |
 | Diagnostics | Fixed code + message (≤ 200 chars, no newlines); never record content. |
 | Titles | Written only when `ctx.privacy.titles` at import; otherwise never on disk (D7, D71). |
+| Skill name | Metadata only; only `message.content[].input.skill` is read — the rest of a tool_use `input` is never read. |
 | Paths | `source_path` and `cwd` are metadata. |
 
 ## 8. Contract test kit

@@ -119,10 +119,10 @@ function replaceSteps(db: Database, sessionId: string, steps: Step[]): void {
   for (const step of steps) {
     db.run(
       `INSERT INTO steps (
-         session_id, seq, at, kind, model, tool_category, tool_name, call_id, child_id,
+         session_id, seq, at, kind, model, tool_category, tool_name, skill_name, call_id, child_id,
          duration_ms, error, uncached_input, cached_input, cache_write, output, reasoning_output,
          compaction_trigger, pre_tokens, post_tokens, from_value, to_value
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         sessionId,
         step.seq,
@@ -131,6 +131,7 @@ function replaceSteps(db: Database, sessionId: string, steps: Step[]): void {
         step.model ?? null,
         step.toolCategory ?? null,
         step.toolName ?? null,
+        step.skillName ?? null,
         step.callId ?? null,
         step.childId ?? null,
         step.durationMs ?? null,

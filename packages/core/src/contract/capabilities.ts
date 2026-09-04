@@ -125,7 +125,7 @@ export const CAPABILITY_FIELDS: Record<Capability, CapabilityGate> = {
   toolCalls: {
     sessionFields: ['toolCalls'],
     stepKinds: ['tool'],
-    stepFields: ['tool.toolCategory', 'tool.toolName', 'tool.callId'],
+    stepFields: ['tool.toolCategory', 'tool.toolName', 'tool.callId', 'tool.skillName'],
   },
   compactions: {
     sessionFields: ['compactions'],
@@ -133,7 +133,7 @@ export const CAPABILITY_FIELDS: Record<Capability, CapabilityGate> = {
     stepFields: ['compaction.compactionTrigger', 'compaction.preTokens', 'compaction.postTokens'],
   },
   // `tool.childId` is deliberately NOT gated here: it is filled by core at
-  // link time (ARCHITECTURE §6), never emitted by an adapter, so it can
+  // link time, never emitted by an adapter, so it can
   // never be "observed" straight from a bundle stream. What an adapter
   // itself emits to say "I model subagents" is the session-level linkage
   // fields on a child (parentId/relation/agentType/spawnCallId).

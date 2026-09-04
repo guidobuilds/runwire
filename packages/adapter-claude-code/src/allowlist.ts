@@ -5,8 +5,10 @@ import type { Projection } from '@scout/core';
  * record (docs/adapters/claude-code.md "Allowlist (projection)"). Anything
  * not named here is dropped by `project()` before validation ever sees it.
  *
- * Explicitly excluded and why: message.content[].text|input|thinking|content
- * (content), everything in `attachment` except `type`/`hookName` (attachments
+ * Explicitly excluded and why: message.content[].text|thinking|content
+ * (content) and the rest of `input` (input.args|input.command|input.content —
+ * only `input.skill` is allowlisted), everything in `attachment` except
+ * `type`/`hookName` (attachments
  * embed file contents, hook stdout and injected context), `toolUseResult`
  * (tool output), `lastPrompt`, `agentName`, `slug` (prompt-derived), `summary`,
  * `agentSetting` (a user-authored agent name; only the *presence* of the
@@ -50,7 +52,16 @@ export const claudeCodeAllowlist: Projection = {
       output_tokens: true,
       output_tokens_details: { thinking_tokens: true },
     },
-    content: [{ type: true, name: true, id: true, tool_use_id: true, is_error: true }],
+    content: [
+      {
+        type: true,
+        name: true,
+        id: true,
+        tool_use_id: true,
+        is_error: true,
+        input: { skill: true },
+      },
+    ],
   },
   attachment: { type: true, hookName: true },
 };

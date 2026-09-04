@@ -68,6 +68,24 @@ describe('migrate', () => {
     expect(() => migrate(db)).not.toThrow();
     db.close();
   });
+
+  test('migrate adds skill_name to a legacy steps table and the second run is a no-op', () => {
+    const db = new Database(':memory:');
+    // A pre-skill-name `steps` table (the legacy shape, no skill_name column).
+    db.exec(
+      'CREATE TABLE steps (session_id TEXT, seq INTEGER, kind TEXT, PRIMARY KEY (session_id, seq))',
+    );
+    expect(
+      (db.query('PRAGMA table_info(steps)').all() as { name: string }[]).some(
+        (c) => c.name === 'skill_name',
+      ),
+    ).toBe(false);
+    migrate(db);
+    const colsAfter = db.query('PRAGMA table_info(steps)').all() as { name: string }[];
+    expect(colsAfter.some((c) => c.name === 'skill_name')).toBe(true);
+    expect(() => migrate(db)).not.toThrow();
+    db.close();
+  });
 });
 
 describe('parent_id has no FK (plan P20)', () => {

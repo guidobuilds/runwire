@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { AdapterContext, Project } from '@scout/core';
+import { project } from '@scout/core';
+import { claudeCodeAllowlist } from './allowlist';
 import type { ComputeBundleInput, ComputeLink } from './compute';
 import { computeBundle } from './compute';
 import type { ClaudeCodeRecord } from './schema';
@@ -478,5 +480,86 @@ describe('computeBundle - timing and seq', () => {
       ]),
     );
     expect(bundle.steps.map((s) => s.seq)).toEqual(bundle.steps.map((_, i) => i));
+  });
+});
+
+describe('computeBundle - skill name and D7 privacy', () => {
+  test('a Skill tool_use emits toolCategory skill and skillName from input.skill', async () => {
+    const bundle = await computeBundle(
+      baseInput([
+        rec({
+          type: 'assistant',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          message: {
+            content: [{ type: 'tool_use', id: 't1', name: 'Skill', input: { skill: 'my-skill' } }],
+          },
+        }),
+      ]),
+    );
+    const tool = bundle.steps.find((s) => s.kind === 'tool');
+    expect(tool).toMatchObject({ toolCategory: 'skill', toolName: 'Skill', skillName: 'my-skill' });
+  });
+
+  test('a non-skill tool_use emits no skillName, and the rest of input never reaches the step', async () => {
+    const bundle = await computeBundle(
+      baseInput([
+        rec({
+          type: 'assistant',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          message: {
+            content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { args: 'SECRET_ARGS' } }],
+          },
+        }),
+      ]),
+    );
+    const tool = bundle.steps.find((s) => s.kind === 'tool');
+    expect(tool?.toolCategory).toBe('read');
+    expect(tool?.skillName).toBeUndefined();
+    expect(JSON.stringify(bundle.steps)).not.toContain('SECRET_ARGS');
+  });
+
+  test('allowlist keeps only input.skill from a tool_use input and drops the rest', () => {
+    const projected = project(
+      {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 't1',
+              name: 'Skill',
+              input: {
+                skill: 'my-skill',
+                args: 'SECRET_ARGS',
+                command: 'SECRET_CMD',
+                content: 'SECRET_CONTENT',
+              },
+            },
+          ],
+        },
+      },
+      claudeCodeAllowlist,
+    ) as { message?: { content?: Array<Record<string, unknown>> } };
+    const content = projected.message?.content?.[0];
+    expect(content?.input).toEqual({ skill: 'my-skill' });
+    const serialized = JSON.stringify(content);
+    expect(serialized).not.toContain('SECRET_ARGS');
+    expect(serialized).not.toContain('SECRET_CMD');
+    expect(serialized).not.toContain('SECRET_CONTENT');
+  });
+
+  test('allowlist projects a non-skill tool_use input to {} (no input fields survive)', () => {
+    const projected = project(
+      {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { args: 'SECRET_ARGS' } }],
+        },
+      },
+      claudeCodeAllowlist,
+    ) as { message?: { content?: Array<Record<string, unknown>> } };
+    const content = projected.message?.content?.[0];
+    expect(content?.input).toEqual({});
+    expect(JSON.stringify(content)).not.toContain('SECRET_ARGS');
   });
 });

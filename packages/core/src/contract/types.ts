@@ -97,6 +97,7 @@ export type Step = {
   toolCategory?: ToolCategory;
   toolName?: string;
   callId?: string;
+  skillName?: string;
   /** tool (agent) - filled by core, ARCHITECTURE §6 */
   childId?: string;
   /** tool, turn */

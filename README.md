@@ -46,6 +46,18 @@ nothing else, so `bun run scout discover --adapter claude-code --json > out.json
 without `--json` it prints one terse human-readable line per bundle instead. All logs and errors
 always go to stderr.
 
+### Inventory
+
+```sh
+bun run scout discover --adapter claude-code --json | jq -s '.' > claude-inventory.json
+```
+
+`jq -s '.'` wraps the NDJSON lines into a single JSON array — easiest to open and analyze in one
+file. Use `jq -c '.'` instead to keep one JSON object per line (NDJSON), handy for streaming or
+re-piping. Because scout's logs and errors go to stderr, they never contaminate the JSON on stdout
+here either. In the saved array, each step with `toolCategory === "skill"` carries the skill name in
+its `skillName` field.
+
 ## Docs
 
 - [docs/PRODUCT.md](docs/PRODUCT.md) — purpose, principles, scope.

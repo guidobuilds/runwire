@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS steps (
   model TEXT,
   tool_category TEXT,
   tool_name TEXT,
+  skill_name TEXT,
   call_id TEXT,
   child_id TEXT,
   duration_ms INTEGER,
@@ -174,7 +175,23 @@ WHERE s.parent_id IS NULL
 GROUP BY h.id;
 `;
 
+/**
+ * Adds a column to an existing table only when it is absent. `CREATE TABLE
+ * IF NOT EXISTS` never alters a pre-existing table, so an existing (legacy)
+ * DB would keep its old `steps` shape without the new `skill_name` column;
+ * the `PRAGMA table_info` guard makes the `ALTER TABLE` a no-op on any DB
+ * that already has the column (fresh `:memory:`, or a second `migrate()` run),
+ * avoiding a "duplicate column name" error.
+ */
+function ensureColumn(db: Database, table: string, column: string, type: string): void {
+  const cols = db.query(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
+
 /** Idempotent: every statement is IF NOT EXISTS, so running this twice is a no-op. */
 export function migrate(db: Database): void {
   db.exec(DDL);
+  ensureColumn(db, 'steps', 'skill_name', 'TEXT');
 }

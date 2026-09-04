@@ -275,14 +275,19 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
 
         for (const block of message?.content ?? []) {
           if (block.type === 'tool_use' && block.name) {
+            const toolCategory = claudeCodeToolCategory(block.name);
             const toolStep: Step = {
               sessionId,
               seq: seq++,
               at,
               kind: 'tool',
-              toolCategory: claudeCodeToolCategory(block.name),
+              toolCategory,
               toolName: block.name,
               callId: block.id,
+              skillName:
+                toolCategory === 'skill'
+                  ? (block as { input?: { skill?: string } }).input?.skill
+                  : undefined,
             };
             steps.push(toolStep);
             toolCallCount++;

@@ -101,6 +101,7 @@ export const StepSchema = z
     toolCategory: ToolCategorySchema.optional(),
     toolName: z.string().optional(),
     callId: z.string().optional(),
+    skillName: z.string().optional(),
     childId: z.string().optional(),
     durationMs: nonNegInt().optional(),
     error: z.boolean().optional(),

@@ -100,6 +100,31 @@ describe('persistBundle', () => {
     }[];
     expect(rows).toEqual([{ id: 'fake:new-id' }]);
   });
+
+  test('persists step.skillName into steps.skill_name, and NULL when a step has none', () => {
+    const { db } = storeWithFakeHarness();
+    persistBundle(
+      db,
+      bundle({}, [
+        {
+          sessionId: 'fake:s1',
+          seq: 0,
+          kind: 'tool',
+          toolCategory: 'skill',
+          toolName: 'Skill',
+          skillName: 'my-skill',
+        },
+        { sessionId: 'fake:s1', seq: 1, kind: 'tool', toolCategory: 'read', toolName: 'Read' },
+      ]),
+    );
+    const rows = db
+      .query('SELECT seq, skill_name FROM steps WHERE session_id = ? ORDER BY seq')
+      .all('fake:s1') as { seq: number; skill_name: string | null }[];
+    expect(rows).toEqual([
+      { seq: 0, skill_name: 'my-skill' },
+      { seq: 1, skill_name: null },
+    ]);
+  });
 });
 
 describe('persistInvalidBundle', () => {

@@ -103,6 +103,36 @@ describe('validateBundle', () => {
     (b2.diagnostics as unknown[]).push({ level: 'info', code: 'x', message: 'line1\nline2' });
     expect(validateBundle(b2).ok).toBe(false);
   });
+
+  test('a bundle with a tool step carrying skillName validates (the strict schema admits the new field, not strips it)', () => {
+    const b = validBundle();
+    (b.steps as unknown[]).push({
+      sessionId: 'fake:s1',
+      seq: 0,
+      kind: 'tool',
+      toolCategory: 'skill',
+      toolName: 'Skill',
+      callId: 't1',
+      skillName: 'my-skill',
+    });
+    const r = validateBundle(b);
+    expect(r.ok).toBe(true);
+  });
+
+  test('a step carrying an unknown key still fails loudly under the strict StepSchema (the .strict() boundary is not weakened)', () => {
+    const b = validBundle();
+    (b.steps as unknown[]).push({
+      sessionId: 'fake:s1',
+      seq: 0,
+      kind: 'tool',
+      toolCategory: 'skill',
+      unknownSkillKey: 'SECRET',
+    });
+    const r = validateBundle(b);
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('unreachable');
+    expect(r.issues.some((i) => i.includes('unknownSkillKey'))).toBe(true);
+  });
 });
 
 describe('D21 scope: default z.object stripping vs .strict()', () => {
