@@ -1,0 +1,4 @@
+# Force LF everywhere regardless of platform checkout settings (core.autocrlf),
+# matching .editorconfig's end_of_line = lf. Without this, Windows checkouts
+# convert to CRLF and Biome's formatter flags every file as unformatted.
+* text=auto eol=lf
