@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { sep } from 'node:path';
+import { isAbsolute, relative } from 'node:path';
 import type { ScoutFs } from '../adapter/types';
 import type { Known } from '../contract/adapter';
 import { makeDiagnostic } from '../contract/diagnostic';
@@ -248,8 +248,21 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 /**
+ * True iff `target` is `root` itself or a path nested under it, checked via
+ * `path.relative` rather than a literal `root + path.sep` prefix: source
+ * paths and roots may come from a virtual/redacted filesystem (tests) that
+ * always uses `/`, or a real OS path (production) that uses `path.sep` -
+ * `relative()` (via node:path's platform module) understands both, so a
+ * hardcoded separator character can't be wrong for either source.
+ */
+function isUnderRoot(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+/**
  * Root-scoped (plan P4): only rows whose source_path equals one of `roots`
- * or starts with `root + path.sep`. NULL size/mtime (a stub from
+ * or is nested under one. NULL size/mtime (a stub from
  * persistInvalidBundle) maps to `{ size: -1, mtime: -1 }`, which no real
  * stat can match, so the source is re-parsed every import until it
  * validates (plan P5).
@@ -264,9 +277,7 @@ export function loadKnown(db: Database, harnessId: string, roots: string[]): Kno
     source_mtime: number | null;
   }[];
   for (const row of rows) {
-    const inScope = roots.some(
-      (root) => row.source_path === root || row.source_path.startsWith(root + sep),
-    );
+    const inScope = roots.some((root) => isUnderRoot(root, row.source_path));
     if (!inScope) continue;
     known.set(row.source_path, {
       size: row.source_size ?? -1,

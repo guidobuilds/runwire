@@ -1,4 +1,8 @@
-import { join } from 'node:path';
+// See paths.ts: every path here is built for ScoutFs (stat/readdir/readFile),
+// not raw OS use, so it must stay '/'-joined via path.posix regardless of
+// host OS - createMemoryFs's virtual layout is always '/'-based, and a real
+// filesystem accepts '/' as a separator on Windows too.
+import { join } from 'node:path/posix';
 import type { AdapterContext, Diagnostic, Known, SessionBundle } from '@scout/core';
 import { makeDiagnostic } from '@scout/core';
 import type { ComputeLink } from './compute';

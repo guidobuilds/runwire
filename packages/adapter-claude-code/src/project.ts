@@ -1,3 +1,4 @@
+import { basename, dirname } from 'node:path';
 import type { Project, ScoutFs } from '@scout/core';
 
 export type ProjectIdentityMode = 'repo' | 'cwd';
@@ -10,19 +11,6 @@ export type ResolveProjectInput = {
 };
 
 export type ResolveProjectOptions = { fs: ScoutFs; mode?: ProjectIdentityMode };
-
-function dirname(path: string): string {
-  const clean = path.replace(/\/+$/, '');
-  const i = clean.lastIndexOf('/');
-  if (i <= 0) return '/';
-  return clean.slice(0, i);
-}
-
-function basename(path: string): string {
-  const clean = path.replace(/\/+$/, '');
-  const i = clean.lastIndexOf('/');
-  return i === -1 ? clean : clean.slice(i + 1);
-}
 
 /**
  * Normalizes `git@host:org/repo.git` and `https://host/org/repo.git` (and

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { join, resolve, sep } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { createContext, defaultDbPath, ensureDbDir } from './context';
 
 describe('createContext', () => {
@@ -14,7 +14,7 @@ describe('createContext', () => {
   test('--home is path.resolve()d, never left relative', () => {
     const ctx = createContext({ home: 'fixtures/claude-code/small', titles: true });
     expect(ctx.home).toBe(resolve('fixtures/claude-code/small'));
-    expect(ctx.home.startsWith(sep)).toBe(true);
+    expect(isAbsolute(ctx.home)).toBe(true);
   });
 
   test('privacy.titles reflects --no-titles', () => {

@@ -40,7 +40,10 @@ async function computeExpected(name: string): Promise<Expected> {
 
   const sessions: ExpectedSession[] = bundles.map((b) => {
     const { sourceMtime: _sourceMtime, sourcePath, ...rest } = b.session;
-    return { ...rest, sourcePath: relative(ctx.home, sourcePath) };
+    // expected.json stores a portable, redacted relative path (forward
+    // slashes) regardless of host OS; relative() returns OS-native
+    // separators (backslash on Windows), so normalize before comparing.
+    return { ...rest, sourcePath: relative(ctx.home, sourcePath).replaceAll('\\', '/') };
   });
 
   const stepCounts: Expected['stepCounts'] = {};

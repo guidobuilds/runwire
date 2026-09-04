@@ -162,6 +162,8 @@ describe('claude-code adapter: probe', () => {
     const result = await adapter.probe(ctx);
     expect(result.installed).toBe(true);
     expect(result.roots).toHaveLength(1);
+    // projectsRoot() is built with path.posix.join (see paths.ts), so the
+    // '.claude/projects' suffix is always '/'-joined regardless of host OS.
     expect(result.roots[0]).toContain('.claude/projects');
   });
 });
