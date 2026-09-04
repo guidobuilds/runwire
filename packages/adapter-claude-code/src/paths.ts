@@ -32,3 +32,16 @@ export function agentIdFromFile(entry: string): string {
 export function agentMetaFilePath(projectDir: string, sessionId: string, agentId: string): string {
   return join(projectDir, sessionId, 'subagents', `${AGENT_PREFIX}${agentId}.meta.json`);
 }
+
+/**
+ * Decodes a Claude Code project directory name back to a cwd, used only as a
+ * fallback when no record in the source carries a `cwd`
+ * (docs/adapters/claude-code.md "Location and layout", "Known variations").
+ * The encoding (`cwd` with every path separator replaced by `-`) is lossy: a
+ * literal `-` in a real path segment is indistinguishable from an encoded
+ * `/`, so this can never be exact and must never be used as the project key
+ * (only as a `cwd` value, diagnosed with `cwd-from-dirname`).
+ */
+export function cwdFromProjectDirname(name: string): string {
+  return name.replace(/-/g, '/');
+}

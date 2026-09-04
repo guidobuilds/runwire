@@ -17,15 +17,32 @@ module.exports = {
       comment: 'packages/core must not import from any other workspace package.',
       severity: 'error',
       from: { path: '^packages/core' },
-      to: { path: '^(packages/(adapter-|server|web)|apps/)' },
+      to: { path: '^packages/(?!core)' },
     },
     {
       name: 'adapter-imports-core-only',
       comment:
-        'An adapter package may only import @scout/core (this also forbids importing another adapter).',
+        'An adapter package may only import @scout/core and its own files (this also forbids ' +
+        'importing another adapter or packages/cli). The `$1` back-reference in `to.pathNot` ' +
+        "self-exempts each adapter's own intra-package imports from the rule that matches " +
+        '`^packages/(?!core)` — without it, every import an adapter makes of its own sibling ' +
+        'files (e.g. index.ts → parse.ts) is a false-positive violation of this rule.',
       severity: 'error',
-      from: { path: '^packages/adapter-' },
-      to: { path: '^packages/(?!core)' },
+      from: { path: '^packages/(adapter-[^/]+)/' },
+      to: { path: '^packages/(?!core)', pathNot: '^packages/$1/' },
+    },
+    {
+      name: 'cli-imports-core-and-adapters',
+      comment:
+        'packages/cli is the composition root (D76): it may import @scout/core and any ' +
+        "adapter-* package, plus its own files. The `|cli` alternative in `to.path`'s negative " +
+        "lookahead self-exempts the cli's own intra-package imports (e.g. index.ts → " +
+        'commands/import.ts) - without it, every import the cli makes of its own sibling files ' +
+        'is a false-positive violation, the same bug adapter-imports-core-only had before its ' +
+        'own self-exemption.',
+      severity: 'error',
+      from: { path: '^packages/cli/' },
+      to: { path: '^packages/(?!core|adapter-|cli)' },
     },
   ],
   options: {

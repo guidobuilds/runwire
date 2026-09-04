@@ -3,7 +3,7 @@
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**"]
+    "includes": ["**", "!**/.claude/settings.local.json"]
   },
   "formatter": {
     "enabled": true,

@@ -1,0 +1,16 @@
+{
+  "name": "@scout/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@scout/core": "workspace:*",
+    "@scout/adapter-claude-code": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test"
+  }
+}

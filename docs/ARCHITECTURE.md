@@ -77,7 +77,7 @@ type Session = {
   id: string;                          // `${harness}:${sourceId}`, stable across imports
   harnessId: string; projectKey: string;
   parentId?: string; relation?: 'subagent' | 'teammate' | 'fork'; depth: number; agentType?: string;
-  spawnCallId?: string;                // the parent's tool call_id that spawned this child (adr/0001); core fills steps.child_id from it
+  spawnCallId?: string;                // the parent's tool call_id that spawned this child; core fills steps.child_id from it
   title?: string;                      // only when ctx.privacy.titles (D7)
   cwd?: string; gitBranch?: string; gitCommit?: string;
   startedAt?: string; endedAt?: string; durationMs?: number;                  // ISO-8601 UTC
@@ -176,7 +176,7 @@ for each adapter:
   for await bundle of adapter.discover(ctx, known):
     validate → upsert project, session, steps, session_tool_counts, diagnostics   (one transaction per bundle)
   remove    sessions whose source_path no longer exists on disk (ctx.fs.stat), with their steps/counts/diagnostics
-  link      parent_id from bundles; steps.child_id = the child whose spawn_call_id equals that step's call_id (adr/0001)
+  link      parent_id from bundles; steps.child_id = the child whose spawn_call_id equals that step's call_id
             depth as declared by the adapter; unresolved parent → diagnostic `orphan-child`, child kept as a root
   rollups   exclusive = the row; inclusive = row + all descendants (turns copied from the root, not summed)
   aggregates per project and per harness, from root sessions
@@ -216,6 +216,8 @@ Rollups are a table (`rollups`, §5) recomputed by core after each import: inclu
 | `bun run test` | `bun test` in every package — never bare `bun test` at the root |
 | `bun run typecheck` | `tsc --noEmit` per package |
 | `bun run lint` | Biome + dependency-cruiser boundaries |
+| `bun run scout import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles]` | Imports every registered adapter (or just `--adapter`) into `~/.scout/scout.db` (`--db` overrides, `--db :memory:` allowed); prints the `ImportReport` to stderr; exits 1 if any adapter errored or a bundle failed validation, else 0. |
+| `bun run scout discover --adapter <id> [--home <dir>] [--json]` | Streams the named adapter's bundles read-only, without touching the store; `--json` writes one `SessionBundle` per line (NDJSON) to stdout and nothing else, so the output can be piped straight into a file or `jq`. |
 
 ## 10. Open items
 

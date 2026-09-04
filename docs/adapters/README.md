@@ -31,7 +31,7 @@ Every field of the bundle's `Session`, `Step[]`, `Project` and `Diagnostic[]` �
 ## Adding a harness
 
 1. **Survey** — add a section to [harness-survey.md](../harness-survey.md): paths per OS, layout, record types, where model/mode/usage/timestamps/links live, which fields are content. Structure only, never content.
-2. **Package** — `packages/adapter-<id>`: `src/index.ts` (the `HarnessAdapter`), `src/allowlist.ts`, `src/schema.ts` (loose Zod), `src/discover.ts`, `src/probe.ts`. Depends on `@scout/core` only.
+2. **Package** — `packages/adapter-<id>`: `src/index.ts` (the `HarnessAdapter`), `src/allowlist.ts`, `src/schema.ts` (loose Zod), `src/records.ts` (stream → allowlisted, schema-checked records), `src/compute.ts` (records → `SessionBundle`, per ARCHITECTURE §4), `src/project.ts` (project identity, D8/D9), `src/discover.ts` (walk + `known` rule + probe). Depends on `@scout/core` only.
 3. **Allowlist** — the projection is the first thing applied to every raw record.
 4. **Discover** — walk the harness's roots; honor `known`; stream one bundle per session; never throw on a bad record.
 5. **Compute** — everything in ARCHITECTURE §4, with canonical token names (D5) and tool categories (D31).

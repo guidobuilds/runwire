@@ -13,11 +13,15 @@ export {
   classifyInitiator,
 } from './initiator';
 
-import { parse } from './parse';
-import { claudeCodeHarnessEventNames, claudeCodeToolCategory } from './tool-category';
-
 const CAPABILITIES: readonly Capability[] = [
   'usage.perCall',
+  // Not in plan.md's own capability list, but required: session.output/
+  // uncachedInput/cachedInput are always set whenever any usage is observed
+  // (CAPABILITY_FIELDS['usage.cumulative']'s gate), so it is always
+  // "observed" once real usage exists and an observed-but-undeclared
+  // capability fails the contract kit. Same gap f1-t10 found and fixed on
+  // the fake adapter (build-log-f1.md).
+  'usage.cumulative',
   'usage.cacheWrite',
   'usage.reasoning',
   'timing',
@@ -33,38 +37,19 @@ const CAPABILITIES: readonly Capability[] = [
   'title',
   'git',
   'initiator',
-  'trace.blocks',
-  'trace.errors',
-  'trace.harnessEvents',
+  'steps.errors',
+  'steps.harness',
+  'steps.toolDurations',
 ];
-
-const EXPLAIN: Partial<Record<string, string>> = {
-  uncachedInput:
-    'usage.input_tokens (Anthropic semantics: excludes cached-read and cache-write tokens)',
-  cachedInput: 'usage.cache_read_input_tokens',
-  cacheWrite: 'usage.cache_creation_input_tokens',
-  output: 'usage.output_tokens (includes reasoning/thinking tokens)',
-  reasoningOutput: 'usage.output_tokens_details.thinking_tokens (subset of output)',
-  turns:
-    'human prompts inferred from non-meta user records with no tool_result block (or system turn_duration records, in newer CLI versions)',
-  apiCalls: 'distinct requestId values across assistant records',
-  toolCalls: 'tool_use content blocks on assistant records',
-  compactions: 'system records with subtype compact_boundary',
-  cost: 'the harness-reported totalCostUSD from the last cost-state record; may include subagent usage (unverified)',
-};
 
 export function createClaudeCodeAdapter(): HarnessAdapter {
   return {
     id: 'claude-code',
     displayName: 'Claude Code',
-    adapterVersion: '1.0.0',
+    adapterVersion: '2.0.0',
     capabilities: CAPABILITIES,
     allowlist: claudeCodeAllowlist,
     probe,
     discover,
-    parse,
-    explain: (field) => EXPLAIN[field as string],
-    toolCategory: claudeCodeToolCategory,
-    harnessEventNames: claudeCodeHarnessEventNames,
   };
 }

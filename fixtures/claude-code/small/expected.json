@@ -1,0 +1,50 @@
+{
+  "sessions": [
+    {
+      "id": "claude-code:ce93c1a2-540a-4692-b016-a452c55ae0de",
+      "harnessId": "claude-code",
+      "projectKey": "/home/u/proj-3393fbf2",
+      "depth": 0,
+      "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "cwd": "/home/u/proj-3393fbf2",
+      "gitBranch": "main",
+      "startedAt": "2026-01-01T00:00:00.000Z",
+      "endedAt": "2026-01-01T00:00:06.000Z",
+      "durationMs": 6000,
+      "modelPrimary": "claude-opus-4-7",
+      "modelChanges": 0,
+      "effort": "xhigh",
+      "uncachedInput": 7,
+      "cachedInput": 46559,
+      "cacheWrite": 5173,
+      "output": 227,
+      "reasoningOutput": 42,
+      "turns": 1,
+      "apiCalls": 2,
+      "toolCalls": 2,
+      "initiatorKind": "machine",
+      "initiatorSurface": "sdk-py",
+      "initiatorAutomation": "sdk",
+      "harnessVersionFirst": "2.1.251",
+      "harnessVersionLast": "2.1.251",
+      "sourceSize": 6418,
+      "sourcePath": ".claude/projects/proj/ce93c1a2-540a-4692-b016-a452c55ae0de.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "claude-code:ce93c1a2-540a-4692-b016-a452c55ae0de": {
+      "turn": 1,
+      "call": 2,
+      "tool": 2
+    }
+  },
+  "toolCounts": {
+    "claude-code:ce93c1a2-540a-4692-b016-a452c55ae0de": {
+      "read": 1,
+      "other": 1
+    }
+  },
+  "diagnostics": {
+    "claude-code:ce93c1a2-540a-4692-b016-a452c55ae0de": []
+  }
+}

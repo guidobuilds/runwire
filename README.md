@@ -25,6 +25,27 @@ bun run typecheck   # tsc --noEmit per package
 bun run lint        # Biome + workspace import-boundary check
 ```
 
+## Commands
+
+```sh
+bun run scout import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles]
+bun run scout discover --adapter claude-code --json
+```
+
+`scout import` runs every registered adapter (or just the one named by `--adapter`) and stores
+its sessions in `~/.scout/scout.db` by default; `--db <path>` overrides the DB location and
+`--db :memory:` is allowed. `--home <dir>` overrides where the adapter looks for harness data
+(defaults to the real OS home). `--no-titles` drops session titles from what's stored (D7).
+`scout import` prints an `ImportReport` to stderr — one line per adapter with discovered/
+imported/skipped/removed/failed counts — and exits `1` if any adapter errored or a bundle failed
+validation, `0` otherwise.
+
+`scout discover --adapter <id> [--home <dir>] [--json]` streams that adapter's bundles read-only,
+without writing to any store. `--json` writes one `SessionBundle` per line (NDJSON) to stdout and
+nothing else, so `bun run scout discover --adapter claude-code --json > out.json` is safe to pipe;
+without `--json` it prints one terse human-readable line per bundle instead. All logs and errors
+always go to stderr.
+
 ## Docs
 
 - [docs/PRODUCT.md](docs/PRODUCT.md) — purpose, principles, scope.

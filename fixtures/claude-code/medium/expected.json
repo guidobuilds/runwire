@@ -1,0 +1,61 @@
+{
+  "sessions": [
+    {
+      "id": "claude-code:3666e64a-bdeb-4ffb-82d4-ad06666a67a8",
+      "harnessId": "claude-code",
+      "projectKey": "/home/u/proj-3393fbf2",
+      "depth": 0,
+      "title": "xxxxxxxxxxxxxxxxxxxxx",
+      "cwd": "/home/u/proj-3393fbf2",
+      "gitBranch": "main",
+      "modelPrimary": "claude-opus-5",
+      "modelChanges": 1,
+      "modePrimary": "auto",
+      "modeChanges": 2,
+      "effort": "xhigh",
+      "uncachedInput": 766,
+      "cachedInput": 125202604,
+      "cacheWrite": 4068424,
+      "output": 438086,
+      "reasoningOutput": 194030,
+      "turns": 18,
+      "apiCalls": 386,
+      "toolCalls": 358,
+      "compactions": 1,
+      "costUsd": 543.1049041499999,
+      "initiatorKind": "human",
+      "initiatorSurface": "cli",
+      "harnessVersionFirst": "2.1.246",
+      "harnessVersionLast": "2.1.247",
+      "sourceSize": 2116106,
+      "sourcePath": ".claude/projects/proj/3666e64a-bdeb-4ffb-82d4-ad06666a67a8.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "claude-code:3666e64a-bdeb-4ffb-82d4-ad06666a67a8": {
+      "harness": 906,
+      "call": 386,
+      "tool": 358,
+      "mode-change": 2,
+      "compaction": 1,
+      "model-change": 1,
+      "turn": 18
+    }
+  },
+  "toolCounts": {
+    "claude-code:3666e64a-bdeb-4ffb-82d4-ad06666a67a8": {
+      "skill": 5,
+      "exec": 153,
+      "agent": 61,
+      "plan": 14,
+      "write": 32,
+      "search": 6,
+      "mcp": 48,
+      "other": 1,
+      "read": 38
+    }
+  },
+  "diagnostics": {
+    "claude-code:3666e64a-bdeb-4ffb-82d4-ad06666a67a8": []
+  }
+}

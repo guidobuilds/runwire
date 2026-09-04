@@ -1,6 +1,6 @@
 # Adapter: Claude Code
 
-Status: being re-implemented against the 2026-09-04 contract (D68–D74); the mappings below are unchanged.
+Status: implements the 2026-09-04 contract (D68–D74), `adapterVersion: '2.0.0'`. `discover(ctx, known)` computes every `SessionBundle` field itself (records.ts + compute.ts + project.ts); core only validates, persists, links and rolls up.
 
 Based on structure-only inspection of CLI versions 2.1.22x–2.1.251 on macOS (2026-08-29). Validated on the reference machine (2026-08-30): 731 sources (367 root, 364 subagent), zero parse failures, cold scan 1.3 s / warm rescan 22 ms. Fields marked *(newer)* were only seen in the latest versions.
 
@@ -18,17 +18,33 @@ Based on structure-only inspection of CLI versions 2.1.22x–2.1.251 on macOS (2
 
 ## Data flow
 
-`discover(ctx, known)` yields one `SessionBundle` per source file:
+`discover(ctx, known)` (`discover.ts`) yields one `SessionBundle` per source file:
 
-1. Walk `~/.claude/projects/*/` with `readdir`/`stat`: `<sessionId>.jsonl` (root) and `<sessionId>/subagents/agent-*.jsonl` (subagent).
-2. Skip a source whose `(size, mtime)` matches `known`. A subagent is reprocessed together with its parent.
-3. Stream the file line by line: JSON-parse, project through the allowlist, schema-check. Content fields never leave the line.
-4. Resolve the project from the first allowlisted `cwd` (D8/D9); fall back to decoding the directory name (diagnostic `cwd-from-dirname`).
-5. Map records to `steps[]` in source order (table below). For a subagent, read `.meta.json` for the link fields.
-6. Compute the `Session`: one usage per `requestId`, `model_primary` = model with most output tokens, token totals, `turns`, `api_calls`, `tool_calls`, `compactions`, `duration_ms` = last − first timestamp, `session_tool_counts` from step categories, initiator.
-7. Emit `{ project, session, steps, diagnostics }`.
+1. Walk `~/.claude/projects/*/` with sorted `readdir`/`stat`: `<sessionId>.jsonl` (root) and `<sessionId>/subagents/agent-*.jsonl` (subagent).
+2. **Known rule** (stat/readdir only, no parsing): for each root `R`, let `C` be the sorted `agent-*.jsonl` files under `<R minus .jsonl>/subagents/` (`[]` when the dir is missing). Skip `R` and every file in `C` **iff `R` and every file in `C`** match `known`'s `(size, mtime)`; otherwise emit `R` then every file in `C`, in sorted order, regardless of each child's own `known` state — a subagent is always reprocessed together with a changed parent (and vice versa). A `<id>/subagents/` directory whose own `<id>.jsonl` root is absent is emitted the same way, judged only by its children's own `known` state.
+3. Read the file (`records.ts`): stream line by line, JSON-parse, project through the allowlist, schema-check. Content fields never leave the line. Yields `{ record, line }` plus line-level diagnostics (`malformed-json-line`, `invalid-record`, `oversized-line`, `source-truncated`, `unknown-record-type`).
+4. Compute the bundle (`compute.ts`), folding every record in one pass: resolve the project from the first allowlisted `cwd` (D8/D9), falling back to decoding the directory name (diagnostic `cwd-from-dirname`) when no record carries one; map records to `steps[]` in source order (table below), pairing `tool_use`/`tool_result` **strictly by `tool_use_id`** (an unmatched result is not a step, counted in one aggregated `unpaired-tool-result` diagnostic); compute the `Session`: one usage per `requestId`, `model_primary` = model with most output tokens (ties → first seen), `mode_primary` = most frequent mode, token totals, `turns`, `api_calls`, `tool_calls`, `compactions`, `duration_ms` = last − first valid timestamp, initiator. For a subagent, `discover.ts` reads `.meta.json` first for the link fields (`parent_id`, `agent_type`, `depth`, `spawn_call_id`); a missing or unparseable file still yields a bundle, diagnosed `missing-agent-meta` / `invalid-agent-meta`.
+5. Emit `{ project, session, steps, diagnostics }`. A per-source read failure (e.g. the file vanished after `stat`) yields a stub bundle with diagnostic `source-read-failed` instead of throwing.
 
-Core links parent/child over `child_id` ([ADR 0001](../adr/0001-exact-child-linking-via-viacallid.md)) and computes rollups; the adapter never sums across sessions. See [ARCHITECTURE.md §4](../ARCHITECTURE.md#4-what-an-adapter-computes).
+Core links parent/child over `child_id` (matched by `spawn_call_id`) and computes rollups; the adapter never sums across sessions. See [ARCHITECTURE.md §4](../ARCHITECTURE.md#4-what-an-adapter-computes).
+
+## Diagnostics
+
+| Code | Level | Meaning |
+|---|---|---|
+| `malformed-json-line` | warn | A line did not parse as JSON. |
+| `invalid-record` | warn | A line parsed but failed the record schema. |
+| `oversized-line` | warn | One or more lines exceeded the size cap and were skipped (aggregated, `count`). |
+| `source-truncated` | info | The final line had no trailing newline; the source may be incomplete. |
+| `unknown-record-type` | info | One or more records had an unrecognized `type` (aggregated, `count`). |
+| `unexpected-sidechain` | warn | A root source contained `isSidechain:true` records. |
+| `cwd-from-dirname` | info | No record carried a `cwd`; it was decoded (lossily) from the project directory name. |
+| `unpaired-tool-result` | info | One or more `tool_result` blocks had no matching pending `tool_use` (aggregated, `count`). |
+| `invalid-agent-meta` | warn | A subagent's `.meta.json` did not parse. |
+| `missing-agent-meta` | warn | A subagent source has no matching `.meta.json` file. |
+| `source-read-failed` | error | The source could not be read; a stub bundle was emitted instead of throwing. |
+
+Core adds `orphan-child` (a session's declared `parent_id` never resolved) and `bundle-invalid` (a bundle failed the contract schema) at persist time — not emitted by this adapter.
 
 ## Record types and what is taken from them
 
@@ -36,8 +52,8 @@ Records are one JSON object per line. Top-level `type` drives the mapping.
 
 | `type` | Produces | Fields used |
 |---|---|---|
-| `assistant` | `Step kind=call`, one per `requestId` (`model`, token columns) → token totals, `api_calls`, `model_primary`, `effort`; `Step kind=model-change` (`from_value`/`to_value`) → `model_changes`; `Step kind=tool` per `tool_use` block (`tool_name`, `tool_category`, `call_id = id`) → `tool_calls`, `session_tool_counts` | `requestId`, `timestamp`, `effort`, `message.model`, `message.stop_reason`, `message.usage.{input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, output_tokens_details.thinking_tokens}`, `message.content[].{type, name, id}` |
-| `user` | `Step kind=turn` → `turns` when not `isMeta` and no `tool_result` block; each `tool_result` block closes the `tool` step with the same `call_id` (`error = is_error`) | `timestamp`, `isMeta`, `isCompactSummary`, `message.content[].{type, tool_use_id, is_error}` |
+| `assistant` | `Step kind=call`, one per `requestId` (`model`, token columns; `<synthetic>` models keep usage, `model` undefined) → token totals, `api_calls`, `model_primary`, `effort`; `Step kind=model-change` (`from_value`/`to_value`) on non-synthetic transitions → `model_changes`; `Step kind=tool` per `tool_use` block (`tool_name`, `tool_category`, `call_id = id`), emitted regardless of `requestId` dedup → `tool_calls`, `session_tool_counts` | `requestId`, `timestamp`, `effort`, `message.model`, `message.usage.{input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, output_tokens_details.thinking_tokens}`, `message.content[].{type, name, id}` |
+| `user` | `Step kind=turn` → `turns` when not `isMeta` and no `tool_result` block (only when the file has no `system/turn_duration` records); each `tool_result` block pairs strictly by `tool_use_id` with the pending `tool` step (`error = is_error`, `duration_ms` from both timestamps); an unmatched result is not a step (diagnostic `unpaired-tool-result`) | `timestamp`, `isMeta`, `message.content[].{type, tool_use_id, is_error}` |
 | `system` / `subtype: compact_boundary` | `Step kind=compaction` (`compaction_trigger`, `pre_tokens`, `post_tokens`) → `compactions` | `compactMetadata.{trigger, preTokens, postTokens}` |
 | `system` / `subtype: turn_duration` | `Step kind=turn` with `duration_ms` (replaces the `user`-derived turns when present) | `durationMs`, `timestamp` |
 | `system` (other subtypes) | timestamps only (`started_at` / `ended_at`) | `timestamp` |
@@ -139,7 +155,7 @@ Harness event vocabulary (`claudeCodeHarnessEventNames`): `hook:<hookEvent>` (th
 
 ## Capabilities
 
-`usage.perCall`, `usage.cacheWrite`, `usage.reasoning`, `timing`, `model`, `mode`, `effort`, `version`, `turns`, `toolCalls`, `compactions`, `subagents`, `cost` *(newer versions only — declared; absence in old files shows as NULL)*, `title`, `git` (branch only), `initiator`, `trace.blocks`, `trace.errors`, `trace.harnessEvents`.
+`usage.perCall`, `usage.cumulative`, `usage.cacheWrite`, `usage.reasoning`, `timing`, `model`, `mode`, `effort`, `version`, `turns`, `toolCalls`, `compactions`, `subagents`, `cost` *(newer versions only — declared; absence in old files shows as NULL)*, `title`, `git` (branch only), `initiator`, `steps.errors` (tool `error` flag), `steps.harness` (`harness` steps), `steps.toolDurations` (`tool.durationMs`). No `trace.*` successor (ARCHITECTURE §3 dropped it).
 
 ## Known variations
 
@@ -159,12 +175,15 @@ Harness event vocabulary (`claudeCodeHarnessEventNames`): `hook:<hookEvent>` (th
 
 Generated from real sessions on the reference machine via `scout fixture` (the dev-only redactor), except `malformed/` and `canary/`, which are hand-written. `all/` is a generated union of the others, used only so the contract test kit's capability-consistency check sees the full repertoire in one `discover()` view.
 
+Every case except `all/` has a committed `expected.json` snapshot (`packages/adapter-claude-code/src/expected.test.ts`): `{ sessions (sorted by id, sourcePath relative to home, sourceMtime omitted), stepCounts, toolCounts, diagnostics }`, compared with `toEqual` and rewritten with `UPDATE_EXPECTED=1 bun test packages/adapter-claude-code`.
+
 | Fixture | Source | Purpose |
 |---|---|---|
-| `small/` | a short real session | one root, no subagents, no diagnostics |
-| `medium/` | the reference session (`3666e64a…`) | the dedupe regression — deduped `output` must equal 438 086, not the naive 1 117 279 |
+| `small/` | a short real session, with synthetic monotonic ISO timestamps (1 s apart) in place of the redacted ones | one root, no subagents, no diagnostics; the only generated fixture with real timestamps, so `timing`/`steps.toolDurations` are observable outside the hand-written `canary`/`malformed` |
+| `medium/` | the reference session (`3666e64a…`) | the dedupe regression — deduped `output` must equal 438 086, not the naive 1 117 279; never regenerated |
 | `subagents/` | a real session with 2 subagents, a compaction, a version change and a model change | root + 2 subagents linked with `agent_type`/`depth`/`child_id`; rollups include both children. Both subagents are at `spawnDepth: 1`; nested-depth tree computation is proven in core, not here |
 | `old-version/` | a real session on CLI 2.1.234 | no `cost-state`, no `turn_duration`; turns derived from user-message heuristics |
-| `malformed/` | hand-written | a broken JSON line and a truncated final line, both mid-file so records before and after still parse. The oversized-line path is exercised in-memory in `index.test.ts`, not via an 8 MB fixture |
+| `dispatch/` | a real `cli`-entrypoint session dispatched by another agent framework | initiator classifies `machine`/`subagent-dispatch` on the `agent-setting` marker alone, since `entrypoint` says `cli` exactly as a human terminal session would |
+| `malformed/` | hand-written | a broken JSON line and a truncated final line, both mid-file so records before and after still parse. The oversized-line path is exercised in-memory in `records.test.ts`, not via an 8 MB fixture |
 | `canary/` | hand-written | every content field = a unique `SCOUT_CANARY_<n>` sentinel, except `aiTitle` (a different, unchecked sentinel — the sanctioned D7 exception that legitimately reaches `title`) |
 | `all/` | generated | union of every fixture above, for the contract test kit's capability-consistency check only (see `all/README.md`) |

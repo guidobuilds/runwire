@@ -8,7 +8,6 @@ Docs live under [docs/](docs/):
 - [docs/harness-survey.md](docs/harness-survey.md) — raw structure notes per harness, ahead of its adapter.
 - [docs/DECISIONS.md](docs/DECISIONS.md) — numbered decisions, referenced as `D<n>`.
 - [docs/PRODUCT.md](docs/PRODUCT.md) — purpose, principles, scope.
-- [docs/adr/](docs/adr/) — architecture decision records.
 
 ## Workflow
 

@@ -1,0 +1,47 @@
+{
+  "sessions": [
+    {
+      "id": "claude-code:canary-session",
+      "harnessId": "claude-code",
+      "projectKey": "/home/u/proj-1",
+      "depth": 0,
+      "title": "TITLE_ALLOWED_BY_D7_EXCEPTION",
+      "cwd": "/home/u/proj-1",
+      "gitBranch": "main",
+      "startedAt": "2026-01-01T00:00:00.000Z",
+      "endedAt": "2026-01-01T00:01:30.000Z",
+      "durationMs": 90000,
+      "modelPrimary": "claude-opus-5",
+      "modelChanges": 0,
+      "effort": "high",
+      "uncachedInput": 10,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 20,
+      "reasoningOutput": 0,
+      "turns": 1,
+      "apiCalls": 1,
+      "toolCalls": 1,
+      "harnessVersionFirst": "2.1.250",
+      "harnessVersionLast": "2.1.250",
+      "sourceSize": 2100,
+      "sourcePath": ".claude/projects/proj/canary-session.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "claude-code:canary-session": {
+      "turn": 1,
+      "call": 1,
+      "tool": 1,
+      "harness": 1
+    }
+  },
+  "toolCounts": {
+    "claude-code:canary-session": {
+      "exec": 1
+    }
+  },
+  "diagnostics": {
+    "claude-code:canary-session": []
+  }
+}

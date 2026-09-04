@@ -1,4 +1,4 @@
-import type { Confidence, InitiatorKind } from '@scout/core';
+import type { InitiatorKind } from '@scout/core';
 
 /**
  * Classifies who started a Claude Code session
@@ -91,7 +91,6 @@ export type ClassifiedInitiator = {
   kind: InitiatorKind;
   surface: string;
   automation?: string;
-  confidence: Confidence;
 };
 
 /**
@@ -114,23 +113,19 @@ export function classifyInitiator(
       kind: 'machine',
       surface: UNKNOWN_SURFACE,
       automation: 'subagent-dispatch',
-      confidence: 'medium',
     };
   }
 
   const base = classifyEntrypoint(entrypoint);
 
   // The dispatch marker only ever *upgrades* a non-machine verdict. Applying
-  // it over an already-machine surface would replace a high-confidence,
-  // more specific automation (e.g. 'sdk') with a weaker one.
+  // it over an already-machine surface would replace a more specific
+  // automation (e.g. 'sdk') with a weaker one.
   if (dispatched && base.kind !== 'machine') {
     return {
       kind: 'machine',
       surface: base.surface,
       automation: 'subagent-dispatch',
-      // medium, not high: the marker is specific to how one agent framework
-      // dispatches, and is absent from sessions recorded before it existed.
-      confidence: 'medium',
     };
   }
 
@@ -144,11 +139,10 @@ function classifyEntrypoint(entrypoint: string): ClassifiedInitiator {
       kind: 'machine',
       surface: entrypoint,
       ...(automation ? { automation } : {}),
-      confidence: 'high',
     };
   }
   if (HUMAN_ENTRYPOINTS.has(entrypoint)) {
-    return { kind: 'human', surface: entrypoint, confidence: 'medium' };
+    return { kind: 'human', surface: entrypoint };
   }
-  return { kind: 'unknown', surface: entrypoint, confidence: 'low' };
+  return { kind: 'unknown', surface: entrypoint };
 }

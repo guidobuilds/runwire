@@ -1,0 +1,136 @@
+{
+  "sessions": [
+    {
+      "id": "claude-code:5db79557-f2ad-489d-81ee-607606b3a6ef",
+      "harnessId": "claude-code",
+      "projectKey": "/home/u/proj-9c5c7043",
+      "depth": 0,
+      "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "cwd": "/home/u/proj-9c5c7043",
+      "gitBranch": "main",
+      "modelPrimary": "claude-sonnet-5",
+      "modelChanges": 1,
+      "modePrimary": "auto",
+      "modeChanges": 1,
+      "effort": "xhigh",
+      "uncachedInput": 663,
+      "cachedInput": 99787208,
+      "cacheWrite": 1602558,
+      "output": 265969,
+      "reasoningOutput": 9612,
+      "turns": 6,
+      "apiCalls": 316,
+      "toolCalls": 344,
+      "compactions": 1,
+      "initiatorKind": "human",
+      "initiatorSurface": "cli",
+      "harnessVersionFirst": "2.1.224",
+      "harnessVersionLast": "2.1.228",
+      "sourceSize": 1020459,
+      "sourcePath": ".claude/projects/proj/5db79557-f2ad-489d-81ee-607606b3a6ef.jsonl"
+    },
+    {
+      "id": "claude-code:5db79557-f2ad-489d-81ee-607606b3a6ef/a1180c9db1c4f8e27",
+      "harnessId": "claude-code",
+      "projectKey": "/home/u/proj-9c5c7043",
+      "parentId": "claude-code:5db79557-f2ad-489d-81ee-607606b3a6ef",
+      "relation": "subagent",
+      "depth": 1,
+      "agentType": "general-purpose",
+      "spawnCallId": "toolu_01BTeGcBD8p7cdXQhMvFMMFU",
+      "cwd": "/home/u/proj-9c5c7043",
+      "gitBranch": "main",
+      "modelPrimary": "claude-opus-5",
+      "modelChanges": 0,
+      "effort": "xhigh",
+      "uncachedInput": 1138,
+      "cachedInput": 2276401,
+      "cacheWrite": 120688,
+      "output": 778,
+      "turns": 1,
+      "apiCalls": 30,
+      "toolCalls": 49,
+      "initiatorKind": "human",
+      "initiatorSurface": "cli",
+      "harnessVersionFirst": "2.1.224",
+      "harnessVersionLast": "2.1.224",
+      "sourceSize": 120172,
+      "sourcePath": ".claude/projects/proj/5db79557-f2ad-489d-81ee-607606b3a6ef/subagents/agent-a1180c9db1c4f8e27.jsonl"
+    },
+    {
+      "id": "claude-code:5db79557-f2ad-489d-81ee-607606b3a6ef/a4aa1165da87d07e6",
+      "harnessId": "claude-code",
+      "projectKey": "/home/u/proj-9c5c7043",
+      "parentId": "claude-code:5db79557-f2ad-489d-81ee-607606b3a6ef",
+      "relation": "subagent",
+      "depth": 1,
+      "agentType": "Explore",
+      "spawnCallId": "toolu_01Eui436NYt59rxpZxbjYekm",
+      "cwd": "/home/u/proj-9c5c7043",
+      "gitBranch": "main",
+      "modelPrimary": "claude-opus-5",
+      "modelChanges": 0,
+      "effort": "xhigh",
+      "uncachedInput": 3384,
+      "cachedInput": 2126982,
+      "cacheWrite": 139890,
+      "output": 17313,
+      "turns": 1,
+      "apiCalls": 25,
+      "toolCalls": 50,
+      "initiatorKind": "human",
+      "initiatorSurface": "cli",
+      "harnessVersionFirst": "2.1.224",
+      "harnessVersionLast": "2.1.224",
+      "sourceSize": 119647,
+      "sourcePath": ".claude/projects/proj/5db79557-f2ad-489d-81ee-607606b3a6ef/subagents/agent-a4aa1165da87d07e6.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "claude-code:5db79557-f2ad-489d-81ee-607606b3a6ef": {
+      "harness": 10,
+      "call": 316,
+      "turn": 6,
+      "tool": 344,
+      "mode-change": 1,
+      "model-change": 1,
+      "compaction": 1
+    },
+    "claude-code:5db79557-f2ad-489d-81ee-607606b3a6ef/a1180c9db1c4f8e27": {
+      "turn": 1,
+      "call": 30,
+      "tool": 49
+    },
+    "claude-code:5db79557-f2ad-489d-81ee-607606b3a6ef/a4aa1165da87d07e6": {
+      "turn": 1,
+      "call": 25,
+      "tool": 50
+    }
+  },
+  "toolCounts": {
+    "claude-code:5db79557-f2ad-489d-81ee-607606b3a6ef": {
+      "agent": 2,
+      "exec": 125,
+      "read": 60,
+      "write": 117,
+      "plan": 3,
+      "search": 2,
+      "other": 35
+    },
+    "claude-code:5db79557-f2ad-489d-81ee-607606b3a6ef/a1180c9db1c4f8e27": {
+      "exec": 30,
+      "read": 14,
+      "search": 1,
+      "web": 4
+    },
+    "claude-code:5db79557-f2ad-489d-81ee-607606b3a6ef/a4aa1165da87d07e6": {
+      "exec": 35,
+      "read": 15
+    }
+  },
+  "diagnostics": {
+    "claude-code:5db79557-f2ad-489d-81ee-607606b3a6ef": [],
+    "claude-code:5db79557-f2ad-489d-81ee-607606b3a6ef/a1180c9db1c4f8e27": [],
+    "claude-code:5db79557-f2ad-489d-81ee-607606b3a6ef/a4aa1165da87d07e6": []
+  }
+}

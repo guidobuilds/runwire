@@ -1,0 +1,48 @@
+{
+  "sessions": [
+    {
+      "id": "claude-code:edd8b2ff-23be-43e1-85b2-3ae4ff03791a",
+      "harnessId": "claude-code",
+      "projectKey": "/home/u/proj-a5b9897d",
+      "depth": 0,
+      "cwd": "/home/u/proj-a5b9897d",
+      "gitBranch": "main",
+      "modelPrimary": "claude-opus-5",
+      "modelChanges": 0,
+      "modePrimary": "auto",
+      "modeChanges": 0,
+      "effort": "xhigh",
+      "uncachedInput": 12,
+      "cachedInput": 72345,
+      "cacheWrite": 32476,
+      "output": 4448,
+      "reasoningOutput": 1050,
+      "turns": 2,
+      "apiCalls": 6,
+      "toolCalls": 6,
+      "initiatorKind": "machine",
+      "initiatorSurface": "cli",
+      "initiatorAutomation": "subagent-dispatch",
+      "harnessVersionFirst": "2.1.241",
+      "harnessVersionLast": "2.1.241",
+      "sourceSize": 46714,
+      "sourcePath": ".claude/projects/proj/edd8b2ff-23be-43e1-85b2-3ae4ff03791a.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "claude-code:edd8b2ff-23be-43e1-85b2-3ae4ff03791a": {
+      "harness": 22,
+      "call": 6,
+      "tool": 6,
+      "turn": 2
+    }
+  },
+  "toolCounts": {
+    "claude-code:edd8b2ff-23be-43e1-85b2-3ae4ff03791a": {
+      "exec": 6
+    }
+  },
+  "diagnostics": {
+    "claude-code:edd8b2ff-23be-43e1-85b2-3ae4ff03791a": []
+  }
+}

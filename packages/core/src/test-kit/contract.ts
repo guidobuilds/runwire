@@ -1,15 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 import { createMemoryFs } from '../adapter/fs.memory';
-import type { AdapterContext, HarnessAdapter, SourceRef } from '../adapter/types';
-import type { ScoutEvent } from '../events/event';
+import type { AdapterContext } from '../adapter/types';
+import type { HarnessAdapter, Known } from '../contract/adapter';
+import { CAPABILITIES, CAPABILITY_FIELDS, type Capability } from '../contract/capabilities';
+import { validateBundle } from '../contract/schema';
+import type { SessionBundle, Step, StepKind } from '../contract/types';
+import { TOKEN_FIELDS } from '../contract/types';
 
 export type AdapterContractOptions = {
   adapter: HarnessAdapter;
   ctx?: AdapterContext;
-  /** sourceId of a scenario whose events include >=1 diagnostic and must never throw. */
-  malformedSourceId?: string;
-  /** sourceId of a scenario whose content fields hold a sentinel that must never leak. */
-  canarySourceId?: string;
+  /** session.id of a bundle with >= 1 diagnostic and no throw. */
+  malformedSessionId?: string;
   canarySentinel?: string;
 };
 
@@ -24,38 +26,38 @@ function defaultContext(): AdapterContext {
   };
 }
 
-async function collectEvents(
+async function collectAll(
   adapter: HarnessAdapter,
-  ref: SourceRef,
   ctx: AdapterContext,
-): Promise<ScoutEvent[]> {
-  const out: ScoutEvent[] = [];
-  for await (const e of adapter.parse(ref, ctx)) out.push(e);
+  known: Known = new Map(),
+): Promise<SessionBundle[]> {
+  const out: SessionBundle[] = [];
+  for await (const bundle of adapter.discover(ctx, known)) out.push(bundle);
   return out;
 }
 
-/**
- * Finds the real SourceRef discover() produced for a given sourceId. A
- * fabricated ref (e.g. `path: ''`) only works for an adapter whose parse()
- * ignores the ref entirely (like the in-memory fake); a real adapter needs
- * the genuine path/size/mtime discover() assigned.
- */
-async function findRef(
-  adapter: HarnessAdapter,
-  ctx: AdapterContext,
-  sourceId: string,
-): Promise<SourceRef> {
-  for await (const ref of adapter.discover(ctx)) {
-    if (ref.sourceId === sourceId) return ref;
+/** Recursively walks every string reached from `value` (objects, arrays, primitives). */
+function everyString(value: unknown, visit: (s: string) => void): void {
+  if (typeof value === 'string') {
+    visit(value);
+    return;
   }
-  throw new Error(
-    `adapterContract: no source with id "${sourceId}" was found by discover() in the given ctx`,
-  );
+  if (Array.isArray(value)) {
+    for (const el of value) everyString(el, visit);
+    return;
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const v of Object.values(value)) everyString(v, visit);
+  }
+}
+
+function stepFieldValue(step: Step, field: string): unknown {
+  return (step as unknown as Record<string, unknown>)[field];
 }
 
 /**
- * The adapter contract test suite (docs/ARCHITECTURE.md §11). Any harness
- * adapter, real or fake, must satisfy this. Call it from a *.test.ts file;
+ * The adapter contract test suite (docs/ARCHITECTURE.md §8). Any harness
+ * adapter must satisfy this on its fixtures. Call it from a *.test.ts file;
  * it registers `describe`/`test` blocks itself.
  */
 export function adapterContract(opts: AdapterContractOptions): void {
@@ -63,119 +65,154 @@ export function adapterContract(opts: AdapterContractOptions): void {
   const { adapter } = opts;
 
   describe(`adapter contract: ${adapter.id}`, () => {
-    test('discover() yields sources with stable sourceIds across two runs', async () => {
-      const first: string[] = [];
-      for await (const ref of adapter.discover(ctx)) first.push(ref.sourceId);
-      const second: string[] = [];
-      for await (const ref of adapter.discover(ctx)) second.push(ref.sourceId);
-      expect(new Set(second)).toEqual(new Set(first));
+    test('schema: every discovered bundle validates against the contract schema', async () => {
+      const bundles = await collectAll(adapter, ctx);
+      expect(bundles.length).toBeGreaterThan(0);
+      for (const bundle of bundles) {
+        const result = validateBundle(bundle);
+        expect(result.ok).toBe(true);
+      }
+    });
+
+    test('every session.id starts with "<adapterId>:" and steps/project reference it correctly', async () => {
+      const bundles = await collectAll(adapter, ctx);
+      for (const bundle of bundles) {
+        expect(bundle.session.id.startsWith(`${adapter.id}:`)).toBe(true);
+        expect(bundle.project.key).toBe(bundle.session.projectKey);
+        for (const step of bundle.steps) {
+          expect(step.sessionId).toBe(bundle.session.id);
+        }
+      }
+    });
+
+    test('steps: seq is contiguous from 0 in source order for every bundle', async () => {
+      const bundles = await collectAll(adapter, ctx);
+      for (const bundle of bundles) {
+        const seqs = bundle.steps.map((s) => s.seq);
+        expect(seqs).toEqual(bundle.steps.map((_, i) => i));
+      }
+    });
+
+    test('stable ids: two discover() runs yield the same session.id set', async () => {
+      const first = await collectAll(adapter, ctx);
+      const second = await collectAll(adapter, ctx);
+      expect(new Set(second.map((b) => b.session.id))).toEqual(
+        new Set(first.map((b) => b.session.id)),
+      );
       expect(first.length).toBeGreaterThan(0);
     });
 
-    test('parse() emits meta as the first event for every discovered source', async () => {
-      for await (const ref of adapter.discover(ctx)) {
-        const events = await collectEvents(adapter, ref, ctx);
-        expect(events.length).toBeGreaterThan(0);
-        expect(events[0]?.kind).toBe('meta');
+    test('known: feeding back what was discovered yields zero bundles on the next run', async () => {
+      const first = await collectAll(adapter, ctx);
+      const known: Known = new Map();
+      for (const bundle of first) {
+        known.set(bundle.session.sourcePath, {
+          size: bundle.session.sourceSize,
+          mtime: bundle.session.sourceMtime,
+        });
       }
+      const second = await collectAll(adapter, ctx, known);
+      expect(second.length).toBe(0);
     });
 
-    test('toolCategory() is total: an unknown tool name falls back to "other"', () => {
-      expect(adapter.toolCategory('__totally_unknown_tool_name__')).toBe('other');
-    });
-
-    test('every harnessEvent name observed across all sources is declared in harnessEventNames', async () => {
-      const declared = new Set(adapter.harnessEventNames);
-      for await (const ref of adapter.discover(ctx)) {
-        const events = await collectEvents(adapter, ref, ctx);
-        for (const e of events) {
-          if (e.kind === 'harnessEvent') expect(declared.has(e.name)).toBe(true);
+    test('totals: per TOKEN_FIELD, Σ over call steps equals the session value when defined', async () => {
+      const bundles = await collectAll(adapter, ctx);
+      for (const bundle of bundles) {
+        const callSteps = bundle.steps.filter((s) => s.kind === 'call');
+        for (const field of TOKEN_FIELDS) {
+          const sessionValue = bundle.session[field];
+          if (sessionValue === undefined) continue;
+          const sum = callSteps.reduce((acc, s) => acc + (s[field] ?? 0), 0);
+          expect(sum).toBe(sessionValue);
         }
       }
     });
 
-    test('every usage number emitted is a non-negative finite value', async () => {
-      const keys = [
-        'uncachedInput',
-        'cachedInput',
-        'cacheWrite',
-        'output',
-        'reasoningOutput',
-      ] as const;
-      for await (const ref of adapter.discover(ctx)) {
-        const events = await collectEvents(adapter, ref, ctx);
-        for (const e of events) {
-          if (e.kind !== 'usage' && e.kind !== 'usageTotal') continue;
-          for (const k of keys) {
-            const v = e[k];
-            if (v === undefined) continue;
-            expect(Number.isFinite(v)).toBe(true);
-            expect(v).toBeGreaterThanOrEqual(0);
-          }
+    test('totals: apiCalls/toolCalls/compactions/modelChanges/modeChanges equal step-kind counts when defined', async () => {
+      const bundles = await collectAll(adapter, ctx);
+      const checks: [
+        StepKind,
+        'apiCalls' | 'toolCalls' | 'compactions' | 'modelChanges' | 'modeChanges',
+      ][] = [
+        ['call', 'apiCalls'],
+        ['tool', 'toolCalls'],
+        ['compaction', 'compactions'],
+        ['model-change', 'modelChanges'],
+        ['mode-change', 'modeChanges'],
+      ];
+      for (const bundle of bundles) {
+        for (const [kind, field] of checks) {
+          const sessionValue = bundle.session[field];
+          if (sessionValue === undefined) continue;
+          const count = bundle.steps.filter((s) => s.kind === kind).length;
+          expect(count).toBe(sessionValue);
         }
       }
     });
 
-    if (opts.malformedSourceId) {
-      test('the malformed source never throws and produces at least one diagnostic', async () => {
-        const ref = await findRef(adapter, ctx, opts.malformedSourceId as string);
-        let events: ScoutEvent[] = [];
+    test('diagnostics: every diagnostic is <= 200 chars with no newline', async () => {
+      const bundles = await collectAll(adapter, ctx);
+      for (const bundle of bundles) {
+        for (const d of bundle.diagnostics) {
+          expect(d.message.length).toBeLessThanOrEqual(200);
+          expect(d.message.includes('\n')).toBe(false);
+        }
+      }
+    });
+
+    if (opts.malformedSessionId) {
+      test('the malformed session never throws discover() and carries >= 1 diagnostic', async () => {
+        let bundles: SessionBundle[] = [];
         await expect(
           (async () => {
-            events = await collectEvents(adapter, ref, ctx);
+            bundles = await collectAll(adapter, ctx);
           })(),
         ).resolves.toBeUndefined();
-        expect(events.some((e) => e.kind === 'diagnostic')).toBe(true);
+        const bundle = bundles.find((b) => b.session.id === opts.malformedSessionId);
+        expect(bundle).toBeDefined();
+        expect(bundle?.diagnostics.length ?? 0).toBeGreaterThanOrEqual(1);
       });
     }
 
-    if (opts.canarySourceId) {
-      test('the canary sentinel never appears anywhere in the emitted events', async () => {
-        const sentinel = opts.canarySentinel ?? 'SCOUT_CANARY_';
-        const ref = await findRef(adapter, ctx, opts.canarySourceId as string);
-        const events = await collectEvents(adapter, ref, ctx);
-        const serialized = JSON.stringify(events);
-        expect(serialized.includes(sentinel)).toBe(false);
-      });
-    }
+    test('canary: the sentinel never appears in any string reached from any bundle', async () => {
+      const sentinel = opts.canarySentinel ?? 'SCOUT_CANARY_';
+      const bundles = await collectAll(adapter, ctx);
+      for (const bundle of bundles) {
+        everyString(bundle, (s) => {
+          expect(s.includes(sentinel)).toBe(false);
+        });
+      }
+    });
 
-    test('capabilities are consistent with what the fixtures actually exercise', async () => {
-      const observed = new Set<string>();
-      for await (const ref of adapter.discover(ctx)) {
-        const events = await collectEvents(adapter, ref, ctx);
-        for (const e of events) {
-          if (e.kind === 'usage' || e.kind === 'usageTotal') {
-            observed.add(e.kind === 'usage' ? 'usage.perCall' : 'usage.cumulative');
-            if (e.cacheWrite !== undefined) observed.add('usage.cacheWrite');
-            if (e.reasoningOutput !== undefined) observed.add('usage.reasoning');
+    test('capabilities: CAPABILITY_FIELDS both directions over the discovered union', async () => {
+      const bundles = await collectAll(adapter, ctx);
+      const observed = new Set<Capability>();
+
+      for (const bundle of bundles) {
+        for (const cap of CAPABILITIES) {
+          const gate = CAPABILITY_FIELDS[cap];
+          if (gate.sessionFields.some((f) => bundle.session[f] !== undefined)) {
+            observed.add(cap);
           }
-          if (e.kind === 'observed' || (e as { at?: string }).at) observed.add('timing');
-          if (e.kind === 'model') observed.add('model');
-          if (e.kind === 'mode') observed.add('mode');
-          if (e.kind === 'effort') observed.add('effort');
-          if (e.kind === 'version' || (e.kind === 'meta' && e.harnessVersion))
-            observed.add('version');
-          if (e.kind === 'turn') observed.add('turns');
-          if (e.kind === 'toolCall') observed.add('toolCalls');
-          if (e.kind === 'compaction') observed.add('compactions');
-          if (e.kind === 'link') observed.add('subagents');
-          if (e.kind === 'cost') observed.add('cost');
-          if (e.kind === 'meta' && e.title) observed.add('title');
-          if (e.kind === 'meta' && e.git) observed.add('git');
-          if (e.kind === 'initiator') observed.add('initiator');
+          for (const step of bundle.steps) {
+            if (gate.stepKinds.includes(step.kind)) observed.add(cap);
+            for (const key of gate.stepFields) {
+              const dot = key.indexOf('.');
+              const kind = key.slice(0, dot) as StepKind;
+              const field = key.slice(dot + 1);
+              if (step.kind === kind && stepFieldValue(step, field) !== undefined) {
+                observed.add(cap);
+              }
+            }
+          }
         }
       }
 
       for (const cap of adapter.capabilities) {
-        if (cap.startsWith('trace.')) continue; // trace-only capabilities aren't inferable from this generic scan
         expect(observed.has(cap)).toBe(true);
       }
-      // Reverse direction: an event kind that implies a capability the
-      // adapter did not declare is also a contract violation.
       for (const cap of observed) {
-        expect(adapter.capabilities.includes(cap as HarnessAdapter['capabilities'][number])).toBe(
-          true,
-        );
+        expect(adapter.capabilities.includes(cap)).toBe(true);
       }
     });
   });

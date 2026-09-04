@@ -1,0 +1,55 @@
+{
+  "sessions": [
+    {
+      "id": "claude-code:malformed-session",
+      "harnessId": "claude-code",
+      "projectKey": "/home/u/proj-1",
+      "depth": 0,
+      "cwd": "/home/u/proj-1",
+      "gitBranch": "main",
+      "startedAt": "2026-01-01T00:00:00.000Z",
+      "endedAt": "2026-01-01T00:03:00.000Z",
+      "durationMs": 180000,
+      "modelPrimary": "claude-opus-5",
+      "modelChanges": 0,
+      "uncachedInput": 5,
+      "output": 10,
+      "turns": 1,
+      "apiCalls": 1,
+      "harnessVersionFirst": "2.1.250",
+      "harnessVersionLast": "2.1.250",
+      "sourceSize": 1235,
+      "sourcePath": ".claude/projects/proj/malformed-session.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "claude-code:malformed-session": {
+      "turn": 1,
+      "call": 1
+    }
+  },
+  "toolCounts": {
+    "claude-code:malformed-session": {}
+  },
+  "diagnostics": {
+    "claude-code:malformed-session": [
+      {
+        "level": "warn",
+        "code": "malformed-json-line"
+      },
+      {
+        "level": "warn",
+        "code": "malformed-json-line"
+      },
+      {
+        "level": "info",
+        "code": "source-truncated"
+      },
+      {
+        "level": "info",
+        "code": "unknown-record-type",
+        "count": 1
+      }
+    ]
+  }
+}
