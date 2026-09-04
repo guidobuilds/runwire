@@ -1,12 +1,13 @@
 # Scout
 
-Local code-agent session explorer. Reads local session data from supported coding-agent harnesses (Claude Code, Codex, Grok Build, OpenCode, Pi) and shows operational metadata and usage metrics — no prompts, no responses, no code, no reasoning.
+Local, read-only explorer of coding-agent sessions. Reads the session files a harness (Claude Code first) leaves on disk, keeps only operational metadata and usage metrics — no prompts, responses, code or reasoning — and stores them in SQLite so the token and time waste of a hand-built agent harness becomes visible.
 
-Local-first, read-only, no account or telemetry. See [docs/PRODUCT.md](docs/PRODUCT.md) for the product brief, [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, and [docs/PLAN.md](docs/PLAN.md) for the build sequence.
+## Current scope
 
-## Status
+- `packages/core` — contract types, SQLite store, import orchestrator, contract test kit.
+- `packages/adapter-claude-code` — the Claude Code adapter.
 
-Foundations in progress (see [docs/PLAN.md](docs/PLAN.md) for the milestone sequence). The CLI below is currently a placeholder — `scout serve`, `scout scan` and the web app land in M3/M4. Not yet installable as a product.
+A web front end, an API and more harnesses come later.
 
 ## Setup
 
@@ -16,32 +17,20 @@ Requires [Bun](https://bun.sh) 1.3+.
 bun install
 ```
 
-## Running in dev (no build)
-
-Runs the CLI's TypeScript source directly with Bun, restarting on file changes:
+## Checks
 
 ```sh
-bun run dev
+bun run test        # bun test in every package
+bun run typecheck   # tsc --noEmit per package
+bun run lint        # Biome + workspace import-boundary check
 ```
 
-Equivalent to `bun --watch apps/scout/src/index.ts`. For a single run without the watcher: `bun apps/scout/src/index.ts`.
+## Docs
 
-## Building and running the compiled binary
-
-```sh
-bun run build          # bun build --compile; writes apps/scout/dist/scout
-./apps/scout/dist/scout
-```
-
-`bun run build` compiles every workspace package that defines a `build` script; today that is only `apps/scout`, producing a single native executable (~60 MB) for the current platform. Cross-compiling to other targets (macOS/Linux/Windows, arm64/x64) is done in CI — see [.github/workflows/build.yml](.github/workflows/build.yml) — via `bun build --compile --target=<target>`.
-
-## Other checks
-
-```sh
-bun run test        # bun test, across every package
-bun run typecheck   # tsc --noEmit, per package
-bun run lint        # Biome + the workspace import-boundary check
-```
+- [docs/PRODUCT.md](docs/PRODUCT.md) — purpose, principles, scope.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the core/adapter contract, schema, import flow.
+- [docs/DECISIONS.md](docs/DECISIONS.md) — numbered decisions (`D<n>`).
+- [docs/adapters/README.md](docs/adapters/README.md) — how to add a harness; [docs/adapters/claude-code.md](docs/adapters/claude-code.md) is the worked example.
 
 ## License
 
