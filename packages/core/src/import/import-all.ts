@@ -4,6 +4,7 @@ import type { HarnessAdapter } from '../contract/adapter';
 import { validateBundle } from '../contract/schema';
 import { linkSessions } from '../store/link';
 import {
+  effectiveSourceId,
   loadKnown,
   persistBundle,
   persistInvalidBundle,
@@ -62,7 +63,10 @@ export async function importAll(opts: {
 
         for await (const bundle of adapter.discover(opts.ctx, known)) {
           report.discovered++;
-          emitted.add(bundle.session.sourcePath);
+          // Keyed by the EFFECTIVE source id (sourceId ?? sourcePath), so a
+          // DB-backed adapter that separates sourceId from sourcePath tracks
+          // its emitted universe independently of the filesystem path.
+          emitted.add(effectiveSourceId(bundle.session));
           const result = validateBundle(bundle);
           if (result.ok) {
             persistBundle(opts.db, result.bundle);
@@ -73,7 +77,10 @@ export async function importAll(opts: {
           }
         }
 
-        report.removed = await removeVanished(opts.db, adapter.id, known, emitted, opts.ctx.fs);
+        report.removed = await removeVanished(opts.db, adapter.id, known, emitted, opts.ctx.fs, {
+          sourceExists: adapter.sourceExists,
+          ctx: opts.ctx,
+        });
         const knownNotEmitted = [...known.keys()].filter((p) => !emitted.has(p)).length;
         report.skipped = knownNotEmitted - report.removed;
       }

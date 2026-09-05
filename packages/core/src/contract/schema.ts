@@ -72,6 +72,8 @@ export const SessionSchema = z
     forkedFrom: z.string().optional(),
     harnessVersionFirst: z.string().optional(),
     harnessVersionLast: z.string().optional(),
+    sourceId: z.string().optional(),
+    sourceLocator: z.string().optional(),
     sourcePath: z.string(),
     sourceSize: nonNegInt(),
     sourceMtime: nonNegNumber(),

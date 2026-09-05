@@ -19,11 +19,20 @@
         "zod": "4.5.4",
       },
     },
+    "packages/adapter-opencode": {
+      "name": "@scout/adapter-opencode",
+      "version": "0.0.0",
+      "dependencies": {
+        "@scout/core": "workspace:*",
+        "zod": "4.5.4",
+      },
+    },
     "packages/cli": {
       "name": "@scout/cli",
       "version": "0.0.0",
       "dependencies": {
         "@scout/adapter-claude-code": "workspace:*",
+        "@scout/adapter-opencode": "workspace:*",
         "@scout/core": "workspace:*",
       },
     },
@@ -55,6 +64,8 @@
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.11", "", { "os": "win32", "cpu": "x64" }, "sha512-QSQr/KjOgXA7OzXJUWS+oguKyAZ3Q0l/lnlDGbu397eKo83atuWUjBPJrsqbKNF6CARGw8XXJLGzpHC8Ryhd4Q=="],
 
     "@scout/adapter-claude-code": ["@scout/adapter-claude-code@workspace:packages/adapter-claude-code"],
+
+    "@scout/adapter-opencode": ["@scout/adapter-opencode@workspace:packages/adapter-opencode"],
 
     "@scout/cli": ["@scout/cli@workspace:packages/cli"],
 

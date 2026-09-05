@@ -1,0 +1,46 @@
+{
+  "sessions": [
+    {
+      "id": "opencode:current:ses_canary",
+      "harnessId": "opencode",
+      "projectKey": "/home/u/proj",
+      "depth": 0,
+      "agentType": "build",
+      "title": "Canary session",
+      "cwd": "/home/u/proj",
+      "startedAt": "2026-09-02T16:36:40.100Z",
+      "endedAt": "2026-09-02T16:36:42.200Z",
+      "durationMs": 2100,
+      "modelPrimary": "gpt-5.6-sol",
+      "uncachedInput": 10,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 5,
+      "turns": 1,
+      "apiCalls": 1,
+      "toolCalls": 1,
+      "costUsd": 0.01,
+      "resumed": false,
+      "harnessVersionFirst": "0.0.0-beta-18866",
+      "harnessVersionLast": "0.0.0-beta-18866",
+      "sourceId": "opencode:current:ses_canary",
+      "sourcePath": "opencode:current:ses_canary",
+      "sourceSize": 2
+    }
+  ],
+  "stepCounts": {
+    "opencode:current:ses_canary": {
+      "turn": 1,
+      "call": 1,
+      "tool": 1
+    }
+  },
+  "toolCounts": {
+    "opencode:current:ses_canary": {
+      "read": 1
+    }
+  },
+  "diagnostics": {
+    "opencode:current:ses_canary": []
+  }
+}

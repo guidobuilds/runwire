@@ -40,16 +40,24 @@ TS names are camelCase; the SQL columns in §5 are the same names in snake_case.
 
 ```ts
 interface HarnessAdapter {
-  id: string;                          // 'claude-code'
+  id: string;                          // 'claude-code' | 'opencode'
   displayName: string;
   adapterVersion: string;              // bump when a mapping changes
   capabilities: readonly Capability[];
   allowlist: Projection;               // §7
   probe(ctx: AdapterContext): Promise<{ installed: boolean; roots: string[]; notes: string[] }>;
   discover(ctx: AdapterContext, known: Known): AsyncIterable<SessionBundle>;
+  // Optional explicit existence check. When undefined, CORE falls back to
+  // fs.stat(sourceLocator ?? sourceId) — the filesystem heuristic the Claude
+  // adapter relies on. A DB-backed adapter returns true (retain) on any
+  // DB open/read/stat error and only false (delete) on a CONFIRMED absent
+  // source, so a transient error never mass-deletes.
+  sourceExists?(ctx: AdapterContext, source: SourceRef): Promise<boolean>;
 }
 
-type Known = Map<string, { size: number; mtime: number }>;   // sourcePath → what core already stored
+type SourceRef = { sourceId: string; sourceLocator?: string };
+// The effective source id (sourceId ?? sourcePath) → what core already stored.
+type Known = Map<string, { size: number; mtime: number }>;
 
 type AdapterContext = {
   home: string; platform: NodeJS.Platform; env: Record<string, string | undefined>;
@@ -89,8 +97,16 @@ type Session = {
   initiatorKind?: 'human' | 'machine' | 'unknown'; initiatorSurface?: string; initiatorAutomation?: string;
   resumed?: boolean; forkedFrom?: string;
   harnessVersionFirst?: string; harnessVersionLast?: string;
+  sourceId?: string;                   // opaque namespaced identity (defaults in CORE to sourcePath)
+  sourceLocator?: string;              // optional physical locator (defaults in CORE to sourcePath)
   sourcePath: string; sourceSize: number; sourceMtime: number;
 };
+
+// effectiveSourceId(session)     = session.sourceId ?? session.sourcePath
+// effectiveSourceLocator(session) = session.sourceLocator ?? session.sourcePath
+// For a filesystem source (Claude) both reduce to sourcePath → today's behavior
+// preserved exactly. For a DB-backed source (OpenCode) sourceId is explicit and
+// sourceLocator is the DB file path.
 
 type StepKind = 'call' | 'tool' | 'turn' | 'harness' | 'compaction' | 'model-change' | 'mode-change';
 type ToolCategory = 'read' | 'write' | 'exec' | 'search' | 'plan' | 'agent' | 'web' | 'mcp' | 'skill' | 'other';
@@ -146,7 +162,9 @@ sessions(id PK, harness_id → harnesses, project_key → projects, parent_id �
          uncached_input, cached_input, cache_write, output, reasoning_output,
          turns, api_calls, tool_calls, compactions, cost_usd,
          initiator_kind, initiator_surface, initiator_automation, resumed, forked_from,
-         harness_version_first, harness_version_last, source_path UNIQUE, source_size, source_mtime)
+         harness_version_first, harness_version_last,
+         source_id UNIQUE, source_locator,          -- effective source identity + physical locator (see §3); backfilled from source_path
+         source_path UNIQUE, source_size, source_mtime)
 steps(session_id → sessions, seq, at, kind, model, tool_category, tool_name, skill_name, call_id, child_id, duration_ms, error,
       uncached_input, cached_input, cache_write, output, reasoning_output,
       compaction_trigger, pre_tokens, post_tokens, from_value, to_value, PK (session_id, seq))
@@ -174,10 +192,19 @@ rollups(session_id PK → sessions, uncached_input, cached_input, cache_write, o
 ```text
 importAll({ adapters, db, ctx }) — adapters come from the composition root (D76), never from core
 for each adapter:
-  known  = SELECT source_path, source_size, source_mtime FROM sessions WHERE harness_id = adapter.id
+  known  = SELECT COALESCE(source_id, source_path), COALESCE(source_locator, source_path),
+                  source_size, source_mtime FROM sessions WHERE harness_id = adapter.id
+           -- keyed by the EFFECTIVE source id (sourceId ?? sourcePath); root-scoped by the PHYSICAL locator
   for await bundle of adapter.discover(ctx, known):
     validate → upsert project, session, steps, session_tool_counts, diagnostics   (one transaction per bundle)
-  remove    sessions whose source_path no longer exists on disk (ctx.fs.stat), with their steps/counts/diagnostics
+    emitted.add(effectiveSourceId(bundle.session))
+  remove    known-but-unemitted sources that no longer exist, with their steps/counts/diagnostics.
+            The existence test is adapter-answered: adapter.sourceExists(ctx, {sourceId, sourceLocator})
+            when present, else fs.stat(sourceLocator ?? sourceId) (the Claude filesystem heuristic).
+            Removal is only computed after the discover stream completes without throwing — a mid-stream
+            discover() throw keeps what was persisted and skips removal. A DB-backed sourceExists returns
+            true (retain) on any DB open/read/stat error and false (delete) only on a CONFIRMED absent source,
+            so a transient error or an unreadable store never mass-deletes.
   link      parent_id from bundles; steps.child_id = the child whose spawn_call_id equals that step's call_id
             depth as declared by the adapter; unresolved parent → diagnostic `orphan-child`, child kept as a root
   rollups   exclusive = the row; inclusive = row + all descendants (turns copied from the root, not summed)

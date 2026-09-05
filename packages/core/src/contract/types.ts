@@ -17,6 +17,16 @@ export type Project = {
 export type SessionRelation = 'subagent' | 'teammate' | 'fork';
 export type InitiatorKind = 'human' | 'machine' | 'unknown';
 
+/**
+ * A source's opaque, stable, namespaced identity plus its optional physical
+ * locator (docs/ARCHITECTURE.md §3, .forge/opencode-session-connector/design.md §2).
+ * `sourceId` is NOT a filesystem path; `sourceLocator` is the real path used for
+ * filesystem existence checks. For a filesystem source (e.g. Claude Code) both
+ * default in CORE to `sourcePath`; for a DB-backed source (e.g. OpenCode) the
+ * adapter sets them explicitly.
+ */
+export type SourceRef = { sourceId: string; sourceLocator?: string };
+
 export type Session = {
   /** `${harnessId}:${sourceId}`, stable across imports. */
   id: string;
@@ -60,6 +70,10 @@ export type Session = {
   forkedFrom?: string;
   harnessVersionFirst?: string;
   harnessVersionLast?: string;
+  /** Opaque namespaced identity (defaults in CORE to sourcePath). See SourceRef. */
+  sourceId?: string;
+  /** Optional physical locator (defaults in CORE to sourcePath). See SourceRef. */
+  sourceLocator?: string;
   sourcePath: string;
   sourceSize: number;
   sourceMtime: number;

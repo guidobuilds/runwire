@@ -194,4 +194,15 @@ function ensureColumn(db: Database, table: string, column: string, type: string)
 export function migrate(db: Database): void {
   db.exec(DDL);
   ensureColumn(db, 'steps', 'skill_name', 'TEXT');
+  // Source-identity split (design §2.4): additive nullable columns + backfill
+  // + UNIQUE index on the effective source id. The backfill runs BEFORE the
+  // UNIQUE INDEX so no NULL source_id exists at index time. A second
+  // `migrate()` is a no-op: ensureColumn skips existing columns, the backfill
+  // only fires `WHERE source_id IS NULL`, and the index is IF NOT EXISTS.
+  ensureColumn(db, 'sessions', 'source_id', 'TEXT');
+  ensureColumn(db, 'sessions', 'source_locator', 'TEXT');
+  db.exec(
+    'UPDATE sessions SET source_id = source_path, source_locator = source_path WHERE source_id IS NULL',
+  );
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_source_id ON sessions(source_id)');
 }

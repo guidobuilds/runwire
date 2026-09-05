@@ -9,7 +9,7 @@ Structure-only inspection (keys, record types, counts) of the harness data prese
 | Claude Code | JSONL per session under `~/.claude/projects/` | 731 files, 607 MB | per API call (dedupe by `requestId`) | separate files in `<session>/subagents/` | **M2** |
 | Codex | JSONL rollouts under `~/.codex/sessions/YYYY/MM/DD/` | 167 files, 160 MB | cumulative `token_count` events | separate rollouts with `parent_thread_id` | M5 |
 | Grok Build | per-session directory under `~/.grok/sessions/<url-encoded cwd>/<uuid>/` | 14 | per turn in `updates.jsonl` | `subagents/<id>/meta.json` | later |
-| OpenCode | SQLite `~/.local/share/opencode/opencode-tui-v2.db` (WAL) | 0 rows | session totals (+ per message JSON) | `session.parent_id` | later |
+| OpenCode | SQLite `~/.local/share/opencode/{opencode.db, opencode-tui-v2.db}` (WAL) | 73 (59 current + 14 legacy) | per API call (from `session_message.data.tokens`) | `session_v2.parent_id` / `session.parent_id` | **M?** (adapter built 2026-09-05) |
 | Pi | `~/.pi/agent/` (no sessions on this machine) | 0 | unknown | unknown | later |
 | Antigravity | no local trajectory store found | — | — | — | dropped (D11) |
 
@@ -52,12 +52,13 @@ See [adapters/claude-code.md](adapters/claude-code.md) for the full mapping. Key
 
 ## OpenCode
 
-- Store: `~/.local/share/opencode/opencode-tui-v2.db`, SQLite in WAL mode. Open with `bun:sqlite` `readonly`; **do not** use `immutable=1` (it ignores the WAL and shows an empty database).
-- Tables: `session`, `message`, `part`, `project`, `project_directory`, `workspace`, `session_*`, `todo`, `permission`, `event`, `account*`, `credential` (never read).
-- `session` columns: `id`, `project_id`, `workspace_id`, `parent_id`, `slug`, `directory`, `path`, `title` (content-derived), `version`, `share_url`, `summary_*`, `metadata`, `cost`, `tokens_input`, `tokens_output`, `tokens_reasoning`, `tokens_cache_read`, `tokens_cache_write`, `revert`, `permission`, `agent`, `model`, `time_created`, `time_updated`, `time_compacting`, `time_archived`.
-- `project` columns: `id`, `worktree`, `vcs`, `name`, `time_*`, `sandboxes`, `commands`.
-- `message.data` is a JSON blob (role, model, tokens, time…) — allows per-message usage later; content parts are in `part`.
-- 0 sessions on this machine at survey time; fixtures must be synthesized from the schema or captured on a machine that uses OpenCode.
+- Two SQLite stores under `~/.local/share/opencode/`, both in WAL mode. Open with `bun:sqlite` `readonly`; **do not** use `immutable=1` (it ignores the WAL and shows an empty database).
+- **Current store** `opencode.db`: `session_v2` (59 sessions) + `session_message` (1578 rows) + `project` (9) + `worktree` (4). `session_v2` has `id`, `project_id`, `parent_id`, `fork_session_id`, `directory`, `title`, `version`, `cost`, `tokens_*`, `agent`, `model`, `time_created`, `time_updated`, `time_suspended`.
+- **Legacy store** `opencode-tui-v2.db` (frozen): the **V1 `session` table** (14 sessions) — a strict subset of `session_v2` (no `fork_session_id`/`time_suspended`) — plus its own `session_message` (284 rows). Its `message`/`part` tables are empty.
+- `session_message` columns (both stores): `id`, `session_id`, `type`, `seq`, `time_created`, `time_updated`, `data` (JSON). Message types: `user`, `assistant`, `model-switched`, `compaction`, `agent-switched`, `system`, `location-switched`, `synthetic`.
+- `message.data` is a JSON blob (time, model, tokens, content[], reason…). Content lives in `data.text` / `content[].text` / `content[].state.{input,content,error.message,reasoningEncryptedContent}` — all excluded by the adapter's allowlist.
+- Id overlap between current and legacy = 0 (73 independent sessions). `PRAGMA user_version` is 0 for both → discriminate the schema by **table presence** (`session_v2` vs `session`).
+- `session_message.seq` is not contiguous from 0 (a 12-message session has min 4 / max 177) — the adapter reindexes to 0..n-1 in source order. One live session reports `tokens_input=160768` while the per-message sum is 159340 (Δ 1428) — the adapter always computes session token fields as Σ of `call`-step tokens and emits a `token-total-drift` diagnostic when the harness aggregate differs.
 
 ## Pi
 

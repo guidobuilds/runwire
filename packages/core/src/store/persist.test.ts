@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { createMemoryFs } from '../adapter/fs.memory';
+import type { AdapterContext } from '../adapter/types';
 import type { SessionBundle } from '../contract/types';
 import {
+  effectiveSourceId,
+  effectiveSourceLocator,
   loadKnown,
   persistBundle,
   persistInvalidBundle,
@@ -41,6 +44,18 @@ function storeWithFakeHarness() {
     capabilities: [],
   });
   return store;
+}
+
+/** A minimal AdapterContext for removeVanished's `opts.ctx` (the sourceExists callback ignores it). */
+function adapterCtx(): AdapterContext {
+  return {
+    home: '/home/u',
+    platform: 'linux',
+    env: {},
+    fs: createMemoryFs(),
+    privacy: { titles: true },
+    log: { info() {}, warn() {}, error() {} },
+  };
 }
 
 describe('persistBundle', () => {
@@ -212,6 +227,113 @@ describe('loadKnown', () => {
   });
 });
 
+describe('effectiveSourceId/effectiveSourceLocator', () => {
+  test('default to sourcePath when sourceId/sourceLocator are absent (Claude path)', () => {
+    expect(effectiveSourceId({ sourcePath: '/fake/s.jsonl' })).toBe('/fake/s.jsonl');
+    expect(effectiveSourceLocator({ sourcePath: '/fake/s.jsonl' })).toBe('/fake/s.jsonl');
+  });
+
+  test('use sourceId/sourceLocator when present (OpenCode path)', () => {
+    expect(
+      effectiveSourceId({ sourceId: 'opencode:current:x', sourcePath: 'opencode:current:x' }),
+    ).toBe('opencode:current:x');
+    expect(
+      effectiveSourceLocator({
+        sourceLocator: '/db/opencode.db',
+        sourcePath: 'opencode:current:x',
+      }),
+    ).toBe('/db/opencode.db');
+  });
+});
+
+describe('sourceId/sourceLocator persistence', () => {
+  test('persistBundle writes source_id and source_locator columns', () => {
+    const { db } = storeWithFakeHarness();
+    persistBundle(
+      db,
+      bundle({
+        id: 'opencode:current:ses_1',
+        sourceId: 'opencode:current:ses_1',
+        sourceLocator: '/db/opencode.db',
+        sourcePath: 'opencode:current:ses_1',
+      }),
+    );
+    const row = db
+      .query('SELECT source_id, source_locator, source_path FROM sessions WHERE id = ?')
+      .get('opencode:current:ses_1') as {
+      source_id: string | null;
+      source_locator: string | null;
+      source_path: string;
+    };
+    expect(row.source_id).toBe('opencode:current:ses_1');
+    expect(row.source_locator).toBe('/db/opencode.db');
+    expect(row.source_path).toBe('opencode:current:ses_1');
+  });
+
+  test('persistInvalidBundle writes source_id/source_locator on the invalid stub', () => {
+    const { db } = storeWithFakeHarness();
+    persistInvalidBundle(
+      db,
+      'fake',
+      {
+        session: {
+          id: 'opencode:current:bad',
+          sourceId: 'opencode:current:bad',
+          sourceLocator: '/db/opencode.db',
+          sourcePath: 'opencode:current:bad',
+        },
+      },
+      ['x'],
+    );
+    const row = db
+      .query('SELECT source_id, source_locator FROM sessions WHERE id = ?')
+      .get('opencode:current:bad') as { source_id: string | null; source_locator: string | null };
+    expect(row.source_id).toBe('opencode:current:bad');
+    expect(row.source_locator).toBe('/db/opencode.db');
+  });
+});
+
+describe('loadKnown: identity-keyed and locator-scoped', () => {
+  test('a row with source_id distinct from source_path is keyed by source_id', () => {
+    const { db } = storeWithFakeHarness();
+    persistBundle(
+      db,
+      bundle({
+        id: 'opencode:current:ses_1',
+        sourceId: 'opencode:current:ses_1',
+        sourceLocator: '/db/opencode.db',
+        sourcePath: 'opencode:current:ses_1',
+      }),
+    );
+    const known = loadKnown(db, 'fake', ['/db']);
+    expect([...known.keys()]).toEqual(['opencode:current:ses_1']);
+  });
+
+  test('root scoping uses the physical source_locator, not the opaque id', () => {
+    const { db } = storeWithFakeHarness();
+    persistBundle(
+      db,
+      bundle({
+        id: 'opencode:current:ses_1',
+        sourceId: 'opencode:current:ses_1',
+        sourceLocator: '/db/opencode.db',
+        sourcePath: 'opencode:current:ses_1',
+      }),
+    );
+    // A root that does NOT contain the locator (e.g. an opaque id prefix) must
+    // not include the row.
+    const known = loadKnown(db, 'fake', ['opencode:']);
+    expect(known.size).toBe(0);
+  });
+
+  test('identity default: a row with no source_id is keyed by source_path', () => {
+    const { db } = storeWithFakeHarness();
+    persistBundle(db, bundle({ id: 'fake:s1', sourcePath: '/fake/s1.jsonl' }));
+    const known = loadKnown(db, 'fake', ['/fake']);
+    expect([...known.keys()]).toEqual(['/fake/s1.jsonl']);
+  });
+});
+
 describe('removeVanished', () => {
   test('deletes sessions whose known path no longer stats, cascading to child tables', async () => {
     const { db } = storeWithFakeHarness();
@@ -257,5 +379,66 @@ describe('removeVanished', () => {
     const removed = await removeVanished(db, 'fake', known, new Set(), fs);
     expect(removed).toBe(0);
     expect(db.query('SELECT * FROM sessions WHERE id = ?').all('fake:other').length).toBe(1);
+  });
+
+  test('sourceExists returning false deletes a known-but-unemitted source by COALESCE(source_id, source_path)', async () => {
+    const { db } = storeWithFakeHarness();
+    persistBundle(
+      db,
+      bundle({
+        id: 'opencode:current:ses_1',
+        sourceId: 'opencode:current:ses_1',
+        sourceLocator: '/db/opencode.db',
+        sourcePath: 'opencode:current:ses_1',
+      }),
+    );
+    const known = loadKnown(db, 'fake', ['/db']);
+    const removed = await removeVanished(db, 'fake', known, new Set(), createMemoryFs(), {
+      sourceExists: async () => false,
+      ctx: adapterCtx(),
+    });
+    expect(removed).toBe(1);
+    expect(
+      db.query('SELECT * FROM sessions WHERE id = ?').all('opencode:current:ses_1').length,
+    ).toBe(0);
+  });
+
+  test('sourceExists returning true retains a known-but-unemitted source', async () => {
+    const { db } = storeWithFakeHarness();
+    persistBundle(
+      db,
+      bundle({
+        id: 'opencode:current:ses_1',
+        sourceId: 'opencode:current:ses_1',
+        sourceLocator: '/db/opencode.db',
+        sourcePath: 'opencode:current:ses_1',
+      }),
+    );
+    const known = loadKnown(db, 'fake', ['/db']);
+    const removed = await removeVanished(db, 'fake', known, new Set(), createMemoryFs(), {
+      sourceExists: async () => true,
+      ctx: adapterCtx(),
+    });
+    expect(removed).toBe(0);
+    expect(
+      db.query('SELECT * FROM sessions WHERE id = ?').all('opencode:current:ses_1').length,
+    ).toBe(1);
+  });
+
+  test('a NULL-source_id stub row is still deletable via the COALESCE delete', async () => {
+    const { db } = storeWithFakeHarness();
+    // A raw test insert / invalid stub with NULL source_id (no sourceId emitted).
+    persistInvalidBundle(
+      db,
+      'fake',
+      { session: { id: 'fake:stub', sourcePath: '/fake/stub.jsonl' } },
+      ['x'],
+    );
+    const known = loadKnown(db, 'fake', ['/fake']);
+    expect([...known.keys()]).toEqual(['/fake/stub.jsonl']);
+    const fs = createMemoryFs({ files: {} });
+    const removed = await removeVanished(db, 'fake', known, new Set(), fs);
+    expect(removed).toBe(1);
+    expect(db.query('SELECT * FROM sessions WHERE id = ?').all('fake:stub').length).toBe(0);
   });
 });

@@ -1,0 +1,76 @@
+{
+  "sessions": [
+    {
+      "id": "opencode:current:ses_child",
+      "harnessId": "opencode",
+      "projectKey": "/home/u/proj",
+      "parentId": "opencode:current:ses_root",
+      "relation": "subagent",
+      "depth": 1,
+      "agentType": "forge-worker",
+      "title": "Child session",
+      "cwd": "/home/u/proj",
+      "startedAt": "2026-09-02T16:36:40.150Z",
+      "endedAt": "2026-09-02T16:36:42.400Z",
+      "durationMs": 2250,
+      "modelPrimary": "deepseek-v4-pro",
+      "uncachedInput": 50,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 10,
+      "turns": 1,
+      "apiCalls": 1,
+      "costUsd": 0.05,
+      "resumed": false,
+      "harnessVersionFirst": "0.0.0-beta-18866",
+      "harnessVersionLast": "0.0.0-beta-18866",
+      "sourceId": "opencode:current:ses_child",
+      "sourcePath": "opencode:current:ses_child",
+      "sourceSize": 2
+    },
+    {
+      "id": "opencode:current:ses_root",
+      "harnessId": "opencode",
+      "projectKey": "/home/u/proj",
+      "depth": 0,
+      "agentType": "build",
+      "title": "Root session",
+      "cwd": "/home/u/proj",
+      "startedAt": "2026-09-02T16:36:40.100Z",
+      "endedAt": "2026-09-02T16:36:42.600Z",
+      "durationMs": 2500,
+      "modelPrimary": "gpt-5.6-sol",
+      "uncachedInput": 200,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 40,
+      "turns": 1,
+      "apiCalls": 1,
+      "costUsd": 0.2,
+      "resumed": false,
+      "harnessVersionFirst": "0.0.0-beta-18866",
+      "harnessVersionLast": "0.0.0-beta-18866",
+      "sourceId": "opencode:current:ses_root",
+      "sourcePath": "opencode:current:ses_root",
+      "sourceSize": 3
+    }
+  ],
+  "stepCounts": {
+    "opencode:current:ses_child": {
+      "turn": 1,
+      "call": 1
+    },
+    "opencode:current:ses_root": {
+      "turn": 1,
+      "call": 1
+    }
+  },
+  "toolCounts": {
+    "opencode:current:ses_child": {},
+    "opencode:current:ses_root": {}
+  },
+  "diagnostics": {
+    "opencode:current:ses_child": [],
+    "opencode:current:ses_root": []
+  }
+}

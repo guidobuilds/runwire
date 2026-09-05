@@ -1,0 +1,40 @@
+{
+  "sessions": [
+    {
+      "id": "opencode:current:ses_malformed",
+      "harnessId": "opencode",
+      "projectKey": "/home/u/proj",
+      "depth": 0,
+      "agentType": "build",
+      "title": "Malformed session",
+      "cwd": "/home/u/proj",
+      "startedAt": "2026-09-02T16:36:40.100Z",
+      "endedAt": "2026-09-02T16:36:40.100Z",
+      "durationMs": 0,
+      "turns": 1,
+      "costUsd": 0,
+      "resumed": false,
+      "harnessVersionFirst": "0.0.0-beta-18866",
+      "harnessVersionLast": "0.0.0-beta-18866",
+      "sourceId": "opencode:current:ses_malformed",
+      "sourcePath": "opencode:current:ses_malformed",
+      "sourceSize": 1
+    }
+  ],
+  "stepCounts": {
+    "opencode:current:ses_malformed": {
+      "turn": 1
+    }
+  },
+  "toolCounts": {
+    "opencode:current:ses_malformed": {}
+  },
+  "diagnostics": {
+    "opencode:current:ses_malformed": [
+      {
+        "level": "warn",
+        "code": "invalid-record"
+      }
+    ]
+  }
+}

@@ -1,9 +1,31 @@
 import type { Database } from 'bun:sqlite';
 import { isAbsolute, relative } from 'node:path';
-import type { ScoutFs } from '../adapter/types';
+import type { AdapterContext, ScoutFs } from '../adapter/types';
 import type { Known } from '../contract/adapter';
 import { makeDiagnostic } from '../contract/diagnostic';
-import type { Project, Session, SessionBundle, Step, ToolCategory } from '../contract/types';
+import type {
+  Project,
+  Session,
+  SessionBundle,
+  SourceRef,
+  Step,
+  ToolCategory,
+} from '../contract/types';
+
+/**
+ * The identity CORE actually uses (design §2.1): `sourceId ?? sourcePath`.
+ * For a filesystem source (Claude) both reduce to `sourcePath`, preserving
+ * today's behavior exactly; for a DB-backed source (OpenCode) `sourceId` is
+ * explicit and `sourcePath` mirrors it.
+ */
+export function effectiveSourceId(s: { sourceId?: string; sourcePath: string }): string {
+  return s.sourceId ?? s.sourcePath;
+}
+
+/** The physical locator CORE uses for existence checks: `sourceLocator ?? sourcePath`. */
+export function effectiveSourceLocator(s: { sourceLocator?: string; sourcePath: string }): string {
+  return s.sourceLocator ?? s.sourcePath;
+}
 
 /** Minimal shape persist.ts needs from a HarnessAdapter, to avoid a store -> contract/adapter -> ... cycle. */
 export type HarnessMeta = {
@@ -51,8 +73,9 @@ function upsertSessionRow(db: Database, s: Session): void {
        uncached_input, cached_input, cache_write, output, reasoning_output,
        turns, api_calls, tool_calls, compactions, cost_usd,
        initiator_kind, initiator_surface, initiator_automation, resumed, forked_from,
-       harness_version_first, harness_version_last, source_path, source_size, source_mtime
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       harness_version_first, harness_version_last, source_id, source_locator,
+       source_path, source_size, source_mtime
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        harness_id = excluded.harness_id, project_key = excluded.project_key, parent_id = excluded.parent_id,
        relation = excluded.relation, depth = excluded.depth, agent_type = excluded.agent_type,
@@ -67,7 +90,8 @@ function upsertSessionRow(db: Database, s: Session): void {
        initiator_kind = excluded.initiator_kind, initiator_surface = excluded.initiator_surface,
        initiator_automation = excluded.initiator_automation, resumed = excluded.resumed,
        forked_from = excluded.forked_from, harness_version_first = excluded.harness_version_first,
-       harness_version_last = excluded.harness_version_last, source_path = excluded.source_path,
+       harness_version_last = excluded.harness_version_last, source_id = excluded.source_id,
+       source_locator = excluded.source_locator, source_path = excluded.source_path,
        source_size = excluded.source_size, source_mtime = excluded.source_mtime`,
     [
       s.id,
@@ -107,6 +131,8 @@ function upsertSessionRow(db: Database, s: Session): void {
       s.forkedFrom ?? null,
       s.harnessVersionFirst ?? null,
       s.harnessVersionLast ?? null,
+      s.sourceId ?? null,
+      s.sourceLocator ?? null,
       s.sourcePath,
       s.sourceSize,
       s.sourceMtime,
@@ -192,8 +218,11 @@ function replaceDiagnostics(
 export function persistBundle(db: Database, bundle: SessionBundle): void {
   const run = db.transaction((b: SessionBundle) => {
     upsertProject(db, b.project);
-    db.run('DELETE FROM sessions WHERE source_path = ? AND id <> ?', [
-      b.session.sourcePath,
+    // Displace by the EFFECTIVE source id (COALESCE(source_id, source_path)) so a
+    // re-emitted source that changes its id still removes the stale row, whether
+    // or not source_id is set (design §2.4).
+    db.run('DELETE FROM sessions WHERE COALESCE(source_id, source_path) = ? AND id <> ?', [
+      effectiveSourceId(b.session),
       b.session.id,
     ]);
     upsertSessionRow(db, b.session);
@@ -222,19 +251,28 @@ export function persistInvalidBundle(
   const sourcePath =
     session && typeof session.sourcePath === 'string' ? session.sourcePath : undefined;
   if (id === undefined || sourcePath === undefined) return false;
+  const sourceId = session && typeof session.sourceId === 'string' ? session.sourceId : undefined;
+  const sourceLocator =
+    session && typeof session.sourceLocator === 'string' ? session.sourceLocator : undefined;
 
   const message = issues[0] ?? 'invalid bundle';
   const diagnostic = makeDiagnostic('error', 'bundle-invalid', message.slice(0, 200));
 
   const run = db.transaction(() => {
-    db.run('DELETE FROM sessions WHERE source_path = ? AND id <> ?', [sourcePath, id]);
+    // Displace by the EFFECTIVE source id so a stale row at the same identity is
+    // removed even when the invalid bundle carries a different id.
+    db.run('DELETE FROM sessions WHERE COALESCE(source_id, source_path) = ? AND id <> ?', [
+      sourceId ?? sourcePath,
+      id,
+    ]);
     db.run(
-      `INSERT INTO sessions (id, harness_id, project_key, depth, source_path, source_size, source_mtime)
-       VALUES (?, ?, NULL, 0, ?, NULL, NULL)
+      `INSERT INTO sessions (id, harness_id, project_key, depth, source_id, source_locator, source_path, source_size, source_mtime)
+       VALUES (?, ?, NULL, 0, ?, ?, ?, NULL, NULL)
        ON CONFLICT(id) DO UPDATE SET
          harness_id = excluded.harness_id, project_key = NULL, depth = 0,
+         source_id = excluded.source_id, source_locator = excluded.source_locator,
          source_path = excluded.source_path, source_size = NULL, source_mtime = NULL`,
-      [id, harnessId, sourcePath],
+      [id, harnessId, sourceId ?? null, sourceLocator ?? null, sourcePath],
     );
     replaceDiagnostics(db, id, [diagnostic]);
     db.run('DELETE FROM steps WHERE session_id = ?', [id]);
@@ -271,16 +309,24 @@ function isUnderRoot(root: string, target: string): boolean {
 export function loadKnown(db: Database, harnessId: string, roots: string[]): Known {
   const known: Known = new Map();
   const rows = db
-    .query('SELECT source_path, source_size, source_mtime FROM sessions WHERE harness_id = ?')
+    .query(
+      'SELECT source_id, source_locator, source_path, source_size, source_mtime FROM sessions WHERE harness_id = ?',
+    )
     .all(harnessId) as {
+    source_id: string | null;
+    source_locator: string | null;
     source_path: string;
     source_size: number | null;
     source_mtime: number | null;
   }[];
   for (const row of rows) {
-    const inScope = roots.some((root) => isUnderRoot(root, row.source_path));
+    // Keyed by the EFFECTIVE source id (identity); scoped by the PHYSICAL
+    // locator (design §2.5) so an opaque id is never fed to isUnderRoot.
+    const identity = row.source_id ?? row.source_path;
+    const locator = row.source_locator ?? row.source_path;
+    const inScope = roots.some((root) => isUnderRoot(root, locator));
     if (!inScope) continue;
-    known.set(row.source_path, {
+    known.set(identity, {
       size: row.source_size ?? -1,
       mtime: row.source_mtime ?? -1,
     });
@@ -289,9 +335,16 @@ export function loadKnown(db: Database, harnessId: string, roots: string[]): Kno
 }
 
 /**
- * Deletes sessions whose path is in `known`, was not re-emitted this run,
- * and no longer stats (plan P4). Cascades to steps/session_tool_counts/
+ * Deletes sessions whose source id is in `known`, was not re-emitted this run,
+ * and no longer exists (design §2.6). Cascades to steps/session_tool_counts/
  * diagnostics/rollups via the FKs in store/schema.ts.
+ *
+ * The existence test is adapter-answered when `opts.sourceExists` is provided
+ * (a DB-backed source with real vanished semantics); otherwise it falls back
+ * to `fs.stat(sourceLocator ?? sourceId)`, which is the current filesystem
+ * heuristic the Claude adapter relies on. Delete is by
+ * `COALESCE(source_id, source_path)` so a NULL-source_id row (invalid stub /
+ * raw test insert) is still removable.
  */
 export async function removeVanished(
   db: Database,
@@ -299,13 +352,29 @@ export async function removeVanished(
   known: Known,
   emitted: Set<string>,
   fs: ScoutFs,
+  opts?: {
+    sourceExists?: (ctx: AdapterContext, source: SourceRef) => Promise<boolean>;
+    ctx?: AdapterContext;
+  },
 ): Promise<number> {
   let removed = 0;
-  for (const path of known.keys()) {
-    if (emitted.has(path)) continue;
-    const stat = await fs.stat(path);
-    if (stat !== undefined) continue;
-    db.run('DELETE FROM sessions WHERE harness_id = ? AND source_path = ?', [harnessId, path]);
+  for (const sourceId of known.keys()) {
+    if (emitted.has(sourceId)) continue;
+    const row = db
+      .query(
+        'SELECT COALESCE(source_locator, source_path) AS locator FROM sessions WHERE harness_id = ? AND COALESCE(source_id, source_path) = ?',
+      )
+      .get(harnessId, sourceId) as { locator: string } | null;
+    const locator = row?.locator ?? sourceId;
+    const exists =
+      opts?.sourceExists && opts.ctx
+        ? await opts.sourceExists(opts.ctx, { sourceId, sourceLocator: locator })
+        : (await fs.stat(locator ?? sourceId)) !== undefined;
+    if (exists) continue;
+    db.run('DELETE FROM sessions WHERE harness_id = ? AND COALESCE(source_id, source_path) = ?', [
+      harnessId,
+      sourceId,
+    ]);
     removed++;
   }
   return removed;

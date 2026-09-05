@@ -1,0 +1,76 @@
+{
+  "sessions": [
+    {
+      "id": "opencode:legacy:ses_legacy_1",
+      "harnessId": "opencode",
+      "projectKey": "/home/u/proj",
+      "depth": 0,
+      "agentType": "build",
+      "title": "Legacy one",
+      "cwd": "/home/u/proj",
+      "startedAt": "2026-09-02T16:36:40.100Z",
+      "endedAt": "2026-09-02T16:36:42.800Z",
+      "durationMs": 2700,
+      "modelPrimary": "gpt-5.6-sol",
+      "modelChanges": 1,
+      "uncachedInput": 80,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 20,
+      "turns": 1,
+      "apiCalls": 1,
+      "costUsd": 0.08,
+      "resumed": false,
+      "harnessVersionFirst": "0.0.0-beta-18866",
+      "harnessVersionLast": "0.0.0-beta-18866",
+      "sourceId": "opencode:legacy:ses_legacy_1",
+      "sourcePath": "opencode:legacy:ses_legacy_1",
+      "sourceSize": 3
+    },
+    {
+      "id": "opencode:legacy:ses_legacy_2",
+      "harnessId": "opencode",
+      "projectKey": "/home/u/proj",
+      "depth": 0,
+      "agentType": "forge-worker",
+      "title": "Legacy two",
+      "cwd": "/home/u/proj",
+      "startedAt": "2026-09-02T16:36:40.150Z",
+      "endedAt": "2026-09-02T16:36:42.300Z",
+      "durationMs": 2150,
+      "modelPrimary": "gpt-5.6-sol",
+      "uncachedInput": 30,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 5,
+      "turns": 1,
+      "apiCalls": 1,
+      "costUsd": 0.03,
+      "resumed": false,
+      "harnessVersionFirst": "0.0.0-beta-18866",
+      "harnessVersionLast": "0.0.0-beta-18866",
+      "sourceId": "opencode:legacy:ses_legacy_2",
+      "sourcePath": "opencode:legacy:ses_legacy_2",
+      "sourceSize": 2
+    }
+  ],
+  "stepCounts": {
+    "opencode:legacy:ses_legacy_1": {
+      "turn": 1,
+      "call": 1,
+      "model-change": 1
+    },
+    "opencode:legacy:ses_legacy_2": {
+      "turn": 1,
+      "call": 1
+    }
+  },
+  "toolCounts": {
+    "opencode:legacy:ses_legacy_1": {},
+    "opencode:legacy:ses_legacy_2": {}
+  },
+  "diagnostics": {
+    "opencode:legacy:ses_legacy_1": [],
+    "opencode:legacy:ses_legacy_2": []
+  }
+}

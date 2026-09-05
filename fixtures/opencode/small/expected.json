@@ -1,0 +1,47 @@
+{
+  "sessions": [
+    {
+      "id": "opencode:current:ses_small",
+      "harnessId": "opencode",
+      "projectKey": "/home/u/proj",
+      "depth": 0,
+      "agentType": "build",
+      "title": "Small session",
+      "cwd": "/home/u/proj",
+      "startedAt": "2026-09-02T16:36:40.100Z",
+      "endedAt": "2026-09-02T16:36:43.500Z",
+      "durationMs": 3400,
+      "modelPrimary": "gpt-5.6-sol",
+      "uncachedInput": 300,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 50,
+      "reasoningOutput": 10,
+      "turns": 2,
+      "apiCalls": 1,
+      "toolCalls": 1,
+      "costUsd": 0.1,
+      "resumed": false,
+      "harnessVersionFirst": "0.0.0-beta-18866",
+      "harnessVersionLast": "0.0.0-beta-18866",
+      "sourceId": "opencode:current:ses_small",
+      "sourcePath": "opencode:current:ses_small",
+      "sourceSize": 3
+    }
+  ],
+  "stepCounts": {
+    "opencode:current:ses_small": {
+      "turn": 2,
+      "call": 1,
+      "tool": 1
+    }
+  },
+  "toolCounts": {
+    "opencode:current:ses_small": {
+      "read": 1
+    }
+  },
+  "diagnostics": {
+    "opencode:current:ses_small": []
+  }
+}

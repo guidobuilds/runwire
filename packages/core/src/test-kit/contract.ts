@@ -106,7 +106,9 @@ export function adapterContract(opts: AdapterContractOptions): void {
       const first = await collectAll(adapter, ctx);
       const known: Known = new Map();
       for (const bundle of first) {
-        known.set(bundle.session.sourcePath, {
+        // Key by the EFFECTIVE source id (sourceId ?? sourcePath), so an adapter
+        // that separates sourceId from sourcePath still feeds back a matching key.
+        known.set(bundle.session.sourceId ?? bundle.session.sourcePath, {
           size: bundle.session.sourceSize,
           mtime: bundle.session.sourceMtime,
         });

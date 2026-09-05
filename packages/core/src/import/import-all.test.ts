@@ -2,10 +2,71 @@ import type { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { createMemoryFs } from '../adapter/fs.memory';
 import type { AdapterContext } from '../adapter/types';
+import type { HarnessAdapter } from '../contract/adapter';
+import type { SourceRef } from '../contract/types';
 import { openStore } from '../store/store';
 import { createFakeAdapter } from '../test-kit/fake-adapter';
 import type { AdapterReport, ImportReport } from './import-all';
 import { importAll } from './import-all';
+
+/**
+ * A minimal OpenCode-like adapter: sessions carry an explicit `sourceId`
+ * (`opencode:current:<id>`), a shared `sourceLocator` (the DB file path), and
+ * `sourcePath = sourceId`. `discover` skips a source when `known` has its
+ * sourceId at the same {size,mtime} — mirroring how a real DB-backed adapter
+ * avoids re-emitting an unchanged session. `sourceExists` is injected so a
+ * test can simulate a confirmed-absent source.
+ */
+function opencodeLikeAdapter(opts: {
+  ids: string[];
+  sourceExists?: (source: SourceRef) => Promise<boolean>;
+}): HarnessAdapter {
+  const ids = new Set(opts.ids);
+  return {
+    id: 'opencode',
+    displayName: 'OpenCode',
+    adapterVersion: '1.0.0',
+    capabilities: [],
+    allowlist: {},
+    probe: async () => ({ installed: true, roots: ['/data'], notes: [] }),
+    async *discover(_ctx, known) {
+      for (const sid of [...ids].sort()) {
+        const k = known.get(sid);
+        if (k !== undefined && k.size === 1 && k.mtime === 1) continue;
+        yield {
+          project: { key: 'k', name: 'k', identity: 'cwd' },
+          session: {
+            id: sid,
+            harnessId: 'opencode',
+            projectKey: 'k',
+            depth: 0,
+            sourceId: sid,
+            sourceLocator: '/data/opencode.db',
+            sourcePath: sid,
+            sourceSize: 1,
+            sourceMtime: 1,
+          },
+          steps: [],
+          diagnostics: [],
+        };
+      }
+    },
+    async sourceExists(_ctx, source) {
+      return opts.sourceExists ? opts.sourceExists(source) : true;
+    },
+  };
+}
+
+function opencodeCtx(): AdapterContext {
+  return {
+    home: '/home/u',
+    platform: 'linux',
+    env: {},
+    fs: createMemoryFs(),
+    privacy: { titles: true },
+    log: { info() {}, warn() {}, error() {} },
+  };
+}
 
 function reportFor(result: ImportReport, id: string): AdapterReport {
   const report = result.perAdapter[id];
@@ -202,6 +263,60 @@ describe('importAll', () => {
       notes: [],
     });
     expect(sessionIds(db)).toContain('fake:existing');
+  });
+
+  test('two-run OpenCode regression: unchanged live sessions are never deleted (removed: 0)', async () => {
+    const { db } = openStore(':memory:');
+    const adapter = opencodeLikeAdapter({
+      ids: ['opencode:current:ses_a', 'opencode:current:ses_b'],
+    });
+    const ctx = opencodeCtx();
+
+    const first = await importAll({ adapters: [adapter], db, ctx });
+    expect(reportFor(first, 'opencode')).toEqual({
+      discovered: 2,
+      imported: 2,
+      skipped: 0,
+      removed: 0,
+      failed: 0,
+    });
+
+    const second = await importAll({ adapters: [adapter], db, ctx });
+    // Both sessions are unchanged (known), so discover skips them; sourceExists
+    // returns true (they still exist), so removed: 0. This is the regression that
+    // would have caught the known-skip deletion bug.
+    expect(reportFor(second, 'opencode')).toEqual({
+      discovered: 0,
+      imported: 0,
+      skipped: 2,
+      removed: 0,
+      failed: 0,
+    });
+    const count = db.query('SELECT COUNT(*) AS c FROM sessions').get() as { c: number };
+    expect(count.c).toBe(2);
+  });
+
+  test('sourceExists returning false deletes a known-but-unemitted source (confirmed absent)', async () => {
+    const { db } = openStore(':memory:');
+    const ctx = opencodeCtx();
+
+    const present = opencodeLikeAdapter({
+      ids: ['opencode:current:ses_a', 'opencode:current:ses_gone'],
+    });
+    const first = await importAll({ adapters: [present], db, ctx });
+    expect(reportFor(first, 'opencode').imported).toBe(2);
+
+    const afterGone = opencodeLikeAdapter({
+      ids: ['opencode:current:ses_a'],
+      sourceExists: async (source) => source.sourceId !== 'opencode:current:ses_gone',
+    });
+    const second = await importAll({ adapters: [afterGone], db, ctx });
+    expect(reportFor(second, 'opencode').removed).toBe(1);
+    expect(
+      db.query("SELECT * FROM sessions WHERE id = 'opencode:current:ses_gone'").all().length,
+    ).toBe(0);
+    // ses_a survives (sourceExists true), so it is counted as skipped.
+    expect(reportFor(second, 'opencode').skipped).toBe(1);
   });
 
   test('an adapter whose discover() throws mid-stream keeps what was already persisted and sets error', async () => {
