@@ -60,6 +60,15 @@ its `skillName` field.
 
 ## Docs
 
+User documentation:
+
+- [docs/usage/getting-started.md](docs/usage/getting-started.md) — install and first import.
+- [docs/usage/how-to.md](docs/usage/how-to.md) — recipes for importing, exporting and testing.
+- [docs/usage/commands.md](docs/usage/commands.md) — `scout import` / `scout discover` reference.
+- [docs/usage/what-scout-knows.md](docs/usage/what-scout-knows.md) — what gets stored, privacy, harness coverage.
+
+Design and internals:
+
 - [docs/PRODUCT.md](docs/PRODUCT.md) — purpose, principles, scope.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the core/adapter contract, schema, import flow.
 - [docs/DECISIONS.md](docs/DECISIONS.md) — numbered decisions (`D<n>`).
