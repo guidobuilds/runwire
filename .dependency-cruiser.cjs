@@ -34,15 +34,26 @@ module.exports = {
     {
       name: 'cli-imports-core-and-adapters',
       comment:
-        'packages/cli is the composition root (D76): it may import @scout/core and any ' +
-        "adapter-* package, plus its own files. The `|cli` alternative in `to.path`'s negative " +
-        "lookahead self-exempts the cli's own intra-package imports (e.g. index.ts → " +
+        'packages/cli is the composition root (D76): it may import @scout/core, any ' +
+        'adapter-* package, @scout/server (the transport it dispatches to), plus its own ' +
+        "files. The `|server|cli` alternatives in `to.path`'s negative " +
+        "lookahead self-exempt the cli's own intra-package imports (e.g. index.ts → " +
         'commands/import.ts) - without it, every import the cli makes of its own sibling files ' +
         'is a false-positive violation, the same bug adapter-imports-core-only had before its ' +
         'own self-exemption.',
       severity: 'error',
       from: { path: '^packages/cli/' },
-      to: { path: '^packages/(?!core|adapter-|cli)' },
+      to: { path: '^packages/(?!core|adapter-|server|cli)' },
+    },
+    {
+      name: 'server-imports-core-only',
+      comment:
+        'packages/server is the API transport (D66 "api layer"): it may import @scout/core ' +
+        'and its own files, nothing else. The `$1` back-reference in `to.pathNot` self-exempts ' +
+        "the server's own intra-package imports (e.g. index.ts → createServer.ts).",
+      severity: 'error',
+      from: { path: '^packages/(server)/' },
+      to: { path: '^packages/(?!core|server)', pathNot: '^packages/$1/' },
     },
   ],
   options: {

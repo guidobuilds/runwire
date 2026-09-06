@@ -194,6 +194,9 @@ function ensureColumn(db: Database, table: string, column: string, type: string)
 export function migrate(db: Database): void {
   db.exec(DDL);
   ensureColumn(db, 'steps', 'skill_name', 'TEXT');
+  // A legacy `steps` table (pre-`model`) has no `model` column; ensure it exists
+  // before the `idx_steps_session_kind_model` index below is created. Idempotent.
+  ensureColumn(db, 'steps', 'model', 'TEXT');
   // Source-identity split (design §2.4): additive nullable columns + backfill
   // + UNIQUE index on the effective source id. The backfill runs BEFORE the
   // UNIQUE INDEX so no NULL source_id exists at index time. A second
@@ -205,4 +208,16 @@ export function migrate(db: Database): void {
     'UPDATE sessions SET source_id = source_path, source_locator = source_path WHERE source_id IS NULL',
   );
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_source_id ON sessions(source_id)');
+  // /sessions filter + pagination indexes (sessions-api-query T2 / D-11). The
+  // partial index speeds the root query's started_at filter + the
+  // ORDER BY started_at DESC, id; the steps index speeds the model filter
+  // CTE's steps lookup. Idempotent (IF NOT EXISTS); no index is dropped as
+  // lateral cleanup (idx_steps_session_id is kept even though the new
+  // (session_id, kind, model) index makes it redundant).
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_sessions_root_started ON sessions(started_at, id) WHERE parent_id IS NULL',
+  );
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_steps_session_kind_model ON steps(session_id, kind, model)',
+  );
 }

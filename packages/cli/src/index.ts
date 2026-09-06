@@ -2,10 +2,12 @@ import { parseArgs } from 'node:util';
 import { adapters } from './adapters';
 import { runDiscover } from './commands/discover';
 import { runImport } from './commands/import';
+import { runServe } from './commands/serve';
 
 const USAGE = `Usage:
   scout import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles]
   scout discover --adapter <id> [--home <dir>] [--json] [--no-titles]
+  scout serve [--db <path>] [--host <host>] [--port <n>]
 
 Known adapters: ${adapters.map((a) => a.id).join(', ')}`;
 
@@ -78,6 +80,40 @@ async function main(argv: string[]): Promise<number> {
       json: values.json,
       titles: values.titles,
     });
+  }
+
+  if (subcommand === 'serve') {
+    let values: { db?: string; host?: string; port?: string };
+    try {
+      const parsed = parseArgs({
+        args: rest,
+        options: {
+          db: { type: 'string' },
+          host: { type: 'string' },
+          port: { type: 'string' },
+        },
+        strict: true,
+        allowPositionals: false,
+      });
+      values = {
+        db: parsed.values.db,
+        host: parsed.values.host,
+        port: parsed.values.port,
+      };
+      if (values.port !== undefined) {
+        const n = Number(values.port);
+        if (!Number.isInteger(n) || n < 0 || n > 65535) {
+          console.error('error: --port must be an integer between 0 and 65535');
+          console.error(USAGE);
+          return 2;
+        }
+      }
+    } catch (e) {
+      console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
+      console.error(USAGE);
+      return 2;
+    }
+    return runServe(values);
   }
 
   console.error(
