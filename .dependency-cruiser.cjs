@@ -55,6 +55,16 @@ module.exports = {
       from: { path: '^packages/(server)/' },
       to: { path: '^packages/(?!core|server)', pathNot: '^packages/$1/' },
     },
+    {
+      name: 'web-is-standalone-at-runtime',
+      comment:
+        'packages/web talks to @scout/server only over HTTP (fetch); it may use `import type` ' +
+        'from @scout/core for DTO shapes (invisible to this graph, see header note above) but ' +
+        'must have zero runtime repo imports.',
+      severity: 'error',
+      from: { path: '^packages/web' },
+      to: { path: '^packages/(?!web)' },
+    },
   ],
   options: {
     doNotFollow: { path: 'node_modules' },

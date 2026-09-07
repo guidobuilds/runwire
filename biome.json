@@ -36,6 +36,12 @@
     {
       "includes": ["packages/web/src/assets/harness-logos/**/*.svg"],
       "linter": { "enabled": false }
+    },
+    {
+      "includes": ["packages/web/src/components/ui/**", "packages/web/src/routeTree.gen.ts"],
+      "formatter": { "enabled": false },
+      "linter": { "enabled": false },
+      "assist": { "enabled": false }
     }
   ]
 }
