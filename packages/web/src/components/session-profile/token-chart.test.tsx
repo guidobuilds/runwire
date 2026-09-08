@@ -66,7 +66,7 @@ describe('TokenChart — field selection', () => {
   it('re-requests the timeline with the new field when the field prop changes', async () => {
     const requestedFields: (string | null)[] = [];
     server.use(
-      http.get('/session-profiles/:id', ({ request }) => {
+      http.get('/api/session-profiles/:id', ({ request }) => {
         const url = new URL(request.url);
         if (url.searchParams.get('view') !== 'timeline') return undefined;
         requestedFields.push(url.searchParams.get('field'));
@@ -90,7 +90,7 @@ describe('TokenChart — field selection', () => {
 describe('TokenChart — F-7 guard', () => {
   it('renders an error state instead of a chart when delta/cumulative length mismatches series.length', async () => {
     server.use(
-      http.get('/session-profiles/:id', ({ request }) => {
+      http.get('/api/session-profiles/:id', ({ request }) => {
         const url = new URL(request.url);
         if (url.searchParams.get('view') !== 'timeline') return undefined;
         return HttpResponse.json({
@@ -120,7 +120,7 @@ describe('TokenChart — F-7 guard', () => {
 describe('TokenChart — empty state', () => {
   it('shows "No timed calls in this tree" when there are no points', async () => {
     server.use(
-      http.get('/session-profiles/:id', ({ request }) => {
+      http.get('/api/session-profiles/:id', ({ request }) => {
         const url = new URL(request.url);
         if (url.searchParams.get('view') !== 'timeline') return undefined;
         return HttpResponse.json({
@@ -146,7 +146,7 @@ describe('TokenChart — error state', () => {
   it('shows Retry on failure and refetches on click', async () => {
     let calls = 0;
     server.use(
-      http.get('/session-profiles/:id', ({ request }) => {
+      http.get('/api/session-profiles/:id', ({ request }) => {
         const url = new URL(request.url);
         if (url.searchParams.get('view') !== 'timeline') return undefined;
         calls += 1;

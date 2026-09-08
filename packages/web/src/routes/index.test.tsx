@@ -12,7 +12,7 @@ import { routeTree } from '@/routeTree.gen';
 // sessions.index.test.tsx now.
 describe('index route (/ -> /sessions redirect)', () => {
   it('redirects to /sessions and renders the dashboard there', async () => {
-    server.use(http.get('/sessions', () => HttpResponse.json(mockPagedSessions)));
+    server.use(http.get('/api/sessions', () => HttpResponse.json(mockPagedSessions)));
 
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },

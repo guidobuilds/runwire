@@ -90,8 +90,8 @@ export const mockSessionDetail: ApiSessionDetail = {
 };
 
 export const handlers = [
-  http.get('/sessions', () => HttpResponse.json(mockPagedSessions)),
-  http.get('/sessions/:id', ({ params }) => {
+  http.get('/api/sessions', () => HttpResponse.json(mockPagedSessions)),
+  http.get('/api/sessions/:id', ({ params }) => {
     if (params.id !== mockSessionDetail.id) {
       return HttpResponse.json({ error: 'session not found' }, { status: 404 });
     }

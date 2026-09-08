@@ -15,19 +15,19 @@ function toSearchParams(query: ListSessionsQuery): string {
   return qs === '' ? '' : `?${qs}`;
 }
 
-/** `GET /sessions` — returns the paged root-session list. */
+/** `GET /api/sessions` — returns the paged root-session list. */
 export function fetchSessions(query: ListSessionsQuery = {}): Promise<PagedSessions> {
-  return apiFetch<PagedSessions>(`/sessions${toSearchParams(query)}`);
+  return apiFetch<PagedSessions>(`/api/sessions${toSearchParams(query)}`);
 }
 
 /**
- * `GET /sessions/{id}` — createServer.ts wraps the detail payload in a
+ * `GET /api/sessions/{id}` — createServer.ts wraps the detail payload in a
  * `{ session }` envelope (verified directly from the route handler, not
  * assumed from the DTO shape); this unwraps it before returning.
  */
 export async function fetchSession(id: string): Promise<ApiSessionDetail> {
   const { session } = await apiFetch<{ session: ApiSessionDetail }>(
-    `/sessions/${encodeURIComponent(id)}`,
+    `/api/sessions/${encodeURIComponent(id)}`,
   );
   return session;
 }

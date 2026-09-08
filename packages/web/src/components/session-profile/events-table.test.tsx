@@ -26,7 +26,7 @@ describe('EventsTable — request shape', () => {
   it('requests scope=tree, filter=signals, limit=50, offset=0 by default, via the real handlers', async () => {
     let capturedUrl: URL | undefined;
     server.use(
-      http.get('/session-profiles/:id', ({ request }) => {
+      http.get('/api/session-profiles/:id', ({ request }) => {
         capturedUrl = new URL(request.url);
         return HttpResponse.json({
           view: 'merged',
@@ -82,7 +82,7 @@ describe('EventsTable — loaded state', () => {
 describe('EventsTable — empty state', () => {
   it('shows a single "No events for this filter" row when items is empty', async () => {
     server.use(
-      http.get('/session-profiles/:id', () =>
+      http.get('/api/session-profiles/:id', () =>
         HttpResponse.json({
           view: 'merged',
           sessionId: PROFILE_ROOT_ID,
@@ -107,7 +107,7 @@ describe('EventsTable — error + retry', () => {
   it('shows an inline error and Retry, which recovers on success', async () => {
     let failNext = true;
     server.use(
-      http.get('/session-profiles/:id', () => {
+      http.get('/api/session-profiles/:id', () => {
         if (failNext) {
           failNext = false;
           return HttpResponse.json({ error: 'internal error' }, { status: 500 });

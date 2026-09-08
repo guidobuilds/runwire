@@ -16,12 +16,12 @@ export function sessionQueryOptions(id: string) {
   });
 }
 
-/** `GET /sessions` as a TanStack Query hook. */
+/** `GET /api/sessions` as a TanStack Query hook. */
 export function useSessions(query: ListSessionsQuery = {}) {
   return useQuery(sessionsQueryOptions(query));
 }
 
-/** `GET /sessions/{id}` as a TanStack Query hook. */
+/** `GET /api/sessions/{id}` as a TanStack Query hook. */
 export function useSession(id: string) {
   return useQuery(sessionQueryOptions(id));
 }

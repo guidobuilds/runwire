@@ -85,7 +85,7 @@ describe('session profile API', () => {
     vi.stubGlobal('fetch', fetch);
     await fetchSessionProfileSpawns('root/a%25', { scope: 'tree' });
     expect(fetch).toHaveBeenCalledWith(
-      '/session-profiles/root%2Fa%2525?view=spawns&scope=tree',
+      '/api/session-profiles/root%2Fa%2525?view=spawns&scope=tree',
       expect.any(Object),
     );
   });
@@ -111,7 +111,7 @@ describe('session profile API', () => {
     vi.stubGlobal('fetch', fetch);
     const result = await fetchSessionProfileSignals('root', { scope: 'tree' });
     expect(fetch).toHaveBeenCalledWith(
-      '/session-profiles/root?view=signals&scope=tree',
+      '/api/session-profiles/root?view=signals&scope=tree',
       expect.any(Object),
     );
     expect(result).toMatchObject({ view: 'signals', sessionId: 'root', modelChanges: 1 });
@@ -136,7 +136,7 @@ describe('session profile API', () => {
     vi.stubGlobal('fetch', fetch);
     const result = await fetchSessionProfileTimeline('root', { scope: 'tree', field: 'output' });
     expect(fetch).toHaveBeenCalledWith(
-      '/session-profiles/root?view=timeline&scope=tree&field=output',
+      '/api/session-profiles/root?view=timeline&scope=tree&field=output',
       expect.any(Object),
     );
     expect(result.points[0]).toMatchObject({ at: '2026-09-01T10:00:00.000Z', totalDelta: 50 });
@@ -167,7 +167,7 @@ describe('session profile API', () => {
       offset: 0,
     });
     expect(fetch).toHaveBeenCalledWith(
-      '/session-profiles/root?view=merged&scope=tree&filter=signals&limit=50&offset=0',
+      '/api/session-profiles/root?view=merged&scope=tree&filter=signals&limit=50&offset=0',
       expect.any(Object),
     );
     expect(result.items[0]).toMatchObject({ kind: 'compaction', trigger: 'auto' });
@@ -195,7 +195,7 @@ describe('session profile API', () => {
     vi.stubGlobal('fetch', fetch);
     await expect(fetchSessionProfileSignals('root/a%25')).rejects.toBeInstanceOf(ApiError);
     expect(fetch).toHaveBeenCalledWith(
-      '/session-profiles/root%2Fa%2525?view=signals',
+      '/api/session-profiles/root%2Fa%2525?view=signals',
       expect.any(Object),
     );
   });

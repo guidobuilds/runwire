@@ -33,7 +33,7 @@ function methodNotAllowed(): Response {
   return json({ error: 'method not allowed' }, 405, { allow: 'GET' });
 }
 
-/** The only query params accepted on `GET /sessions` (design D-3). */
+/** The only query params accepted on `GET /api/sessions` (design D-3). */
 const VALID_QUERY_PARAMS = new Set(['limit', 'offset', 'harness', 'startedAfter', 'model']);
 
 /** A strict 400 for any unknown, duplicate, or invalid query parameter (D-3/D-13). */
@@ -58,9 +58,19 @@ function parseIntegerParam(value: string, min: number, max: number): number | nu
  * lifecycle, no CORS headers. `Bun.serve`'s bind option is `hostname`, not
  * `host` — a bare `host` is silently ignored and would bind `0.0.0.0`,
  * breaking the loopback-only default (design D-G). Routes API paths first so a
- * future static/SPA fallback (design D-N / ADR-8) is a contained addition;
- * static serving is out of scope for this delivery.
+ * future static/SPA fallback (design D-N / ADR-8) is a contained addition.
+ *
+ * **API-only under `/api`.** Every endpoint is served exclusively under
+ * `/api/*`; the root `/` and the legacy `/sessions*` / `/session-profiles*`
+ * paths are intentionally NOT routed (they fall through to a 404) and there is
+ * no alias or redirect. The frontend (a separate Vite SPA in dev) owns `/` and
+ * its own `/sessions*` pages; the server never serves static files.
+ * Static serving is out of scope for this delivery.
  */
+const API_PREFIX = '/api';
+const SESSIONS_PREFIX = `${API_PREFIX}/sessions`;
+const SESSION_PROFILES_PREFIX = `${API_PREFIX}/session-profiles`;
+
 export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
   const { db, host, port } = opts;
   return Bun.serve({
@@ -68,15 +78,18 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
     port,
     fetch(req) {
       // Derive path from the URL, never `req.url` (the full absolute URL with
-      // origin + query), so `/sessions?x=1` does not brute-match `/sessions`.
+      // origin + query), so `/api/sessions?x=1` does not brute-match `/api/sessions`.
       const path = new URL(req.url).pathname;
       const method = req.method;
       try {
-        if (path === '/') {
+        if (path === API_PREFIX) {
           if (method !== 'GET') return methodNotAllowed();
-          return json({ service: 'scout', endpoints: ['/sessions', '/sessions/{id}'] }, 200);
+          return json(
+            { service: 'scout', endpoints: ['/api/sessions', '/api/sessions/{id}'] },
+            200,
+          );
         }
-        if (path === '/sessions') {
+        if (path === SESSIONS_PREFIX) {
           if (method !== 'GET') return methodNotAllowed();
           const params = new URL(req.url).searchParams;
 
@@ -129,13 +142,13 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
 
           return json(listSessions(db, query), 200);
         }
-        if (path.startsWith('/sessions/')) {
+        if (path.startsWith(`${SESSIONS_PREFIX}/`)) {
           if (method !== 'GET') return methodNotAllowed();
           // Whole-remainder id (design D-H): a literal `/` (or an encoded
           // `%2F`) stays part of the id, so Claude subagent ids work.
           let id: string;
           try {
-            id = decodeURIComponent(path.slice('/sessions/'.length));
+            id = decodeURIComponent(path.slice(`${SESSIONS_PREFIX}/`.length));
           } catch {
             return json({ error: 'invalid id' }, 400);
           }
@@ -143,13 +156,13 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
           if (session === null) return json({ error: 'session not found' }, 404);
           return json({ session }, 200);
         }
-        if (path.startsWith('/session-profiles/')) {
+        if (path.startsWith(`${SESSION_PROFILES_PREFIX}/`)) {
           if (method !== 'GET') return methodNotAllowed();
           let id: string;
           try {
             // IDs are opaque and may contain slashes or literal percent text.
             // Decode the complete remainder exactly once.
-            id = decodeURIComponent(path.slice('/session-profiles/'.length));
+            id = decodeURIComponent(path.slice(`${SESSION_PROFILES_PREFIX}/`.length));
           } catch {
             return json({ error: 'invalid id' }, 400);
           }

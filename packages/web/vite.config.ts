@@ -14,8 +14,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/session-profiles': 'http://127.0.0.1:8787',
-      '/sessions': 'http://127.0.0.1:8787',
+      // Single `/api` proxy to the API-only server, preserving the `/api/...`
+      // path exactly (no rewrite). The SPA (routes like `/sessions`, `/`) is
+      // served by Vite itself; only `/api/*` reaches @scout/server.
+      '/api': 'http://127.0.0.1:8787',
     },
   },
 });

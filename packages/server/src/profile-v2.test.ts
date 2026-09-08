@@ -143,10 +143,10 @@ function assertEventsMetadataOnly(json: unknown): void {
   expect(JSON.stringify(json)).not.toContain('"output"');
 }
 
-describe('GET /session-profiles/{id}?view=signals', () => {
+describe('GET /api/session-profiles/{id}?view=signals', () => {
   test('happy path: tree scope aggregates compactions/model-changes/mcp/skill', async () => {
     await withServer(async (base) => {
-      const { response, json } = await body(base, '/session-profiles/root?view=signals');
+      const { response, json } = await body(base, '/api/session-profiles/root?view=signals');
       expect(response.status).toBe(200);
       expect(json.view).toBe('signals');
       expect(json.scope).toBe('tree');
@@ -163,16 +163,16 @@ describe('GET /session-profiles/{id}?view=signals', () => {
 
   test('own vs tree scope differ', async () => {
     await withServer(async (base) => {
-      const own = await body(base, '/session-profiles/root?view=signals&scope=own');
+      const own = await body(base, '/api/session-profiles/root?view=signals&scope=own');
       expect(own.json.toolCalls).toEqual({ total: 4, mcp: 1 });
-      const tree = await body(base, '/session-profiles/root?view=signals&scope=tree');
+      const tree = await body(base, '/api/session-profiles/root?view=signals&scope=tree');
       expect(tree.json.toolCalls).toEqual({ total: 5, mcp: 1 });
     });
   });
 
   test('404 on missing root', async () => {
     await withServer(async (base) => {
-      const { response, json } = await body(base, '/session-profiles/missing?view=signals');
+      const { response, json } = await body(base, '/api/session-profiles/missing?view=signals');
       expect(response.status).toBe(404);
       expect(json).toEqual({ error: 'session not found' });
     });
@@ -188,7 +188,7 @@ describe('GET /session-profiles/{id}?view=signals', () => {
         ['?view=signals&scope=madeUp', 'scope'],
       ];
       for (const [query, parameter] of cases) {
-        const { response, json } = await body(base, `/session-profiles/root${query}`);
+        const { response, json } = await body(base, `/api/session-profiles/root${query}`);
         expect(response.status, query).toBe(400);
         expect(json).toEqual({ error: 'invalid query parameter', parameter });
       }
@@ -196,10 +196,10 @@ describe('GET /session-profiles/{id}?view=signals', () => {
   });
 });
 
-describe('GET /session-profiles/{id}?view=timeline', () => {
+describe('GET /api/session-profiles/{id}?view=timeline', () => {
   test('happy path: default field=output, tree-wide chronological series', async () => {
     await withServer(async (base) => {
-      const { response, json } = await body(base, '/session-profiles/root?view=timeline');
+      const { response, json } = await body(base, '/api/session-profiles/root?view=timeline');
       expect(response.status).toBe(200);
       expect(json.view).toBe('timeline');
       expect(json.scope).toBe('tree');
@@ -219,8 +219,11 @@ describe('GET /session-profiles/{id}?view=timeline', () => {
 
   test('field selection changes totals', async () => {
     await withServer(async (base) => {
-      const output = await body(base, '/session-profiles/root?view=timeline&field=output');
-      const uncached = await body(base, '/session-profiles/root?view=timeline&field=uncachedInput');
+      const output = await body(base, '/api/session-profiles/root?view=timeline&field=output');
+      const uncached = await body(
+        base,
+        '/api/session-profiles/root?view=timeline&field=uncachedInput',
+      );
       expect(output.json.points[0].totalDelta).toBe(10);
       expect(uncached.json.points[0].totalDelta).toBe(null);
     });
@@ -228,16 +231,16 @@ describe('GET /session-profiles/{id}?view=timeline', () => {
 
   test('own vs tree scope differ', async () => {
     await withServer(async (base) => {
-      const own = await body(base, '/session-profiles/root?view=timeline&scope=own');
+      const own = await body(base, '/api/session-profiles/root?view=timeline&scope=own');
       expect(own.json.points).toHaveLength(1);
-      const tree = await body(base, '/session-profiles/root?view=timeline&scope=tree');
+      const tree = await body(base, '/api/session-profiles/root?view=timeline&scope=tree');
       expect(tree.json.points).toHaveLength(2);
     });
   });
 
   test('404 on missing root', async () => {
     await withServer(async (base) => {
-      const { response, json } = await body(base, '/session-profiles/missing?view=timeline');
+      const { response, json } = await body(base, '/api/session-profiles/missing?view=timeline');
       expect(response.status).toBe(404);
       expect(json).toEqual({ error: 'session not found' });
     });
@@ -254,7 +257,7 @@ describe('GET /session-profiles/{id}?view=timeline', () => {
         ['?view=timeline&scope=own&scope=tree', 'scope'],
       ];
       for (const [query, parameter] of cases) {
-        const { response, json } = await body(base, `/session-profiles/root${query}`);
+        const { response, json } = await body(base, `/api/session-profiles/root${query}`);
         expect(response.status, query).toBe(400);
         expect(json).toEqual({ error: 'invalid query parameter', parameter });
       }
@@ -272,7 +275,7 @@ describe('GET /session-profiles/{id}?view=timeline', () => {
       ]) {
         const { response } = await body(
           base,
-          `/session-profiles/root?view=timeline&field=${field}`,
+          `/api/session-profiles/root?view=timeline&field=${field}`,
         );
         expect(response.status, field).toBe(200);
       }
@@ -280,10 +283,10 @@ describe('GET /session-profiles/{id}?view=timeline', () => {
   });
 });
 
-describe('GET /session-profiles/{id}?view=merged', () => {
+describe('GET /api/session-profiles/{id}?view=merged', () => {
   test('happy path: signals is the default filter, chronological merge across sessions', async () => {
     await withServer(async (base) => {
-      const { response, json } = await body(base, '/session-profiles/root?view=merged');
+      const { response, json } = await body(base, '/api/session-profiles/root?view=merged');
       expect(response.status).toBe(200);
       expect(json.view).toBe('merged');
       expect(json.scope).toBe('tree');
@@ -307,7 +310,7 @@ describe('GET /session-profiles/{id}?view=merged', () => {
 
   test('all filter merges chronologically across sessions with a null-at excluded and counted', async () => {
     await withServer(async (base) => {
-      const { json } = await body(base, '/session-profiles/root?view=merged&filter=all');
+      const { json } = await body(base, '/api/session-profiles/root?view=merged&filter=all');
       // root: 9 rows, root/child: 3 rows (1 with at IS NULL) => 11 timed + 1 excluded.
       expect(json.items).toHaveLength(11);
       expect(json.total).toBe(11);
@@ -337,12 +340,12 @@ describe('GET /session-profiles/{id}?view=merged', () => {
     await withServer(async (base) => {
       const page1 = await body(
         base,
-        '/session-profiles/root?view=merged&filter=all&limit=5&offset=0',
+        '/api/session-profiles/root?view=merged&filter=all&limit=5&offset=0',
       );
       expect(page1.json.items).toHaveLength(5);
       const page2 = await body(
         base,
-        '/session-profiles/root?view=merged&filter=all&limit=5&offset=5',
+        '/api/session-profiles/root?view=merged&filter=all&limit=5&offset=5',
       );
       expect(page2.json.items).toHaveLength(5);
       expect(page1.json.items[0].seq).not.toBe(page2.json.items[0].seq);
@@ -351,7 +354,7 @@ describe('GET /session-profiles/{id}?view=merged', () => {
 
   test('404 on missing root', async () => {
     await withServer(async (base) => {
-      const { response, json } = await body(base, '/session-profiles/missing?view=merged');
+      const { response, json } = await body(base, '/api/session-profiles/missing?view=merged');
       expect(response.status).toBe(404);
       expect(json).toEqual({ error: 'session not found' });
     });
@@ -374,7 +377,7 @@ describe('GET /session-profiles/{id}?view=merged', () => {
         ['?view=merged&offset=1.5', 'offset'],
       ];
       for (const [query, parameter] of cases) {
-        const { response, json } = await body(base, `/session-profiles/root${query}`);
+        const { response, json } = await body(base, `/api/session-profiles/root${query}`);
         expect(response.status, query).toBe(400);
         expect(json).toEqual({ error: 'invalid query parameter', parameter });
       }
@@ -384,8 +387,8 @@ describe('GET /session-profiles/{id}?view=merged', () => {
   test('accepts exact boundaries and every EventFilter enum', async () => {
     await withServer(async (base) => {
       for (const path of [
-        '/session-profiles/root?view=merged&limit=1&offset=9007199254740991',
-        '/session-profiles/root?view=merged&limit=200&offset=0',
+        '/api/session-profiles/root?view=merged&limit=1&offset=9007199254740991',
+        '/api/session-profiles/root?view=merged&limit=200&offset=0',
       ]) {
         expect((await body(base, path)).response.status, path).toBe(200);
       }
@@ -404,7 +407,7 @@ describe('GET /session-profiles/{id}?view=merged', () => {
       ]) {
         const { response } = await body(
           base,
-          `/session-profiles/root?view=merged&filter=${filter}`,
+          `/api/session-profiles/root?view=merged&filter=${filter}`,
         );
         expect(response.status, filter).toBe(200);
       }

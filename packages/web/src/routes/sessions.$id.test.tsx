@@ -23,14 +23,14 @@ function renderAt(path: string) {
   return { ...view, router, history };
 }
 
-/** Captures every request to the single `/session-profiles/:id` endpoint
+/** Captures every request to the single `/api/session-profiles/:id` endpoint
  * without intercepting the response: the resolver returns `undefined`, so
  * MSW falls through to the real composed handler, exercising the actual
  * shipped views. */
 function captureProfileRequests(): URL[] {
   const requests: URL[] = [];
   server.use(
-    http.get('/session-profiles/:id', ({ request }) => {
+    http.get('/api/session-profiles/:id', ({ request }) => {
       requests.push(new URL(request.url));
       return undefined;
     }),
@@ -95,7 +95,7 @@ describe('/sessions/$id route (session profile)', () => {
 
   it('paginates the events table to offset=50', async () => {
     server.use(
-      http.get('/session-profiles/:id', ({ request }) => {
+      http.get('/api/session-profiles/:id', ({ request }) => {
         const url = new URL(request.url);
         if (url.searchParams.get('view') !== 'merged') return undefined;
         const limit = Number(url.searchParams.get('limit') ?? '50');
@@ -182,7 +182,7 @@ describe('/sessions/$id route (session profile)', () => {
 
   it('shows "Session not found." for a 404 response, panels not mounted', async () => {
     server.use(
-      http.get('/sessions/:id', () =>
+      http.get('/api/sessions/:id', () =>
         HttpResponse.json({ error: 'session not found' }, { status: 404 }),
       ),
     );
@@ -195,7 +195,7 @@ describe('/sessions/$id route (session profile)', () => {
 
   it('round-trips a session id containing a literal slash', async () => {
     server.use(
-      http.get('/sessions/:id', ({ params }) => {
+      http.get('/api/sessions/:id', ({ params }) => {
         if (params.id !== SLASH_ID) {
           return HttpResponse.json({ error: 'session not found' }, { status: 404 });
         }

@@ -189,7 +189,7 @@ function installHandlers(
 ) {
   const spawnsFor = options.spawns ?? spawnsPage;
   server.use(
-    http.get('/session-profiles/:id', ({ request }) => {
+    http.get('/api/session-profiles/:id', ({ request }) => {
       const url = new URL(request.url);
       const view = url.searchParams.get('view');
       if (view === 'spawns') {
@@ -441,7 +441,7 @@ describe('AgentGraph — depth-2 and orphan rows (f4-t2 repair)', () => {
 
   function installDepthHandlers() {
     server.use(
-      http.get('/session-profiles/:id', ({ request }) => {
+      http.get('/api/session-profiles/:id', ({ request }) => {
         const url = new URL(request.url);
         const view = url.searchParams.get('view');
         if (view === 'spawns') return HttpResponse.json(depthSpawnsPage());
@@ -533,7 +533,7 @@ describe('AgentGraph — depth-2 and orphan rows (f4-t2 repair)', () => {
     const bToA = spawnEdge(CYCLE_B, CYCLE_A, 'linked', '2026-09-01T10:02:30.000Z');
     const items = [rootToA, aToB, bToA];
     server.use(
-      http.get('/session-profiles/:id', ({ request }) => {
+      http.get('/api/session-profiles/:id', ({ request }) => {
         const url = new URL(request.url);
         const view = url.searchParams.get('view');
         if (view === 'spawns') {
@@ -606,7 +606,7 @@ describe('AgentGraph — onNodeCount (f5-t1 repair)', () => {
       spawnEdge(D_CHILD, D_GRANDCHILD, 'linked', '2026-09-01T10:07:30.000Z'),
     ];
     server.use(
-      http.get('/session-profiles/:id', ({ request }) => {
+      http.get('/api/session-profiles/:id', ({ request }) => {
         const url = new URL(request.url);
         const view = url.searchParams.get('view');
         if (view === 'spawns') {
@@ -744,7 +744,7 @@ describe('AgentGraph — scale (F-11)', () => {
 
   it('renders 25 rows with no NaN in the SVG and a bounded, scrollable height', async () => {
     server.use(
-      http.get('/session-profiles/:id', ({ request }) => {
+      http.get('/api/session-profiles/:id', ({ request }) => {
         const url = new URL(request.url);
         const view = url.searchParams.get('view');
         if (view === 'spawns') return HttpResponse.json(scaleSpawnsPage());

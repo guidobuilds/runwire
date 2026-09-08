@@ -68,12 +68,12 @@ Output:
 - **stderr** — one line: `scout serve listening on http://<host>:<port>`. stdout stays clean. The process runs
   until SIGINT/SIGTERM.
 
-### `GET /sessions`
+### `GET /api/sessions`
 
 List root sessions with optional filters and offset pagination:
 
 ```text
-GET /sessions?limit=<n>&offset=<n>&harness=<id>&startedAfter=<ISO-8601>&model=<exact-string>
+GET /api/sessions?limit=<n>&offset=<n>&harness=<id>&startedAfter=<ISO-8601>&model=<exact-string>
 ```
 
 | Param | Type / default | Meaning |
@@ -97,7 +97,10 @@ Response:
 - Any **unknown**, **duplicate** (`?limit=10&limit=20`), or **invalid** query parameter returns `400` with
   `{ "error": "invalid query parameter", "parameter": "<name>" }`.
 
-`GET /sessions/{id}` is unchanged; a query string there is ignored.
+`GET /api/sessions/{id}` is unchanged; a query string there is ignored.
+
+All scout API routes are served under `/api`; the legacy un-prefixed `/sessions*`
+and `/` paths are not exposed by the server.
 
 ## Shared guarantees
 

@@ -27,7 +27,7 @@ export type TimelineRequest = TimelineQuery;
 export type MergedEventsRequest = MergedEventsQuery;
 
 function path(id: string): string {
-  return `/session-profiles/${encodeURIComponent(id)}`;
+  return `/api/session-profiles/${encodeURIComponent(id)}`;
 }
 
 function search(values: Record<string, string | number | undefined>): string {

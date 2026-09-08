@@ -16,7 +16,7 @@ import type {
   SessionProfileTimeline,
 } from '@/lib/api/session-profile';
 
-/** Shared metadata-only profile fixtures for `/session-profiles/{id}`. The ids
+/** Shared metadata-only profile fixtures for `/api/session-profiles/{id}`. The ids
  * deliberately match `mockSessionSummary`/`mockChildSummary` in `handlers.ts`
  * so the composed route renders one coherent session. */
 
@@ -261,11 +261,11 @@ function isEventFilter(value: string | null): value is EventFilter {
   return MERGED_EVENT_FILTERS.includes(value as EventFilter);
 }
 
-/** MSW handlers for `/session-profiles/:id`. Reads the single-endpoint `view`
+/** MSW handlers for `/api/session-profiles/:id`. Reads the single-endpoint `view`
  * discriminator and every strict parser parameter so the composed route and the
  * leaf components exercise the same query surface the real transport exposes. */
 export const sessionProfileHandlers = [
-  http.get('/session-profiles/:id', ({ request }) => {
+  http.get('/api/session-profiles/:id', ({ request }) => {
     const url = new URL(request.url);
     const view = url.searchParams.get('view');
     const scopeParam = url.searchParams.get('scope');

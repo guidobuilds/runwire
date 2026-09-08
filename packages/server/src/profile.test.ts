@@ -101,10 +101,10 @@ function expectJson(actual: unknown, expected: unknown): void {
   expect(actual).toEqual(expected);
 }
 
-describe('GET /session-profiles/{id}', () => {
+describe('GET /api/session-profiles/{id}', () => {
   test('dispatches spawns/signals/timeline/merged, returning metadata-only allowlisted keys', async () => {
     await withServer(async (base) => {
-      const spawns = await body(base, '/session-profiles/root?view=spawns');
+      const spawns = await body(base, '/api/session-profiles/root?view=spawns');
       expect(spawns.response.status).toBe(200);
       expect(spawns.response.headers.get('access-control-allow-origin')).toBeNull();
       expect(spawns.json.view).toBe('spawns');
@@ -113,17 +113,17 @@ describe('GET /session-profiles/{id}', () => {
       expect(JSON.stringify(spawns.json)).not.toContain('SECRET');
       expect(JSON.stringify(spawns.json)).not.toContain('/private/');
 
-      const signals = await body(base, '/session-profiles/root?view=signals');
+      const signals = await body(base, '/api/session-profiles/root?view=signals');
       expect(signals.response.status).toBe(200);
       expect(signals.json.view).toBe('signals');
       expect(signals.json.scope).toBe('tree');
 
-      const timeline = await body(base, '/session-profiles/root?view=timeline');
+      const timeline = await body(base, '/api/session-profiles/root?view=timeline');
       expect(timeline.response.status).toBe(200);
       expect(timeline.json.view).toBe('timeline');
       expect(timeline.json.field).toBe('output');
 
-      const merged = await body(base, '/session-profiles/root?view=merged');
+      const merged = await body(base, '/api/session-profiles/root?view=merged');
       expect(merged.response.status).toBe(200);
       expect(merged.json.view).toBe('merged');
       expect(merged.json.filter).toBe('signals');
@@ -132,7 +132,7 @@ describe('GET /session-profiles/{id}', () => {
 
   test('own scope excludes descendants without changing child spawn context', async () => {
     await withServer(async (base) => {
-      const spawns = await body(base, '/session-profiles/root?view=spawns&scope=own');
+      const spawns = await body(base, '/api/session-profiles/root?view=spawns&scope=own');
       expect(spawns.json.nodes.map((node: { id: string }) => node.id)).toEqual(['root']);
       expect(spawns.json.items[0].child.id).toBe('root/child');
       expect(spawns.json.items[0].childInScope).toBe(false);
@@ -141,16 +141,18 @@ describe('GET /session-profiles/{id}', () => {
 
   test('treats the whole remainder as the id and decodes it exactly once', async () => {
     await withServer(async (base) => {
-      expect((await body(base, '/session-profiles/root%2Fchild?view=spawns')).json.sessionId).toBe(
-        'root/child',
-      );
       expect(
-        (await body(base, '/session-profiles/root%252Fchild?view=spawns')).json.sessionId,
+        (await body(base, '/api/session-profiles/root%2Fchild?view=spawns')).json.sessionId,
+      ).toBe('root/child');
+      expect(
+        (await body(base, '/api/session-profiles/root%252Fchild?view=spawns')).json.sessionId,
       ).toBe('root%2Fchild');
-      expect((await body(base, '/session-profiles/%41?view=spawns')).json.sessionId).toBe('A');
-      expect((await body(base, '/session-profiles/%2541?view=spawns')).json.sessionId).toBe('%41');
+      expect((await body(base, '/api/session-profiles/%41?view=spawns')).json.sessionId).toBe('A');
+      expect((await body(base, '/api/session-profiles/%2541?view=spawns')).json.sessionId).toBe(
+        '%41',
+      );
 
-      const suffix = await body(base, '/session-profiles/root/spawns?view=spawns');
+      const suffix = await body(base, '/api/session-profiles/root/spawns?view=spawns');
       expect(suffix.response.status).toBe(404);
       expectJson(suffix.json, { error: 'session not found' });
     });
@@ -158,36 +160,40 @@ describe('GET /session-profiles/{id}', () => {
 
   test('returns exact errors for invalid ids, misses, methods and internal failures', async () => {
     await withServer(async (base, db) => {
-      const malformed = await body(base, '/session-profiles/%E0%A4%A');
+      const malformed = await body(base, '/api/session-profiles/%E0%A4%A');
       expect(malformed.response.status).toBe(400);
       expectJson(malformed.json, { error: 'invalid id' });
-      const empty = await body(base, '/session-profiles/');
+      const empty = await body(base, '/api/session-profiles/');
       expect(empty.response.status).toBe(400);
       expectJson(empty.json, { error: 'invalid id' });
-      const missing = await body(base, '/session-profiles/missing?view=spawns');
+      const missing = await body(base, '/api/session-profiles/missing?view=spawns');
       expect(missing.response.status).toBe(404);
       expectJson(missing.json, { error: 'session not found' });
 
-      const method = await fetch(`${base}/session-profiles/root?view=spawns`, { method: 'POST' });
+      const method = await fetch(`${base}/api/session-profiles/root?view=spawns`, {
+        method: 'POST',
+      });
       expect(method.status).toBe(405);
       expect(method.headers.get('allow')).toBe('GET');
       expect(method.headers.get('access-control-allow-origin')).toBeNull();
       expect(await method.json()).toEqual({ error: 'method not allowed' });
 
       db.close();
-      const failed = await body(base, '/session-profiles/root?view=spawns');
+      const failed = await body(base, '/api/session-profiles/root?view=spawns');
       expect(failed.response.status).toBe(500);
       expectJson(failed.json, { error: 'internal error' });
       expect(Object.keys(failed.json)).toEqual(['error']);
     });
   });
 
-  test('preserves both existing sessions endpoints', async () => {
+  test('/api exposes both existing sessions endpoints', async () => {
     await withServer(async (base) => {
-      expect((await body(base, '/sessions')).response.status).toBe(200);
-      const child = await body(base, '/sessions/root/child?ignored=still-compatible');
+      expect((await body(base, '/api/sessions')).response.status).toBe(200);
+      const child = await body(base, '/api/sessions/root/child?ignored=still-compatible');
       expect(child.response.status).toBe(200);
       expect(child.json.session.id).toBe('root/child');
+      // The legacy un-prefixed path must not expose the API.
+      expect((await body(base, '/sessions')).response.status).toBe(404);
     });
   });
 });
@@ -218,7 +224,7 @@ describe('session profile query strictness', () => {
         ['?view=merged&limit=201', 'limit'],
       ];
       for (const [query, parameter] of cases) {
-        const result = await body(base, `/session-profiles/root${query}`);
+        const result = await body(base, `/api/session-profiles/root${query}`);
         expect(result.response.status, query).toBe(400);
         expectJson(result.json, { error: 'invalid query parameter', parameter });
       }
@@ -228,10 +234,10 @@ describe('session profile query strictness', () => {
   test('accepts exact boundaries and every view-specific enum', async () => {
     await withServer(async (base) => {
       for (const path of [
-        '/session-profiles/root?view=spawns&limit=1&offset=9007199254740991',
-        '/session-profiles/root?view=spawns&limit=200&offset=0',
-        '/session-profiles/root?view=timeline&field=reasoningOutput',
-        '/session-profiles/root?view=merged&filter=all&limit=200',
+        '/api/session-profiles/root?view=spawns&limit=1&offset=9007199254740991',
+        '/api/session-profiles/root?view=spawns&limit=200&offset=0',
+        '/api/session-profiles/root?view=timeline&field=reasoningOutput',
+        '/api/session-profiles/root?view=merged&filter=all&limit=200',
       ]) {
         expect((await body(base, path)).response.status, path).toBe(200);
       }
@@ -249,7 +255,8 @@ describe('session profile query strictness', () => {
         'error',
       ]) {
         expect(
-          (await body(base, `/session-profiles/root?view=merged&filter=${filter}`)).response.status,
+          (await body(base, `/api/session-profiles/root?view=merged&filter=${filter}`)).response
+            .status,
         ).toBe(200);
       }
     });

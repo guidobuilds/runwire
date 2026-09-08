@@ -25,7 +25,7 @@ function renderDashboard() {
 
 describe('/sessions route (sessions dashboard)', () => {
   it('renders real session content and computed totals from useSessions()', async () => {
-    server.use(http.get('/sessions', () => HttpResponse.json(mockPagedSessionsMulti)));
+    server.use(http.get('/api/sessions', () => HttpResponse.json(mockPagedSessionsMulti)));
 
     renderDashboard();
 
@@ -69,7 +69,7 @@ describe('/sessions route (sessions dashboard)', () => {
     // Hold the request pending indefinitely so the loading state is
     // deterministic instead of racing the mocked fetch's own resolution.
     server.use(
-      http.get('/sessions', async () => {
+      http.get('/api/sessions', async () => {
         await delay('infinite');
         return HttpResponse.json(mockPagedSessionsMulti);
       }),
@@ -81,7 +81,9 @@ describe('/sessions route (sessions dashboard)', () => {
 
   it('shows an error state when the sessions request fails', async () => {
     server.use(
-      http.get('/sessions', () => HttpResponse.json({ error: 'internal error' }, { status: 500 })),
+      http.get('/api/sessions', () =>
+        HttpResponse.json({ error: 'internal error' }, { status: 500 }),
+      ),
     );
 
     renderDashboard();
@@ -92,7 +94,7 @@ describe('/sessions route (sessions dashboard)', () => {
 
 describe('shared sidebar chrome (f6)', () => {
   it('highlights the active Sessions nav item and shows inert Projects/Harnesses entries', async () => {
-    server.use(http.get('/sessions', () => HttpResponse.json(mockPagedSessionsMulti)));
+    server.use(http.get('/api/sessions', () => HttpResponse.json(mockPagedSessionsMulti)));
 
     renderDashboard();
     await screen.findByText(mockSessionSummary2.name);
@@ -108,7 +110,7 @@ describe('shared sidebar chrome (f6)', () => {
   });
 
   it('has no Quick Create, mail, Search, or user-account chrome', async () => {
-    server.use(http.get('/sessions', () => HttpResponse.json(mockPagedSessionsMulti)));
+    server.use(http.get('/api/sessions', () => HttpResponse.json(mockPagedSessionsMulti)));
 
     renderDashboard();
     await screen.findByText(mockSessionSummary2.name);

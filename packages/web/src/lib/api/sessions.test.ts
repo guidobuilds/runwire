@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mockChildSummary, mockSessionDetail, mockSessionSummary } from '@/mocks/handlers';
 import { fetchSession, fetchSessions } from './sessions';
 
@@ -26,5 +26,27 @@ describe('fetchSession', () => {
       status: 404,
       error: 'session not found',
     });
+  });
+});
+
+describe('session API URLs are /api-prefixed', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('requests GET /api/sessions and GET /api/sessions/{id} with the id encoded exactly once', async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal('fetch', fetch);
+
+    await fetchSessions({ limit: 10 });
+    expect(fetch.mock.calls[0]?.[0]).toBe('/api/sessions?limit=10');
+
+    fetch.mockResolvedValue(
+      new Response(JSON.stringify({ session: { id: 'x' } }), { status: 200 }),
+    );
+    await fetchSession('a/b%25');
+    expect(fetch.mock.calls[1]?.[0]).toBe('/api/sessions/a%2Fb%2525');
   });
 });

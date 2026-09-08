@@ -2,7 +2,8 @@
 
 The session profile is the `/sessions/{id}` page: answers **what did my
 harness do here that cost me context or time?** for a single session and its
-complete tree. It reads the independent `/session-profiles/{id}` resource and
+complete tree. It reads the independent `/api/session-profiles/{id}` resource
+(every scout API route is served under `/api/*`) and
 composes, in order: header → agent graph (git-graph, one wall-clock line per
 agent, branches at spawn time) → token chart (tree-wide cumulative, one line
 per model) → merged events table → signals accordion (collapsed).
@@ -14,9 +15,11 @@ profile.
 
 ---
 
-## Resource: `GET /session-profiles/{id}`
+## Resource: `GET /api/session-profiles/{id}`
 
-- The whole path remainder after `/session-profiles/` is the opaque session id,
+- Every scout API route is served **exclusively under `/api`**; the legacy
+  un-prefixed `/session-profiles*` / `/sessions*` and `/` are not exposed.
+- The whole path remainder after `/api/session-profiles/` is the opaque session id,
   decoded **exactly once** (a literal `/` or `%2F` stays part of the id).
 - A required `view` discriminator selects the projection:
   - `view=spawns` → agent relationship evidence (causal status, orphan count)

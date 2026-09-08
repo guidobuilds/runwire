@@ -1,6 +1,7 @@
-// Same-origin fetch wrapper for the scout HTTP API. Empty base URL: works
-// unchanged under the dev proxy (vite.config.ts server.proxy) and under a
-// future same-origin production static hosting setup (plan.md decision #9).
+// Same-origin fetch wrapper for the scout HTTP API. Every URL is `/api/...`
+// (api-prefix). Empty base URL: works unchanged under the dev proxy
+// (vite.config.ts server.proxy forwards `/api` to @scout/server) and under a
+// future same-origin production hosting setup (plan.md decision #9).
 
 /** Shape of every non-2xx JSON body returned by @scout/server (createServer.ts). */
 export type ApiErrorBody = {
