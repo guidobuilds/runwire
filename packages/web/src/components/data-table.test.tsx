@@ -1,5 +1,6 @@
 import type { ApiSessionSummary } from '@scout/core';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { DataTable } from '@/components/data-table';
 
@@ -16,7 +17,7 @@ const sessionA: ApiSessionSummary = {
   name: 'Session A',
   title: 'Session A',
   parentId: null,
-  harness: { id: 'h', displayName: 'H', adapterVersion: '1' },
+  harness: { id: 'opencode', displayName: 'OpenCode', adapterVersion: '1' },
   project: null,
   depth: 0,
   relation: null,
@@ -60,5 +61,17 @@ describe('DataTable prop-sync', () => {
 
     expect(screen.queryByText('Session B')).toBeInTheDocument();
     expect(screen.queryByText('Session A')).not.toBeInTheDocument();
+  });
+});
+
+describe('DataTable harness identity', () => {
+  it('renders only the SVG icon and reveals the harness name on hover', async () => {
+    const { container } = render(<DataTable data={[sessionA]} />);
+
+    expect(container.querySelector('img[data-harness-icon="opencode"]')).not.toBeNull();
+    expect(screen.queryByText('OpenCode')).not.toBeInTheDocument();
+
+    await userEvent.hover(screen.getByLabelText('OpenCode'));
+    await waitFor(() => expect(screen.getByText('OpenCode')).toBeInTheDocument());
   });
 });

@@ -135,6 +135,20 @@ describe('Header — project field', () => {
   });
 });
 
+describe('Header — harness identity', () => {
+  it('renders only the SVG icon and reveals the harness identity on hover', async () => {
+    const { container } = await renderHeader(detail());
+
+    expect(container.querySelector('img[data-harness-icon="claude-code"]')).not.toBeNull();
+    expect(screen.queryByText('Claude Code (claude-code)')).not.toBeInTheDocument();
+
+    await userEvent.hover(screen.getByLabelText('Claude Code (claude-code)'));
+    await waitFor(() => {
+      expect(screen.getByText('Claude Code (claude-code)')).toBeInTheDocument();
+    });
+  });
+});
+
 describe('Header — token field stacking rule', () => {
   it('renders a single figure per field when there are no children', async () => {
     await renderHeader(detail({ children: [] }));

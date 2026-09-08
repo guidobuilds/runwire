@@ -1,5 +1,7 @@
 import type { ApiSessionDetail, ApiSessionSummary } from '@scout/core';
 import { Link } from '@tanstack/react-router';
+import type { ReactNode } from 'react';
+import { HarnessIdentity } from '@/components/harness-identity';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -42,7 +44,15 @@ function SessionRefLink({ session }: { session: ApiSessionSummary }) {
 
 /** `hint` (when given) is shown on hover — used for the project's repo/path,
  * which is kept out of the always-visible line to keep it to the plain name. */
-function DefinitionField({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function DefinitionField({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: ReactNode;
+  hint?: string;
+}) {
   return (
     <div className="flex flex-col gap-1">
       <dt className="text-muted-foreground text-xs">{label}</dt>
@@ -113,7 +123,7 @@ export function Header({ session }: HeaderProps) {
         <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <DefinitionField
             label="Harness"
-            value={`${session.harness.displayName} (${session.harness.id})`}
+            value={<HarnessIdentity harness={session.harness} showId />}
           />
           <DefinitionField
             hint={session.project?.key}

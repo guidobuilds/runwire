@@ -48,6 +48,7 @@ import {
   PlusIcon,
 } from 'lucide-react';
 import * as React from 'react';
+import { HarnessIdentity } from '@/components/harness-identity';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -202,11 +203,7 @@ const columns = columnHelper.columns([
   columnHelper.accessor((row) => row.harness.displayName, {
     id: 'harness',
     header: 'Harness',
-    cell: ({ getValue }) => (
-      <Badge variant="outline" className="px-1.5 text-muted-foreground">
-        {getValue()}
-      </Badge>
-    ),
+    cell: ({ row }) => <HarnessIdentity harness={row.original.harness} />,
   }),
   columnHelper.accessor('startedAt', {
     id: 'startedAt',
@@ -513,7 +510,7 @@ export function DataTable({ data: initialData }: { data: ApiSessionSummary[] }) 
   );
 }
 
-function SummaryField({ label, value }: { label: string; value: string }) {
+function SummaryField({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
       <span className="text-muted-foreground">{label}</span>
@@ -543,7 +540,7 @@ function TableCellViewer({ item }: { item: ApiSessionSummary }) {
         </DrawerHeader>
         <div className="flex flex-col gap-4 overflow-y-auto px-4 text-sm">
           <div className="grid grid-cols-2 gap-4">
-            <SummaryField label="Harness" value={item.harness.displayName} />
+            <SummaryField label="Harness" value={<HarnessIdentity harness={item.harness} />} />
             <SummaryField label="Project" value={item.project?.name ?? '—'} />
             <SummaryField label="Started" value={formatDateTime(item.startedAt)} />
             <SummaryField label="Ended" value={formatDateTime(item.endedAt)} />
