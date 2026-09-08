@@ -7,7 +7,8 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { Header } from './header';
 
@@ -106,6 +107,31 @@ describe('Header — privacy rule', () => {
   it('hides the title when it is null', async () => {
     await renderHeader(detail({ title: null }));
     expect(screen.getAllByText(baseSummary.name)).toHaveLength(1);
+  });
+});
+
+describe('Header — project field', () => {
+  it('shows the project name on the line and keeps the key as a hover hint', async () => {
+    await renderHeader(detail({ project: { key: 'github.com/acme/widgets', name: 'widgets' } }));
+    expect(screen.getByText('widgets')).toBeInTheDocument();
+    // The key is not rendered inline next to the name.
+    expect(screen.queryByText(/github\.com\/acme\/widgets/)).not.toBeInTheDocument();
+    // It is wired to the tooltip trigger for hover.
+    expect(screen.getByText('widgets').closest('[data-slot="tooltip-trigger"]')).not.toBeNull();
+  });
+
+  it('reveals the key in a tooltip on hover', async () => {
+    await renderHeader(detail({ project: { key: 'github.com/acme/widgets', name: 'widgets' } }));
+    await userEvent.hover(screen.getByText('widgets'));
+    await waitFor(() => {
+      expect(screen.getByText('github.com/acme/widgets')).toBeInTheDocument();
+    });
+  });
+
+  it('renders "no project" plainly when there is none', async () => {
+    await renderHeader(detail({ project: null }));
+    expect(screen.getByText('no project')).toBeInTheDocument();
+    expect(screen.getByText('no project').closest('[data-slot="tooltip-trigger"]')).toBeNull();
   });
 });
 

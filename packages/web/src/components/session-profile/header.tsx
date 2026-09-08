@@ -2,6 +2,7 @@ import type { ApiSessionDetail, ApiSessionSummary } from '@scout/core';
 import { Link } from '@tanstack/react-router';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   FIELD_LABELS,
   formatCompact,
@@ -39,11 +40,28 @@ function SessionRefLink({ session }: { session: ApiSessionSummary }) {
   );
 }
 
-function DefinitionField({ label, value }: { label: string; value: string }) {
+/** `hint` (when given) is shown on hover — used for the project's repo/path,
+ * which is kept out of the always-visible line to keep it to the plain name. */
+function DefinitionField({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="flex flex-col gap-1">
       <dt className="text-muted-foreground text-xs">{label}</dt>
-      <dd className="font-medium text-sm">{value}</dd>
+      <dd className="font-medium text-sm">
+        {hint ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span className="cursor-help underline decoration-dotted underline-offset-4" />
+              }
+            >
+              {value}
+            </TooltipTrigger>
+            <TooltipContent>{hint}</TooltipContent>
+          </Tooltip>
+        ) : (
+          value
+        )}
+      </dd>
     </div>
   );
 }
@@ -98,10 +116,9 @@ export function Header({ session }: HeaderProps) {
             value={`${session.harness.displayName} (${session.harness.id})`}
           />
           <DefinitionField
+            hint={session.project?.key}
             label="Project"
-            value={
-              session.project ? `${session.project.name} (${session.project.key})` : 'no project'
-            }
+            value={session.project ? session.project.name : 'no project'}
           />
           <DefinitionField label="Started" value={formatDateTime(session.startedAt)} />
           <DefinitionField label="Ended" value={formatDateTime(session.endedAt)} />
