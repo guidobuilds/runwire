@@ -23,18 +23,19 @@ function renderAt(path: string) {
   return { ...view, router, history };
 }
 
-/** Captures every request to the single `/api/session-profiles/:id` endpoint
- * without intercepting the response: the resolver returns `undefined`, so
- * MSW falls through to the real composed handler, exercising the actual
- * shipped views. */
+/** Captures every request to the distinct profile endpoints without
+ * intercepting the response: the resolver returns `undefined`, so MSW falls
+ * through to the real composed handlers, exercising the shipped views. */
 function captureProfileRequests(): URL[] {
   const requests: URL[] = [];
-  server.use(
-    http.get('/api/session-profiles/:id', ({ request }) => {
-      requests.push(new URL(request.url));
-      return undefined;
-    }),
-  );
+  for (const endpoint of ['spawns', 'signals', 'timeline', 'events'] as const) {
+    server.use(
+      http.get(`/api/sessions/:id/profile/${endpoint}`, ({ request }) => {
+        requests.push(new URL(request.url));
+        return undefined;
+      }),
+    );
+  }
   return requests;
 }
 
@@ -71,33 +72,47 @@ describe('/sessions/$id route (session profile)', () => {
 
     await screen.findByText('Harness signals');
 
-    const timelineReq = requests.find((url) => url.searchParams.get('view') === 'timeline');
+    const timelineReq = requests.find((url) => url.pathname.endsWith('/profile/timeline'));
     expect(timelineReq?.searchParams.get('field')).toBe('output');
 
-    const mergedReqs = requests.filter((url) => url.searchParams.get('view') === 'merged');
+    const mergedReqs = requests.filter((url) => url.pathname.endsWith('/profile/events'));
     const tableReq = mergedReqs.find((url) => url.searchParams.get('limit') === '50');
     expect(tableReq?.searchParams.get('filter')).toBe('signals');
     expect(tableReq?.searchParams.get('offset')).toBe('0');
   });
 
-  it('changing the token field updates the URL search', async () => {
+  it('changing the token field leaves the URL stable and re-fetches only timeline', async () => {
     const user = userEvent.setup();
+    const requests = captureProfileRequests();
     const { router } = renderAt(`/sessions/${mockSessionDetail.id}`);
     await screen.findByText('Harness signals');
+    const before = router.state.location.href;
+    const countBefore = requests.length;
 
     await user.click(screen.getByRole('combobox', { name: 'Token field' }));
     await user.click(await screen.findByRole('option', { name: 'Cached input' }));
 
     await waitFor(() => {
-      expect(router.state.location.search.field).toBe('cachedInput');
+      expect(
+        requests
+          .slice(countBefore)
+          .some(
+            (url) =>
+              url.pathname.endsWith('/profile/timeline') &&
+              url.searchParams.get('field') === 'cachedInput',
+          ),
+      ).toBe(true);
     });
+    expect(router.state.location.href).toBe(before);
+    expect(
+      requests.slice(countBefore).filter((url) => !url.pathname.endsWith('/profile/timeline')),
+    ).toEqual([]);
   });
 
   it('paginates the events table to offset=50', async () => {
     server.use(
-      http.get('/api/session-profiles/:id', ({ request }) => {
+      http.get('/api/sessions/:id/profile/events', ({ request }) => {
         const url = new URL(request.url);
-        if (url.searchParams.get('view') !== 'merged') return undefined;
         const limit = Number(url.searchParams.get('limit') ?? '50');
         const offset = Number(url.searchParams.get('offset') ?? '0');
         return HttpResponse.json({
@@ -120,37 +135,40 @@ describe('/sessions/$id route (session profile)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Go to next page' }));
 
     await waitFor(() => {
-      const mergedReqs = requests.filter((url) => url.searchParams.get('view') === 'merged');
+      const mergedReqs = requests.filter((url) => url.pathname.endsWith('/profile/events'));
       expect(mergedReqs.some((url) => url.searchParams.get('offset') === '50')).toBe(true);
     });
   });
 
-  // Regression coverage for verification.md#f5 F-12: the events table's
-  // filter Select fires onFilterChange + onPageChange(1) synchronously from
-  // one gesture; the route's pendingRef/queueMicrotask batcher must merge
-  // both into a single navigation, or a user's Back button would trip over a
-  // stale duplicate history entry. Asserted on history length, not just the
-  // final search value, since two navigate() calls that happen to converge
-  // on the same final search would still leave an extra entry undetected by
-  // a value-only assertion.
-  it('merges a same-tick filter-change + page-reset into exactly one history entry', async () => {
+  it('changing the events filter leaves the URL stable and re-fetches only events', async () => {
     const user = userEvent.setup();
+    const requests = captureProfileRequests();
     const { router, history } = renderAt(`/sessions/${mockSessionDetail.id}?page=3`);
     await screen.findByText('Harness signals');
-
+    const hrefBefore = router.state.location.href;
     const lengthBefore = history.length;
+    const countBefore = requests.length;
 
     await user.click(screen.getByRole('combobox', { name: 'Event filter' }));
     await user.click(await screen.findByRole('option', { name: 'All events' }));
 
     await waitFor(() => {
-      expect(router.state.location.search.filter).toBe('all');
+      expect(
+        requests
+          .slice(countBefore)
+          .some(
+            (url) =>
+              url.pathname.endsWith('/profile/events') &&
+              url.searchParams.get('filter') === 'all' &&
+              url.searchParams.get('offset') === '0',
+          ),
+      ).toBe(true);
     });
-    // Give any second, un-batched navigate() a chance to land before asserting.
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-    expect(router.state.location.search.page).toBe(1);
-    expect(history.length).toBe(lengthBefore + 1);
+    expect(router.state.location.href).toBe(hrefBefore);
+    expect(history.length).toBe(lengthBefore);
+    expect(
+      requests.slice(countBefore).filter((url) => !url.pathname.endsWith('/profile/events')),
+    ).toEqual([]);
   });
 
   it('Refresh re-fetches every view', async () => {
@@ -163,9 +181,9 @@ describe('/sessions/$id route (session profile)', () => {
 
     await waitFor(() => {
       const newViews = new Set(
-        requests.slice(countBefore).map((url) => url.searchParams.get('view')),
+        requests.slice(countBefore).map((url) => url.pathname.split('/').at(-1)),
       );
-      expect(newViews).toEqual(new Set(['spawns', 'signals', 'timeline', 'merged']));
+      expect(newViews).toEqual(new Set(['spawns', 'signals', 'timeline', 'events']));
     });
   });
 
@@ -177,7 +195,7 @@ describe('/sessions/$id route (session profile)', () => {
     await waitFor(() => {
       expect(router.state.location.pathname).toBe(`/sessions/${mockChildSummary.id}`);
     });
-    expect(router.state.location.search).toEqual({ field: 'output', filter: 'signals', page: 1 });
+    expect(router.state.location.search).toEqual({});
   });
 
   it('shows "Session not found." for a 404 response, panels not mounted', async () => {

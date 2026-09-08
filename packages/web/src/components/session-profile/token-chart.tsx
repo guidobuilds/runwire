@@ -41,8 +41,7 @@ import { buildTimeDomain, toMs } from './time-scale';
 
 export type TokenChartProps = {
   sessionId: string;
-  field: TokenField;
-  onFieldChange: (field: TokenField) => void;
+  initialField?: TokenField;
   refresh?: number;
 };
 
@@ -207,11 +206,12 @@ function totalAtOrBefore(data: readonly ChartDatum[], x: number): number | null 
   return value;
 }
 
-export function TokenChart({ sessionId, field, onFieldChange, refresh = 0 }: TokenChartProps) {
+export function TokenChart({ sessionId, initialField = 'output', refresh = 0 }: TokenChartProps) {
+  const [field, setField] = useState<TokenField>(initialField);
   const timeline = useSessionProfileTimeline(sessionId, { scope, field, refresh });
 
   const fieldPicker = (
-    <Select value={field} onValueChange={(value) => value && onFieldChange(value as TokenField)}>
+    <Select value={field} onValueChange={(value) => value && setField(value as TokenField)}>
       <SelectTrigger aria-label="Token field" size="sm">
         <SelectValue />
       </SelectTrigger>

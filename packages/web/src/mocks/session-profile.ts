@@ -16,7 +16,7 @@ import type {
   SessionProfileTimeline,
 } from '@/lib/api/session-profile';
 
-/** Shared metadata-only profile fixtures for `/api/session-profiles/{id}`. The ids
+/** Shared metadata-only profile fixtures for `/api/sessions/{id}/profile/*`. The ids
  * deliberately match `mockSessionSummary`/`mockChildSummary` in `handlers.ts`
  * so the composed route renders one coherent session. */
 
@@ -261,39 +261,49 @@ function isEventFilter(value: string | null): value is EventFilter {
   return MERGED_EVENT_FILTERS.includes(value as EventFilter);
 }
 
-/** MSW handlers for `/api/session-profiles/:id`. Reads the single-endpoint `view`
- * discriminator and every strict parser parameter so the composed route and the
- * leaf components exercise the same query surface the real transport exposes. */
+/** MSW handlers for the distinct session-scoped profile endpoints. */
 export const sessionProfileHandlers = [
-  http.get('/api/session-profiles/:id', ({ request }) => {
-    const url = new URL(request.url);
-    const view = url.searchParams.get('view');
-    const scopeParam = url.searchParams.get('scope');
-    const scope: Scope = scopeParam === 'own' ? 'own' : 'tree';
-
-    if (view === 'spawns') {
+  http.get('/api/sessions/:id/profile/spawns', ({ request }) => {
+    try {
+      const scope: Scope =
+        new URL(request.url).searchParams.get('scope') === 'own' ? 'own' : 'tree';
       return HttpResponse.json(spawnsResponse(scope));
+    } catch {
+      return HttpResponse.json({ error: 'invalid request' }, { status: 400 });
     }
-
-    if (view === 'signals') {
+  }),
+  http.get('/api/sessions/:id/profile/signals', ({ request }) => {
+    try {
+      const scope: Scope =
+        new URL(request.url).searchParams.get('scope') === 'own' ? 'own' : 'tree';
       return HttpResponse.json(signalsResponse(scope));
+    } catch {
+      return HttpResponse.json({ error: 'invalid request' }, { status: 400 });
     }
-
-    if (view === 'timeline') {
+  }),
+  http.get('/api/sessions/:id/profile/timeline', ({ request }) => {
+    try {
+      const url = new URL(request.url);
+      const scope: Scope = url.searchParams.get('scope') === 'own' ? 'own' : 'tree';
       const fieldParam = url.searchParams.get('field');
       const field: TokenField = isTokenField(fieldParam) ? fieldParam : 'output';
       return HttpResponse.json(timelineResponse(scope, field));
+    } catch {
+      return HttpResponse.json({ error: 'invalid request' }, { status: 400 });
     }
-
-    if (view === 'merged') {
+  }),
+  http.get('/api/sessions/:id/profile/events', ({ request }) => {
+    try {
+      const url = new URL(request.url);
+      const scope: Scope = url.searchParams.get('scope') === 'own' ? 'own' : 'tree';
       const filterParam = url.searchParams.get('filter');
       const filter: EventFilter = isEventFilter(filterParam) ? filterParam : 'signals';
       const limit = Number(url.searchParams.get('limit') ?? '50');
       const offset = Number(url.searchParams.get('offset') ?? '0');
       return HttpResponse.json(mergedEventsResponse(scope, filter, limit, offset));
+    } catch {
+      return HttpResponse.json({ error: 'invalid request' }, { status: 400 });
     }
-
-    return HttpResponse.json({ error: 'invalid view' }, { status: 400 });
   }),
 ];
 

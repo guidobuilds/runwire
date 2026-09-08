@@ -69,7 +69,19 @@ function parseIntegerParam(value: string, min: number, max: number): number | nu
  */
 const API_PREFIX = '/api';
 const SESSIONS_PREFIX = `${API_PREFIX}/sessions`;
-const SESSION_PROFILES_PREFIX = `${API_PREFIX}/session-profiles`;
+const PROFILE_ENDPOINTS = ['spawns', 'signals', 'timeline', 'events'] as const;
+
+type ProfileEndpoint = (typeof PROFILE_ENDPOINTS)[number];
+
+function profileEndpoint(path: string): { encodedId: string; endpoint: ProfileEndpoint } | null {
+  for (const endpoint of PROFILE_ENDPOINTS) {
+    const suffix = `/profile/${endpoint}`;
+    if (!path.startsWith(`${SESSIONS_PREFIX}/`) || !path.endsWith(suffix)) continue;
+    const encodedId = path.slice(`${SESSIONS_PREFIX}/`.length, -suffix.length);
+    return encodedId === '' ? null : { encodedId, endpoint };
+  }
+  return null;
+}
 
 export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
   const { db, host, port } = opts;
@@ -79,7 +91,12 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
     fetch(req) {
       // Derive path from the URL, never `req.url` (the full absolute URL with
       // origin + query), so `/api/sessions?x=1` does not brute-match `/api/sessions`.
-      const path = new URL(req.url).pathname;
+      let path: string;
+      try {
+        path = new URL(req.url).pathname;
+      } catch {
+        return json({ error: 'invalid request' }, 400);
+      }
       const method = req.method;
       try {
         if (path === API_PREFIX) {
@@ -142,6 +159,42 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
 
           return json(listSessions(db, query), 200);
         }
+        const scopedProfile = profileEndpoint(path);
+        if (scopedProfile !== null) {
+          if (method !== 'GET') return methodNotAllowed();
+          let id: string;
+          try {
+            id = decodeURIComponent(scopedProfile.encodedId);
+          } catch {
+            return json({ error: 'invalid id' }, 400);
+          }
+          const view = scopedProfile.endpoint === 'events' ? 'merged' : scopedProfile.endpoint;
+          const parsed = parseProfileQuery(new URL(req.url).searchParams, view);
+          if (!parsed.ok) return invalidQueryParam(parsed.parameter);
+
+          if (parsed.value.view === 'spawns') {
+            const profile = readProfileSpawns(db, id, parsed.value.query);
+            return profile === null
+              ? json({ error: 'session not found' }, 404)
+              : json({ view: 'spawns', ...profile }, 200);
+          }
+          if (parsed.value.view === 'signals') {
+            const profile = readProfileSignals(db, id, parsed.value.query);
+            return profile === null
+              ? json({ error: 'session not found' }, 404)
+              : json({ view: 'signals', ...profile }, 200);
+          }
+          if (parsed.value.view === 'timeline') {
+            const profile = readProfileTimeline(db, id, parsed.value.query);
+            return profile === null
+              ? json({ error: 'session not found' }, 404)
+              : json({ view: 'timeline', ...profile }, 200);
+          }
+          const profile = readProfileMergedEvents(db, id, parsed.value.query);
+          return profile === null
+            ? json({ error: 'session not found' }, 404)
+            : json({ view: 'merged', ...profile }, 200);
+        }
         if (path.startsWith(`${SESSIONS_PREFIX}/`)) {
           if (method !== 'GET') return methodNotAllowed();
           // Whole-remainder id (design D-H): a literal `/` (or an encoded
@@ -155,40 +208,6 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
           const session = getSession(db, id);
           if (session === null) return json({ error: 'session not found' }, 404);
           return json({ session }, 200);
-        }
-        if (path.startsWith(`${SESSION_PROFILES_PREFIX}/`)) {
-          if (method !== 'GET') return methodNotAllowed();
-          let id: string;
-          try {
-            // IDs are opaque and may contain slashes or literal percent text.
-            // Decode the complete remainder exactly once.
-            id = decodeURIComponent(path.slice(`${SESSION_PROFILES_PREFIX}/`.length));
-          } catch {
-            return json({ error: 'invalid id' }, 400);
-          }
-          if (id === '') return json({ error: 'invalid id' }, 400);
-
-          const parsed = parseProfileQuery(new URL(req.url).searchParams);
-          if (!parsed.ok) return invalidQueryParam(parsed.parameter);
-
-          if (parsed.value.view === 'spawns') {
-            const profile = readProfileSpawns(db, id, parsed.value.query);
-            if (profile === null) return json({ error: 'session not found' }, 404);
-            return json({ view: 'spawns', ...profile }, 200);
-          }
-          if (parsed.value.view === 'signals') {
-            const profile = readProfileSignals(db, id, parsed.value.query);
-            if (profile === null) return json({ error: 'session not found' }, 404);
-            return json({ view: 'signals', ...profile }, 200);
-          }
-          if (parsed.value.view === 'timeline') {
-            const profile = readProfileTimeline(db, id, parsed.value.query);
-            if (profile === null) return json({ error: 'session not found' }, 404);
-            return json({ view: 'timeline', ...profile }, 200);
-          }
-          const profile = readProfileMergedEvents(db, id, parsed.value.query);
-          if (profile === null) return json({ error: 'session not found' }, 404);
-          return json({ view: 'merged', ...profile }, 200);
         }
         return json({ error: 'not found' }, 404);
       } catch {

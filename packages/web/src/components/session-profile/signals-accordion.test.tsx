@@ -60,7 +60,6 @@ function session(overrides: Partial<ApiSessionDetail> = {}): ApiSessionDetail {
 function renderAccordion(props: Partial<React.ComponentProps<typeof SignalsAccordion>> = {}) {
   return render(
     <SignalsAccordion
-      field="output"
       session={session()}
       sessionId={PROFILE_ROOT_ID}
       subagentCount={2}
@@ -125,7 +124,7 @@ describe('SignalsAccordion — delegation math', () => {
 describe('SignalsAccordion — every value renders even when 0', () => {
   it('shows zero compactions/calls and "none" lists, not hidden fields', async () => {
     server.use(
-      http.get('/api/session-profiles/:id', () =>
+      http.get('/api/sessions/:id/profile/signals', () =>
         HttpResponse.json({
           view: 'signals',
           sessionId: PROFILE_ROOT_ID,
@@ -152,7 +151,7 @@ describe('SignalsAccordion — every value renders even when 0', () => {
 describe('SignalsAccordion — error + retry', () => {
   it('shows an inline error and Retry scoped to the item', async () => {
     server.use(
-      http.get('/api/session-profiles/:id', () =>
+      http.get('/api/sessions/:id/profile/signals', () =>
         HttpResponse.json({ error: 'internal error' }, { status: 500 }),
       ),
     );

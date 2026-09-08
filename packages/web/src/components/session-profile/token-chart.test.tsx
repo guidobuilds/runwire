@@ -26,10 +26,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('TokenChart — happy path', () => {
   it('renders one line per fixture model plus a total line', async () => {
-    const { container } = render(
-      <TokenChart field="output" onFieldChange={() => {}} sessionId={PROFILE_ROOT_ID} />,
-      { wrapper },
-    );
+    const { container } = render(<TokenChart sessionId={PROFILE_ROOT_ID} />, { wrapper });
     await waitFor(() => {
       expect(container.querySelectorAll('.recharts-line').length).toBe(
         mockProfileTimelineTree.series.length + 1,
@@ -38,10 +35,7 @@ describe('TokenChart — happy path', () => {
   });
 
   it('renders one marker per spawn instant', async () => {
-    const { container } = render(
-      <TokenChart field="output" onFieldChange={() => {}} sessionId={PROFILE_ROOT_ID} />,
-      { wrapper },
-    );
+    const { container } = render(<TokenChart sessionId={PROFILE_ROOT_ID} />, { wrapper });
     await waitFor(() => {
       expect(container.querySelectorAll('.recharts-reference-dot').length).toBe(
         mockProfileTimelineTree.spawns.length,
@@ -50,10 +44,7 @@ describe('TokenChart — happy path', () => {
   });
 
   it('renders a draggable timeline navigator for zooming', async () => {
-    const { container } = render(
-      <TokenChart field="output" onFieldChange={() => {}} sessionId={PROFILE_ROOT_ID} />,
-      { wrapper },
-    );
+    const { container } = render(<TokenChart sessionId={PROFILE_ROOT_ID} />, { wrapper });
     expect(
       await screen.findByText('Drag across the chart or use the timeline handles to zoom'),
     ).toBeInTheDocument();
@@ -61,7 +52,7 @@ describe('TokenChart — happy path', () => {
   });
 
   it('shows the excludedNullAtCount footer whenever it is greater than zero', async () => {
-    render(<TokenChart field="output" onFieldChange={() => {}} sessionId={PROFILE_ROOT_ID} />, {
+    render(<TokenChart sessionId={PROFILE_ROOT_ID} />, {
       wrapper,
     });
     await waitFor(() => {
@@ -87,19 +78,17 @@ describe('TokenChart — happy path', () => {
       totalDelta: 100,
     }));
     server.use(
-      http.get('/api/session-profiles/:id', ({ request }) => {
-        const url = new URL(request.url);
-        if (url.searchParams.get('view') !== 'timeline') return undefined;
-        return HttpResponse.json({
+      http.get('/api/sessions/:id/profile/timeline', () =>
+        HttpResponse.json({
           ...mockProfileTimelineTree,
           points,
           spawns: [],
           timeDomain: { start: points[0]?.at, end: points.at(-1)?.at },
-        });
-      }),
+        }),
+      ),
     );
 
-    render(<TokenChart field="output" onFieldChange={() => {}} sessionId={PROFILE_ROOT_ID} />, {
+    render(<TokenChart sessionId={PROFILE_ROOT_ID} />, {
       wrapper,
     });
 
@@ -112,26 +101,23 @@ describe('TokenChart — happy path', () => {
 });
 
 describe('TokenChart — field selection', () => {
-  it('re-requests the timeline with the new field when the field prop changes', async () => {
+  it('re-requests the timeline with the new field when the local selector changes', async () => {
+    const user = userEvent.setup();
     const requestedFields: (string | null)[] = [];
     server.use(
-      http.get('/api/session-profiles/:id', ({ request }) => {
+      http.get('/api/sessions/:id/profile/timeline', ({ request }) => {
         const url = new URL(request.url);
-        if (url.searchParams.get('view') !== 'timeline') return undefined;
         requestedFields.push(url.searchParams.get('field'));
         return HttpResponse.json(mockProfileTimelineTree);
       }),
     );
 
-    const { rerender } = render(
-      <TokenChart field="output" onFieldChange={() => {}} sessionId={PROFILE_ROOT_ID} />,
-      { wrapper },
-    );
+    render(<TokenChart sessionId={PROFILE_ROOT_ID} />, { wrapper });
     await waitFor(() => expect(requestedFields).toContain('output'));
 
-    rerender(
-      <TokenChart field="cacheWrite" onFieldChange={() => {}} sessionId={PROFILE_ROOT_ID} />,
-    );
+    await user.click(screen.getByRole('combobox', { name: 'Token field' }));
+    await user.click(await screen.findByRole('option', { name: 'Cache write' }));
+
     await waitFor(() => expect(requestedFields).toContain('cacheWrite'));
   });
 });
@@ -139,10 +125,8 @@ describe('TokenChart — field selection', () => {
 describe('TokenChart — F-7 guard', () => {
   it('renders an error state instead of a chart when delta/cumulative length mismatches series.length', async () => {
     server.use(
-      http.get('/api/session-profiles/:id', ({ request }) => {
-        const url = new URL(request.url);
-        if (url.searchParams.get('view') !== 'timeline') return undefined;
-        return HttpResponse.json({
+      http.get('/api/sessions/:id/profile/timeline', () =>
+        HttpResponse.json({
           ...mockProfileTimelineTree,
           points: [
             {
@@ -153,11 +137,11 @@ describe('TokenChart — F-7 guard', () => {
               totalCumulative: 400,
             },
           ],
-        });
-      }),
+        }),
+      ),
     );
 
-    render(<TokenChart field="output" onFieldChange={() => {}} sessionId={PROFILE_ROOT_ID} />, {
+    render(<TokenChart sessionId={PROFILE_ROOT_ID} />, {
       wrapper,
     });
     await waitFor(() => {
@@ -169,19 +153,17 @@ describe('TokenChart — F-7 guard', () => {
 describe('TokenChart — empty state', () => {
   it('shows "No timed calls in this tree" when there are no points', async () => {
     server.use(
-      http.get('/api/session-profiles/:id', ({ request }) => {
-        const url = new URL(request.url);
-        if (url.searchParams.get('view') !== 'timeline') return undefined;
-        return HttpResponse.json({
+      http.get('/api/sessions/:id/profile/timeline', () =>
+        HttpResponse.json({
           ...mockProfileTimelineTree,
           points: [],
           spawns: [],
           excludedNullAtCount: 5,
-        });
-      }),
+        }),
+      ),
     );
 
-    render(<TokenChart field="output" onFieldChange={() => {}} sessionId={PROFILE_ROOT_ID} />, {
+    render(<TokenChart sessionId={PROFILE_ROOT_ID} />, {
       wrapper,
     });
     await waitFor(() => {
@@ -195,16 +177,14 @@ describe('TokenChart — error state', () => {
   it('shows Retry on failure and refetches on click', async () => {
     let calls = 0;
     server.use(
-      http.get('/api/session-profiles/:id', ({ request }) => {
-        const url = new URL(request.url);
-        if (url.searchParams.get('view') !== 'timeline') return undefined;
+      http.get('/api/sessions/:id/profile/timeline', () => {
         calls += 1;
         if (calls === 1) return HttpResponse.json({ error: 'boom' }, { status: 500 });
         return HttpResponse.json(mockProfileTimelineTree);
       }),
     );
 
-    render(<TokenChart field="output" onFieldChange={() => {}} sessionId={PROFILE_ROOT_ID} />, {
+    render(<TokenChart sessionId={PROFILE_ROOT_ID} />, {
       wrapper,
     });
     const retry = await screen.findByRole('button', { name: 'Retry' });

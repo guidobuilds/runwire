@@ -2,8 +2,8 @@
 
 The session profile is the `/sessions/{id}` page: answers **what did my
 harness do here that cost me context or time?** for a single session and its
-complete tree. It reads the independent `/api/session-profiles/{id}` resource
-(every scout API route is served under `/api/*`) and
+complete tree. It reads distinct session-scoped profile resources (every scout
+API route is served under `/api/*`) and
 composes, in order: header → agent graph (git-graph, one wall-clock line per
 agent, branches at spawn time) → token chart (tree-wide cumulative, one line
 per model) → merged events table → signals accordion (collapsed).
@@ -15,21 +15,21 @@ profile.
 
 ---
 
-## Resource: `GET /api/session-profiles/{id}`
+## Resources: `GET /api/sessions/{id}/profile/{projection}`
 
 - Every scout API route is served **exclusively under `/api`**; the legacy
   un-prefixed `/session-profiles*` / `/sessions*` and `/` are not exposed.
-- The whole path remainder after `/api/session-profiles/` is the opaque session id,
-  decoded **exactly once** (a literal `/` or `%2F` stays part of the id).
-- A required `view` discriminator selects the projection:
-  - `view=spawns` → agent relationship evidence (causal status, orphan count)
-  - `view=signals` → tree-wide compaction/model-change/mcp/skill aggregates
-  - `view=timeline` → tree-wide chronological token series
-  - `view=merged` → events merged by true chronology across the whole scope
+- `{id}` is the opaque whole path remainder before `/profile/{projection}`, decoded
+  **exactly once** (a literal `/` or `%2F` stays part of the id).
+- Each projection has its own endpoint:
+  - `/profile/spawns` → agent relationship evidence (causal status, orphan count)
+  - `/profile/signals` → tree-wide compaction/model-change/mcp/skill aggregates
+  - `/profile/timeline` → tree-wide chronological token series
+  - `/profile/events` → events merged by true chronology across the whole scope
 - `scope` (`tree` default | `own`) is validated strictly. `tree` covers the
   root and every descendant; `own` covers only the root.
 - Every parameter is validated by the transport before any core reader runs:
-  a missing/unknown `view`, and any unknown, duplicate, empty, non-integer,
+  any unknown, duplicate, empty, non-integer,
   unsafe or out-of-range value, is rejected (400) with the parameter named.
   `limit`/`offset` (spawns, merged) reject out-of-range integers at the HTTP
   boundary.
@@ -50,7 +50,7 @@ profile.
 
 ---
 
-## Agents (`view=spawns`)
+## Agents (`/profile/spawns`)
 
 - **Evidence, not certainty.** Each `item` is `parent → child` with a
   `causalStatus`. Statuses are `linked`, `missing-call-id`, `call-not-found`,
@@ -71,7 +71,7 @@ profile.
 
 ---
 
-## Signals (`view=signals`)
+## Signals (`/profile/signals`)
 
 - Tree-wide aggregates: compactions split by trigger (`auto`/`manual`/`unknown`
   — unknown covers a null trigger or any other literal), model-change count,
@@ -81,7 +81,7 @@ profile.
 
 ---
 
-## Timeline (`view=timeline`)
+## Timeline (`/profile/timeline`)
 
 - **Tree-wide chronological series.** Orders every in-scope call by `at` ASC
   (never by seq) across the whole scope, bucketed to at most 400 exact
@@ -99,7 +99,7 @@ profile.
 
 ---
 
-## Merged events (`view=merged`)
+## Merged events (`/profile/events`)
 
 - **True chronology across the whole scope.** Ordered by `at` ASC, then
   `sessionId`, then `seq` — the one place this resource merges by timestamp
@@ -124,9 +124,9 @@ profile.
   distinct from `name`; `harness`, `project`, started/ended/duration, cost, and
   per-field own/inclusive token totals are shown from `ApiSessionDetail`. No
   tool-call, turn, or API-call fields, and no summed token KPI.
-- Search params: `field` (`output` default), `filter` (`signals` default),
-  `page` (positive integer, default 1). Invalid values fall back to defaults
-  via `validateSearch`.
+- Route search params do not control profile panel state. Token field defaults to
+  `output`; events filter defaults to `signals` and page to `1`. Each panel owns
+  its state and re-fetches only its own TanStack query when it changes.
 - An explicit **Refresh** bumps a refresh token that re-fetches every panel
   (spawns, signals, timeline, merged).
 - A failed profile section never hides the header; each panel surfaces its own
@@ -134,9 +134,9 @@ profile.
 - A missing session (`404`) shows `Session not found.` with a **back to
   sessions** link; the profile panels are not mounted.
 - The signals accordion's delegation share is computed client-side from the
-  header's already-fetched `tokensOwn`/`tokensInclusive` for the selected
-  field; its subagent count comes from the agent graph's already-fetched node
-  list — neither is a redundant reader.
+  header's already-fetched `tokensOwn`/`tokensInclusive` for the default
+  `output` field; its subagent count comes from the agent graph's already-fetched
+  node list — neither is a redundant reader.
 
 ---
 

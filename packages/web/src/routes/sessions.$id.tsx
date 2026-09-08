@@ -1,9 +1,7 @@
-import type { EventFilter, TokenField } from '@scout/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
 import { AgentGraph } from '@/components/session-profile/agent-graph';
 import { EventsTable } from '@/components/session-profile/events-table';
-import { TOKEN_FIELDS } from '@/components/session-profile/format';
 import { Header, HeaderSkeleton } from '@/components/session-profile/header';
 import { SignalsAccordion } from '@/components/session-profile/signals-accordion';
 import { TokenChart } from '@/components/session-profile/token-chart';
@@ -14,59 +12,8 @@ import { ApiError } from '@/lib/api/client';
 import { useSession } from '@/queries/sessions';
 
 export const Route = createFileRoute('/sessions/$id')({
-  validateSearch: validateSearch,
   component: SessionProfileRoute,
 });
-
-const EVENT_FILTERS = [
-  'signals',
-  'relevant',
-  'all',
-  'mcp',
-  'skill',
-  'hook',
-  'read',
-  'write',
-  'exec',
-  'agent',
-  'error',
-] as const satisfies readonly EventFilter[];
-
-type SessionProfileSearch = {
-  field?: TokenField;
-  filter?: EventFilter;
-  page?: number;
-};
-
-function isTokenField(value: unknown): value is TokenField {
-  return typeof value === 'string' && TOKEN_FIELDS.includes(value as TokenField);
-}
-
-function isEventFilter(value: unknown): value is EventFilter {
-  return typeof value === 'string' && EVENT_FILTERS.includes(value as EventFilter);
-}
-
-/** A positive integer, accepted as either a number or a digit string. */
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0;
-}
-
-function toPositiveInteger(value: unknown): number | undefined {
-  if (isPositiveInteger(value)) return value;
-  if (typeof value === 'string' && /^\d+$/.test(value) && Number.isSafeInteger(Number(value))) {
-    const parsed = Number(value);
-    return parsed > 0 ? parsed : undefined;
-  }
-  return undefined;
-}
-
-function validateSearch(search: Record<string, unknown>): SessionProfileSearch {
-  return {
-    field: isTokenField(search.field) ? search.field : 'output',
-    filter: isEventFilter(search.filter) ? search.filter : 'signals',
-    page: toPositiveInteger(search.page) ?? 1,
-  };
-}
 
 const PAGE_SIZE = 50;
 
@@ -125,7 +72,6 @@ function TopBar({ id, onRefresh }: { id: string | null; onRefresh?: () => void }
 
 function SessionProfileRoute() {
   const { id } = Route.useParams();
-  const rawSearch = Route.useSearch();
   const navigate = Route.useNavigate();
   const session = useSession(id);
   const [refresh, setRefresh] = useState(0);
@@ -143,30 +89,6 @@ function SessionProfileRoute() {
     lastSubagentResetKey.current = subagentResetKey;
     if (subagentCount !== null) setSubagentCount(null);
   }
-  const search = {
-    field: rawSearch.field ?? 'output',
-    filter: rawSearch.filter ?? 'signals',
-    page: rawSearch.page ?? 1,
-  } satisfies Required<SessionProfileSearch>;
-
-  // Some panels (the events table's filter Select) fire more than one search
-  // update from a single user gesture (filter change + page reset). Each
-  // `updateSearch` call would otherwise read the same stale `search` closure
-  // and clobber the other's change with a second `navigate`; batching every
-  // synchronous call into one merged patch, flushed on the next microtask,
-  // keeps them atomic without needing to know which caller fired first.
-  const pendingRef = useRef<Partial<SessionProfileSearch>>({});
-  function updateSearch(partial: Partial<SessionProfileSearch>) {
-    const isFirstInBatch = Object.keys(pendingRef.current).length === 0;
-    pendingRef.current = { ...pendingRef.current, ...partial };
-    if (!isFirstInBatch) return;
-    queueMicrotask(() => {
-      const merged = pendingRef.current;
-      pendingRef.current = {};
-      void navigate({ search: { ...search, ...merged } });
-    });
-  }
-
   function openNode(nodeId: string) {
     void navigate({ params: { id: nodeId }, search: {}, to: '/sessions/$id' });
   }
@@ -217,25 +139,11 @@ function SessionProfileRoute() {
         sessionId={id}
       />
 
-      <TokenChart
-        field={search.field}
-        onFieldChange={(field) => updateSearch({ field })}
-        refresh={refresh}
-        sessionId={id}
-      />
+      <TokenChart refresh={refresh} sessionId={id} />
 
-      <EventsTable
-        filter={search.filter}
-        onFilterChange={(filter) => updateSearch({ filter })}
-        onPageChange={(page) => updateSearch({ page })}
-        page={search.page}
-        pageSize={PAGE_SIZE}
-        refresh={refresh}
-        sessionId={id}
-      />
+      <EventsTable pageSize={PAGE_SIZE} refresh={refresh} sessionId={id} />
 
       <SignalsAccordion
-        field={search.field}
         refresh={refresh}
         session={session.data}
         sessionId={id}
