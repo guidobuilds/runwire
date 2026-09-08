@@ -1,5 +1,14 @@
 import type { Database } from 'bun:sqlite';
-import { getSession, type ListSessionsQuery, listSessions } from '@scout/core';
+import {
+  getSession,
+  type ListSessionsQuery,
+  listSessions,
+  readProfileMergedEvents,
+  readProfileSignals,
+  readProfileSpawns,
+  readProfileTimeline,
+} from '@scout/core';
+import { parseProfileQuery } from './profile-query';
 
 export const DEFAULT_HOST = '127.0.0.1';
 export const DEFAULT_PORT = 8787;
@@ -133,6 +142,40 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
           const session = getSession(db, id);
           if (session === null) return json({ error: 'session not found' }, 404);
           return json({ session }, 200);
+        }
+        if (path.startsWith('/session-profiles/')) {
+          if (method !== 'GET') return methodNotAllowed();
+          let id: string;
+          try {
+            // IDs are opaque and may contain slashes or literal percent text.
+            // Decode the complete remainder exactly once.
+            id = decodeURIComponent(path.slice('/session-profiles/'.length));
+          } catch {
+            return json({ error: 'invalid id' }, 400);
+          }
+          if (id === '') return json({ error: 'invalid id' }, 400);
+
+          const parsed = parseProfileQuery(new URL(req.url).searchParams);
+          if (!parsed.ok) return invalidQueryParam(parsed.parameter);
+
+          if (parsed.value.view === 'spawns') {
+            const profile = readProfileSpawns(db, id, parsed.value.query);
+            if (profile === null) return json({ error: 'session not found' }, 404);
+            return json({ view: 'spawns', ...profile }, 200);
+          }
+          if (parsed.value.view === 'signals') {
+            const profile = readProfileSignals(db, id, parsed.value.query);
+            if (profile === null) return json({ error: 'session not found' }, 404);
+            return json({ view: 'signals', ...profile }, 200);
+          }
+          if (parsed.value.view === 'timeline') {
+            const profile = readProfileTimeline(db, id, parsed.value.query);
+            if (profile === null) return json({ error: 'session not found' }, 404);
+            return json({ view: 'timeline', ...profile }, 200);
+          }
+          const profile = readProfileMergedEvents(db, id, parsed.value.query);
+          if (profile === null) return json({ error: 'session not found' }, 404);
+          return json({ view: 'merged', ...profile }, 200);
         }
         return json({ error: 'not found' }, 404);
       } catch {

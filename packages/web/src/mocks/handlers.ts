@@ -1,5 +1,6 @@
 import type { ApiSessionDetail, ApiSessionSummary, PagedSessions } from '@scout/core';
 import { HttpResponse, http } from 'msw';
+import { sessionProfileHandlers } from './session-profile';
 
 const tokenTotals = {
   uncachedInput: 1200,
@@ -96,4 +97,5 @@ export const handlers = [
     }
     return HttpResponse.json({ session: mockSessionDetail });
   }),
+  ...sessionProfileHandlers,
 ];

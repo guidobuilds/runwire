@@ -1,152 +1,246 @@
-import type { ApiSessionSummary, ApiTokenTotals } from '@scout/core';
+import type { EventFilter, TokenField } from '@scout/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
+import { useRef, useState } from 'react';
+import { AgentGraph } from '@/components/session-profile/agent-graph';
+import { EventsTable } from '@/components/session-profile/events-table';
+import { TOKEN_FIELDS } from '@/components/session-profile/format';
+import { Header, HeaderSkeleton } from '@/components/session-profile/header';
+import { SignalsAccordion } from '@/components/session-profile/signals-accordion';
+import { TokenChart } from '@/components/session-profile/token-chart';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/api/client';
 import { useSession } from '@/queries/sessions';
 
-// Minimal detail view for a single session (f5). Composed independently of the
-// f4 dashboard -- reachable via a "View details" link added to data-table.tsx's
-// TableCellViewer drawer (see build-log.md's f5 section for exactly where).
 export const Route = createFileRoute('/sessions/$id')({
-  component: SessionDetail,
+  validateSearch: validateSearch,
+  component: SessionProfileRoute,
 });
 
-function sumTokens(totals: ApiTokenTotals): number {
+const EVENT_FILTERS = [
+  'signals',
+  'relevant',
+  'all',
+  'mcp',
+  'skill',
+  'hook',
+  'read',
+  'write',
+  'exec',
+  'agent',
+  'error',
+] as const satisfies readonly EventFilter[];
+
+type SessionProfileSearch = {
+  field?: TokenField;
+  filter?: EventFilter;
+  page?: number;
+};
+
+function isTokenField(value: unknown): value is TokenField {
+  return typeof value === 'string' && TOKEN_FIELDS.includes(value as TokenField);
+}
+
+function isEventFilter(value: unknown): value is EventFilter {
+  return typeof value === 'string' && EVENT_FILTERS.includes(value as EventFilter);
+}
+
+/** A positive integer, accepted as either a number or a digit string. */
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+function toPositiveInteger(value: unknown): number | undefined {
+  if (isPositiveInteger(value)) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value) && Number.isSafeInteger(Number(value))) {
+    const parsed = Number(value);
+    return parsed > 0 ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function validateSearch(search: Record<string, unknown>): SessionProfileSearch {
+  return {
+    field: isTokenField(search.field) ? search.field : 'output',
+    filter: isEventFilter(search.filter) ? search.filter : 'signals',
+    page: toPositiveInteger(search.page) ?? 1,
+  };
+}
+
+const PAGE_SIZE = 50;
+
+function PageSkeleton() {
   return (
-    totals.uncachedInput +
-    totals.cachedInput +
-    totals.cacheWrite +
-    totals.output +
-    totals.reasoningOutput
-  );
-}
-
-function formatDateTime(iso: string | null): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-}
-
-function formatDuration(ms: number | null): string {
-  if (ms == null) return '—';
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  if (minutes > 0) return `${minutes}m ${seconds}s`;
-  return `${seconds}s`;
-}
-
-function formatCompactNumber(value: number): string {
-  return new Intl.NumberFormat(undefined, {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(value);
-}
-
-function formatCurrency(value: number | null): string {
-  if (value == null) return '—';
-  return new Intl.NumberFormat(undefined, {
-    style: 'currency',
-    currency: 'USD',
-  }).format(value);
-}
-
-function SummaryField({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium">{value}</span>
+    <div className="flex flex-col gap-8 p-4 lg:p-6">
+      <TopBar id={null} />
+      <HeaderSkeleton />
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-32" />
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-[240px] w-full" />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-32" />
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-[300px] w-full" />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-32" />
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-[200px] w-full" />
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-function SessionLink({ session }: { session: ApiSessionSummary }) {
+function TopBar({ id, onRefresh }: { id: string | null; onRefresh?: () => void }) {
   return (
-    <Link
-      to="/sessions/$id"
-      params={{ id: session.id }}
-      className="font-medium text-primary underline-offset-4 hover:underline"
-    >
-      {session.name}
-    </Link>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <Link
+        className="text-muted-foreground text-sm underline-offset-4 hover:underline"
+        to="/sessions"
+      >
+        ← Back to sessions
+      </Link>
+      {id !== null ? (
+        <div className="flex items-center gap-3">
+          <Button onClick={onRefresh} size="sm" type="button">
+            Refresh
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
-function SessionDetail() {
+function SessionProfileRoute() {
   const { id } = Route.useParams();
-  const { data, isPending, isError, error } = useSession(id);
+  const rawSearch = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const session = useSession(id);
+  const [refresh, setRefresh] = useState(0);
+  // Whole-tree subagent count, reported by AgentGraph once its full `spawns`
+  // node list is loaded (design.md "Signals accordion (G5)": nodes.length -
+  // 1, shared from the graph's own already-fetched data, not a second
+  // reader). Reset to null on id/refresh change (compared during render, per
+  // React's "adjusting state when a prop changes" pattern, rather than an
+  // effect) so a stale count from a previous session is never shown mid-load
+  // — SignalsAccordion already renders null as "—".
+  const [subagentCount, setSubagentCount] = useState<number | null>(null);
+  const subagentResetKey = `${id}:${refresh}`;
+  const lastSubagentResetKey = useRef(subagentResetKey);
+  if (lastSubagentResetKey.current !== subagentResetKey) {
+    lastSubagentResetKey.current = subagentResetKey;
+    if (subagentCount !== null) setSubagentCount(null);
+  }
+  const search = {
+    field: rawSearch.field ?? 'output',
+    filter: rawSearch.filter ?? 'signals',
+    page: rawSearch.page ?? 1,
+  } satisfies Required<SessionProfileSearch>;
 
-  if (isPending) {
-    return <p className="p-6 text-sm text-muted-foreground">Loading session…</p>;
+  // Some panels (the events table's filter Select) fire more than one search
+  // update from a single user gesture (filter change + page reset). Each
+  // `updateSearch` call would otherwise read the same stale `search` closure
+  // and clobber the other's change with a second `navigate`; batching every
+  // synchronous call into one merged patch, flushed on the next microtask,
+  // keeps them atomic without needing to know which caller fired first.
+  const pendingRef = useRef<Partial<SessionProfileSearch>>({});
+  function updateSearch(partial: Partial<SessionProfileSearch>) {
+    const isFirstInBatch = Object.keys(pendingRef.current).length === 0;
+    pendingRef.current = { ...pendingRef.current, ...partial };
+    if (!isFirstInBatch) return;
+    queueMicrotask(() => {
+      const merged = pendingRef.current;
+      pendingRef.current = {};
+      void navigate({ search: { ...search, ...merged } });
+    });
   }
 
-  if (isError) {
-    const notFound = error instanceof ApiError && error.status === 404;
+  function openNode(nodeId: string) {
+    void navigate({ params: { id: nodeId }, search: {}, to: '/sessions/$id' });
+  }
+
+  if (session.isPending) {
+    return <PageSkeleton />;
+  }
+
+  if (session.isError) {
+    const notFound = session.error instanceof ApiError && session.error.status === 404;
     return (
-      <p className="p-6 text-sm text-destructive">
-        {notFound
-          ? 'Session not found.'
-          : `Failed to load session: ${error instanceof Error ? error.message : 'unknown error'}`}
-      </p>
+      <div className="flex flex-col gap-4 p-4 lg:p-6">
+        <TopBar id={null} />
+        {notFound ? (
+          <p className="text-destructive text-sm">Session not found.</p>
+        ) : (
+          <div className="flex items-center gap-3 text-sm">
+            <p className="text-destructive">
+              Failed to load session:{' '}
+              {session.error instanceof Error ? session.error.message : 'unknown error'}
+            </p>
+            <Button onClick={() => void session.refetch()} size="sm" type="button">
+              Retry
+            </Button>
+          </div>
+        )}
+      </div>
     );
   }
 
-  const tokensInclusiveTotal = sumTokens(data.tokensInclusive);
-
+  const rootSession = {
+    agentType: session.data.agentType,
+    endedAt: session.data.endedAt,
+    id: session.data.id,
+    startedAt: session.data.startedAt,
+  };
   return (
-    <div className="flex flex-col gap-6 p-4 lg:p-6">
-      <div>
-        <Link
-          to="/sessions"
-          className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-        >
-          ← Back to sessions
-        </Link>
-      </div>
-      <div>
-        <h1 className="text-2xl font-semibold">{data.name}</h1>
-        {data.title && data.title !== data.name ? (
-          <p className="text-sm text-muted-foreground">{data.title}</p>
-        ) : null}
-      </div>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <SummaryField label="Harness" value={`${data.harness.displayName} (${data.harness.id})`} />
-        <SummaryField
-          label="Project"
-          value={data.project ? `${data.project.name} (${data.project.key})` : 'no project'}
-        />
-        <SummaryField label="Started" value={formatDateTime(data.startedAt)} />
-        <SummaryField label="Ended" value={formatDateTime(data.endedAt)} />
-        <SummaryField label="Duration" value={formatDuration(data.durationMs)} />
-        <SummaryField label="Cost" value={formatCurrency(data.costUsd)} />
-        <SummaryField
-          label="Tokens (inclusive)"
-          value={formatCompactNumber(tokensInclusiveTotal)}
-        />
-        <SummaryField label="Tool calls (inclusive)" value={String(data.toolCallsInclusive)} />
-        <SummaryField label="Turns (own)" value={String(data.turnsOwn)} />
-      </div>
-      {data.parent ? (
-        <div className="flex flex-col gap-1">
-          <span className="text-sm text-muted-foreground">Parent session</span>
-          <SessionLink session={data.parent} />
-        </div>
-      ) : null}
-      {data.children.length > 0 ? (
-        <div className="flex flex-col gap-1">
-          <span className="text-sm text-muted-foreground">Child sessions</span>
-          <ul className="flex flex-col gap-1">
-            {data.children.map((child) => (
-              <li key={child.id}>
-                <SessionLink session={child} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+    <div className="flex flex-col gap-8 p-4 lg:p-6">
+      <TopBar id={id} onRefresh={() => setRefresh((value) => value + 1)} />
+
+      <Header session={session.data} />
+
+      <AgentGraph
+        onNodeCount={setSubagentCount}
+        onOpenNode={openNode}
+        refresh={refresh}
+        rootSession={rootSession}
+        sessionId={id}
+      />
+
+      <TokenChart
+        field={search.field}
+        onFieldChange={(field) => updateSearch({ field })}
+        refresh={refresh}
+        sessionId={id}
+      />
+
+      <EventsTable
+        filter={search.filter}
+        onFilterChange={(filter) => updateSearch({ filter })}
+        onPageChange={(page) => updateSearch({ page })}
+        page={search.page}
+        pageSize={PAGE_SIZE}
+        refresh={refresh}
+        sessionId={id}
+      />
+
+      <SignalsAccordion
+        field={search.field}
+        refresh={refresh}
+        session={session.data}
+        sessionId={id}
+        subagentCount={subagentCount}
+      />
     </div>
   );
 }

@@ -14,6 +14,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      '/session-profiles': 'http://127.0.0.1:8787',
       '/sessions': 'http://127.0.0.1:8787',
     },
   },
