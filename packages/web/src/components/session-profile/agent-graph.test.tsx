@@ -250,6 +250,11 @@ describe('AgentGraph — rows and connectors', () => {
     });
     const rootBar = container.querySelector(`rect[data-row-id="${ROOT.id}"]`);
     expect(rootBar?.getAttribute('data-open-ended')).toBe('false');
+    const unknownEndGroup = container
+      .querySelector(`rect[data-row-id="${CHILD_B.id}"]`)
+      ?.closest('g[data-open-ended="true"]');
+    expect(unknownEndGroup?.querySelector('circle')).not.toBeNull();
+    expect(unknownEndGroup?.textContent).toContain('end not reported');
   });
 
   it('calls onOpenNode when a row bar is clicked', async () => {
@@ -742,7 +747,7 @@ describe('AgentGraph — scale (F-11)', () => {
     };
   }
 
-  it('renders 25 rows with no NaN in the SVG and a bounded, scrollable height', async () => {
+  it('renders 25 rows at a constant row height inside a bounded, genuinely scrollable viewport', async () => {
     server.use(
       http.get('/api/session-profiles/:id', ({ request }) => {
         const url = new URL(request.url);
@@ -772,11 +777,14 @@ describe('AgentGraph — scale (F-11)', () => {
       expect(container.querySelectorAll('rect[data-row-id]').length).toBe(25);
     });
     expect(container.innerHTML).not.toMatch(/NaN/);
-    // Bounded height via a capped className (h-[600px] at 20+ rows, the
-    // 6-step lookup table's ceiling) inside the scrollable wrapper — never
-    // an unbounded chart, never inline style.
+    // The viewport is bounded, while its chart remains taller. Previously
+    // both were capped together, compressing rows instead of creating scroll.
     const scrollWrap = container.querySelector('.overflow-y-auto');
     expect(scrollWrap).not.toBeNull();
-    expect(scrollWrap?.querySelector('[class*="h-[600px]"]')).not.toBeNull();
+    expect(scrollWrap?.getAttribute('style')).toContain('height: 560px');
+    expect(scrollWrap?.querySelector('[data-slot="chart"]')?.getAttribute('style')).toContain(
+      'height: 944px',
+    );
+    expect(screen.getByRole('group', { name: 'Timeline scale' })).toBeInTheDocument();
   });
 });

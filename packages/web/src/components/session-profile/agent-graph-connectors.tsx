@@ -45,8 +45,11 @@ export function AgentGraphConnectors({ connectors }: AgentGraphConnectorsProps) 
             data-parent-id={connector.parentId}
             fill="none"
             key={connector.childId}
-            stroke="var(--muted-foreground)"
-            strokeWidth={1.5}
+            opacity={0.65}
+            stroke="var(--token-model-1)"
+            strokeDasharray="3 3"
+            strokeLinecap="round"
+            strokeWidth={1.25}
           />
         );
       })}

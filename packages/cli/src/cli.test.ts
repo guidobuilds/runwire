@@ -122,4 +122,27 @@ describe('scout import', () => {
     expect(code).toBe(0);
     expect(stderr).toContain('imported=1');
   });
+
+  test('--force reimports sources that an incremental second run skips', async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'scout-cli-force-test-'));
+    const dbPath = join(tmpDir, 'scout.db');
+    const args = ['import', '--db', dbPath, '--home', 'fixtures/claude-code/small/home'];
+    try {
+      const first = await run(args);
+      expect(first.code).toBe(0);
+      expect(first.stderr).toContain('imported=1');
+
+      const incremental = await run(args);
+      expect(incremental.code).toBe(0);
+      expect(incremental.stderr).toContain('imported=0');
+      expect(incremental.stderr).toContain('skipped=1');
+
+      const forced = await run([...args, '--force']);
+      expect(forced.code).toBe(0);
+      expect(forced.stderr).toContain('imported=1');
+      expect(forced.stderr).toContain('skipped=0');
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

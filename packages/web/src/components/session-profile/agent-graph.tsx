@@ -1,5 +1,6 @@
 import type { Event, ProfileNode, ProfileSpawnsResponse, SpawnItem } from '@scout/core';
-import { useEffect, useMemo, useRef } from 'react';
+import { Clock3, GitBranch, HelpCircle } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bar,
   ComposedChart as RechartsComposedChart,
@@ -8,14 +9,15 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer } from '@/components/ui/chart';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Toggle } from '@/components/ui/toggle';
 import { useSessionProfileMergedEvents, useSessionProfileSpawns } from '@/queries/session-profile';
 import { AgentGraphConnectors } from './agent-graph-connectors';
-import { buildTimeDomain, tickFormatter, toMs } from './time-scale';
+import { formatDuration } from './format';
+import { buildTimeDomain, toMs } from './time-scale';
 
 export type AgentGraphRootSession = {
   id: string;
@@ -169,19 +171,100 @@ function buildRows(
   return rows;
 }
 
-const HEIGHT_STEPS: readonly { maxRows: number; className: string }[] = [
-  { maxRows: 5, className: 'h-[160px]' },
-  { maxRows: 8, className: 'h-[240px]' },
-  { maxRows: 11, className: 'h-[340px]' },
-  { maxRows: 15, className: 'h-[440px]' },
-  { maxRows: 19, className: 'h-[520px]' },
-];
-const MAX_HEIGHT_CLASS = 'h-[600px]';
+const ROW_HEIGHT = 36;
+const MIN_CHART_HEIGHT = 150;
+const MAX_VIEWPORT_HEIGHT = 560;
+const MIN_GAP_MS = 30 * 60 * 1000;
+const GAP_MULTIPLIER = 5;
+const COMPRESSED_GAPS_SHARE = 0.1;
 
-function chartHeightClass(rowCount: number): string {
-  const step = HEIGHT_STEPS.find((candidate) => rowCount <= candidate.maxRows);
-  return step ? step.className : MAX_HEIGHT_CLASS;
+type TimelineMode = 'compressed' | 'wall-clock';
+
+type TimelineGap = {
+  start: number;
+  end: number;
+  duration: number;
+  displayDuration: number;
+};
+
+function median(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
+    : (sorted[middle] ?? 0);
 }
+
+/** Compresses only unusually long periods with no recorded start, end, spawn,
+ * or signal. It deliberately calls these "timeline gaps", not inactivity:
+ * the profile data cannot prove that an agent did no work during the gap. */
+function findTimelineGaps(timesInput: readonly number[]): TimelineGap[] {
+  const times = [...new Set(timesInput)].sort((a, b) => a - b);
+  const intervals = times.slice(1).map((time, index) => time - (times[index] ?? time));
+  if (intervals.length === 0) return [];
+  const baseline = intervals.filter((duration) => duration <= MIN_GAP_MS);
+  const typical = baseline.length > 0 ? median(baseline) : MIN_GAP_MS / 5;
+  const threshold = Math.max(MIN_GAP_MS, typical * GAP_MULTIPLIER);
+  const gaps = intervals.flatMap((duration, index) => {
+    const start = times[index];
+    const end = times[index + 1];
+    return duration > threshold && start !== undefined && end !== undefined
+      ? [{ start, end, duration, displayDuration: 0 }]
+      : [];
+  });
+  if (gaps.length === 0) return [];
+  const fullDuration = (times.at(-1) ?? 0) - (times[0] ?? 0);
+  const removedDuration = gaps.reduce((sum, gap) => sum + gap.duration, 0);
+  const observedDuration = Math.max(fullDuration - removedDuration, 60_000);
+  const displayDuration =
+    (observedDuration * COMPRESSED_GAPS_SHARE) / ((1 - COMPRESSED_GAPS_SHARE) * gaps.length);
+  return gaps.map((gap) => ({ ...gap, displayDuration }));
+}
+
+function compressTime(value: number, gaps: readonly TimelineGap[]): number {
+  let removed = 0;
+  for (const gap of gaps) {
+    if (value >= gap.end) {
+      removed += gap.duration - gap.displayDuration;
+      continue;
+    }
+    if (value > gap.start) {
+      return gap.start - removed + ((value - gap.start) / gap.duration) * gap.displayDuration;
+    }
+    break;
+  }
+  return value - removed;
+}
+
+function expandTime(value: number, gaps: readonly TimelineGap[]): number {
+  let removed = 0;
+  for (const gap of gaps) {
+    const displayStart = gap.start - removed;
+    const displayEnd = displayStart + gap.displayDuration;
+    if (value > displayEnd) {
+      removed += gap.duration - gap.displayDuration;
+      continue;
+    }
+    if (value >= displayStart) {
+      return gap.start + ((value - displayStart) / gap.displayDuration) * gap.duration;
+    }
+    break;
+  }
+  return value + removed;
+}
+
+const axisDateTime = new Intl.DateTimeFormat(undefined, {
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  month: 'short',
+});
+
+const tooltipDateTime = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'medium',
+});
 
 type MarkerKind = 'error' | 'compaction' | 'model-change' | 'mcp' | 'skill' | 'agent' | 'other';
 
@@ -341,6 +424,8 @@ function AgentGraphBody({
   markerTotal: number;
   onOpenNode: (nodeId: string) => void;
 }) {
+  const [timelineMode, setTimelineMode] = useState<TimelineMode>('compressed');
+  const [hiddenKinds, setHiddenKinds] = useState<Set<MarkerKind>>(() => new Set());
   const rows = buildRows(rootSession, pages);
   const rowsById = new Map(rows.map((row) => [row.id, row]));
 
@@ -359,20 +444,58 @@ function AgentGraphBody({
     );
   }
 
+  const rawMarkers = markerEvents
+    .filter((event) => rowsById.has(event.sessionId) && event.at !== null)
+    .map((event) => {
+      const ms = toMs(event.at);
+      if (ms === null) return null;
+      return {
+        key: `${event.streamId}-${event.seq}`,
+        absoluteX: ms,
+        y: event.sessionId,
+        kind: markerKind(event),
+        detail: markerDetail(event),
+        at: event.at as string,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+
+  const observationTimes = [
+    ...rows.flatMap((row) => [toMs(row.startedAt), toMs(row.endedAt), toMs(row.callAt)]),
+    ...rawMarkers.map((marker) => marker.absoluteX),
+  ].filter((value): value is number => value !== null);
+  const timelineGaps = findTimelineGaps(observationTimes);
+  const compressesGaps = timelineMode === 'compressed' && timelineGaps.length > 0;
+  const displayTime = (value: number) =>
+    compressesGaps ? compressTime(value, timelineGaps) : value;
+  const displayDomainStart = displayTime(domain.start);
+  const displayDomainEnd = displayTime(domain.end);
+
   const chartRows = rows.map((row) => {
     const startMs = toMs(row.startedAt) ?? toMs(row.callAt) ?? domain.start;
     const endMsRaw = toMs(row.endedAt);
     const openEnded = endMsRaw === null;
-    const endMs = endMsRaw ?? domain.end;
+    // A missing end is uncertainty, not evidence that the agent ran until the
+    // tree's last timestamp. Render it as a start marker with zero duration.
+    const endMs = endMsRaw ?? startMs;
     return {
       id: row.id,
       label: row.label,
       isRoot: row.isRoot,
       parentRowId: row.parentRowId,
-      offset: startMs - domain.start,
-      duration: Math.max(0, endMs - startMs),
+      offset: displayTime(startMs) - displayDomainStart,
+      duration: Math.max(0, displayTime(endMs) - displayTime(startMs)),
       openEnded,
-      callAtRel: row.callAt !== null ? (toMs(row.callAt) ?? null) : null,
+      startedAt: row.startedAt,
+      endedAt: row.endedAt,
+      durationMs: endMsRaw === null ? null : Math.max(0, endMsRaw - startMs),
+      callAtRel:
+        row.callAt !== null
+          ? (() => {
+              const callAt = toMs(row.callAt);
+              return callAt === null ? null : displayTime(callAt) - displayDomainStart;
+            })()
+          : null,
     };
   });
 
@@ -392,41 +515,104 @@ function AgentGraphBody({
       childXRel: row.offset,
     }));
 
-  const markers = markerEvents
-    .filter((event) => rowsById.has(event.sessionId) && event.at !== null)
-    .map((event) => {
-      const ms = toMs(event.at);
-      if (ms === null) return null;
-      return {
-        key: `${event.streamId}-${event.seq}`,
-        x: ms - domain.start,
-        y: event.sessionId,
-        kind: markerKind(event),
-        detail: markerDetail(event),
-        at: event.at as string,
-      };
-    })
-    .filter((item): item is NonNullable<typeof item> => item !== null);
+  const markers = rawMarkers.map(({ absoluteX, ...marker }) => ({
+    ...marker,
+    x: displayTime(absoluteX) - displayDomainStart,
+  }));
 
   const presentKinds = Array.from(new Set(markers.map((marker) => marker.kind)));
-  const format = tickFormatter(domain);
+  const kindCounts = new Map<MarkerKind, number>();
+  for (const marker of markers) kindCounts.set(marker.kind, (kindCounts.get(marker.kind) ?? 0) + 1);
+  const visibleMarkers = markers.filter((marker) => !hiddenKinds.has(marker.kind));
+  const chartHeight = Math.max(MIN_CHART_HEIGHT, rows.length * ROW_HEIGHT + 44);
+  const viewportHeight = Math.min(chartHeight, MAX_VIEWPORT_HEIGHT);
+  const elapsedMs = Math.max(0, domain.end - domain.start);
+  const unknownEndCount = rows.filter((row) => row.endedAt === null).length;
+
+  const formatAxisTick = (relativeValue: number) => {
+    const displayAbsolute = displayDomainStart + relativeValue;
+    const absolute = compressesGaps ? expandTime(displayAbsolute, timelineGaps) : displayAbsolute;
+    const date = new Date(absolute);
+    if (elapsedMs < 60 * 60_000) {
+      return date.toLocaleTimeString(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+    }
+    return axisDateTime.format(date);
+  };
+
+  function toggleKind(kind: MarkerKind) {
+    setHiddenKinds((current) => {
+      const next = new Set(current);
+      if (next.has(kind)) next.delete(kind);
+      else next.add(kind);
+      return next;
+    });
+  }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="overflow-y-auto">
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/25 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          <span className="flex items-center gap-1.5 font-medium">
+            <GitBranch aria-hidden="true" size={14} />
+            {rows.length - 1} subagent{rows.length - 1 === 1 ? '' : 's'}
+          </span>
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <Clock3 aria-hidden="true" size={14} />
+            {formatDuration(elapsedMs)} elapsed
+          </span>
+          {unknownEndCount > 0 ? (
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <HelpCircle aria-hidden="true" size={14} />
+              {unknownEndCount} unknown end{unknownEndCount === 1 ? '' : 's'}
+            </span>
+          ) : null}
+        </div>
+        {timelineGaps.length > 0 ? (
+          <fieldset className="flex rounded-md border bg-background p-0.5">
+            <legend className="sr-only">Timeline scale</legend>
+            <Button
+              aria-pressed={timelineMode === 'compressed'}
+              className="h-6 px-2 text-xs"
+              onClick={() => setTimelineMode('compressed')}
+              size="sm"
+              type="button"
+              variant={timelineMode === 'compressed' ? 'secondary' : 'ghost'}
+            >
+              Compress gaps
+            </Button>
+            <Button
+              aria-pressed={timelineMode === 'wall-clock'}
+              className="h-6 px-2 text-xs"
+              onClick={() => setTimelineMode('wall-clock')}
+              size="sm"
+              type="button"
+              variant={timelineMode === 'wall-clock' ? 'secondary' : 'ghost'}
+            >
+              Wall clock
+            </Button>
+          </fieldset>
+        ) : null}
+      </div>
+      <div className="overflow-y-auto rounded-md border" style={{ height: viewportHeight }}>
         <ChartContainer
-          className={`aspect-auto w-full ${chartHeightClass(rows.length)}`}
+          className="aspect-auto w-full min-w-[680px]"
           config={{}}
+          style={{ height: chartHeight }}
         >
           <RechartsComposedChart
             data={chartRows}
             layout="vertical"
-            margin={{ left: 0, right: 16, top: 8, bottom: 8 }}
+            margin={{ left: 8, right: 20, top: 8, bottom: 8 }}
           >
             <XAxis
               axisLine={false}
-              domain={[0, Math.max(1, domain.end - domain.start)]}
-              tickFormatter={(value: number) => format(domain.start + value)}
+              domain={[0, Math.max(1, displayDomainEnd - displayDomainStart)]}
+              minTickGap={48}
+              tickFormatter={formatAxisTick}
               tickLine={false}
               type="number"
             />
@@ -436,7 +622,7 @@ function AgentGraphBody({
               tick={(props) => <RowTick {...props} onOpenNode={onOpenNode} rowsById={rowsById} />}
               tickLine={false}
               type="category"
-              width={110}
+              width={190}
             />
             <Bar dataKey="offset" fill="transparent" isAnimationActive={false} stackId="lifespan" />
             <Bar
@@ -446,15 +632,35 @@ function AgentGraphBody({
               stackId="lifespan"
             />
             <AgentGraphConnectors connectors={connectors} />
-            <AgentGraphMarkers markers={markers} />
+            <AgentGraphMarkers markers={visibleMarkers} />
           </RechartsComposedChart>
         </ChartContainer>
       </div>
+      {compressesGaps ? (
+        <p className="text-muted-foreground text-xs">
+          {timelineGaps.length} long timeline gap{timelineGaps.length === 1 ? '' : 's'} compressed.
+          This means no starts, ends, spawns, or signals were recorded—not necessarily that agents
+          were idle.
+        </p>
+      ) : null}
       {presentKinds.length > 0 ? (
-        <ul aria-label="Signal legend" className="flex flex-wrap gap-1.5">
+        <ul aria-label="Signal filters" className="flex flex-wrap gap-1.5">
           {presentKinds.map((kind) => (
             <li key={kind}>
-              <Badge variant="outline">{MARKER_LABEL[kind]}</Badge>
+              <Toggle
+                aria-label={`${hiddenKinds.has(kind) ? 'Show' : 'Hide'} ${MARKER_LABEL[kind]} signals`}
+                onPressedChange={() => toggleKind(kind)}
+                pressed={!hiddenKinds.has(kind)}
+                size="sm"
+                variant="outline"
+              >
+                <span
+                  aria-hidden="true"
+                  className="size-2 rounded-full"
+                  style={{ backgroundColor: MARKER_COLOR[kind] }}
+                />
+                {MARKER_LABEL[kind]} {kindCounts.get(kind)}
+              </Toggle>
             </li>
           ))}
         </ul>
@@ -478,6 +684,9 @@ type BarShapeProps = {
     label: string;
     isRoot: boolean;
     openEnded: boolean;
+    startedAt: string | null;
+    endedAt: string | null;
+    durationMs: number | null;
   };
 };
 
@@ -500,21 +709,62 @@ function LifespanBar({
   }
   const barHeight = Math.max(4, height * 0.6);
   const barY = y + (height - barHeight) / 2;
+  const title = payload.openEnded
+    ? `${payload.label} — started ${payload.startedAt ? tooltipDateTime.format(new Date(payload.startedAt)) : 'at an unknown time'} — end not reported`
+    : `${payload.label} — ${formatDuration(payload.durationMs)} — ${payload.startedAt ? tooltipDateTime.format(new Date(payload.startedAt)) : '?'} to ${payload.endedAt ? tooltipDateTime.format(new Date(payload.endedAt)) : '?'}`;
+
+  if (payload.openEnded) {
+    return (
+      // biome-ignore lint/a11y/noStaticElementInteractions: supplementary mouse target; the matching row label remains the keyboard-reachable control
+      <g
+        className="cursor-pointer"
+        data-open-ended="true"
+        data-row-id={payload.id}
+        onClick={() => onOpenNode(payload.id)}
+      >
+        <title>{title}</title>
+        <rect
+          data-open-ended="true"
+          data-row-id={payload.id}
+          fill="transparent"
+          height={height}
+          width={24}
+          x={x - 8}
+          y={y}
+        />
+        <circle
+          cx={x + 3}
+          cy={y + height / 2}
+          fill="var(--background)"
+          r={3.5}
+          stroke="var(--chart-3)"
+          strokeWidth={2}
+        />
+        <path
+          d={`M ${x + 7} ${y + height / 2} L ${x + 14} ${y + height / 2}`}
+          stroke="var(--chart-3)"
+          strokeDasharray="2 2"
+          strokeWidth={2}
+        />
+      </g>
+    );
+  }
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: bar is a supplementary mouse-only click target; the row label (RowTick) is the keyboard-reachable control for the same action
     <rect
       className="cursor-pointer"
       data-open-ended={payload.openEnded}
       data-row-id={payload.id}
-      fill={payload.isRoot ? 'var(--foreground)' : 'var(--chart-2)'}
+      fill={payload.isRoot ? 'var(--token-model-1)' : 'var(--chart-3)'}
       height={barHeight}
       onClick={() => onOpenNode(payload.id)}
       rx={2}
-      strokeDasharray={payload.openEnded ? '3 2' : undefined}
-      width={Math.max(1, width)}
+      width={Math.max(3, width)}
       x={x}
       y={barY}
-    />
+    >
+      <title>{title}</title>
+    </rect>
   );
 }
 
@@ -582,20 +832,19 @@ function RowTick({
   if (x === undefined || y === undefined || !payload) return null;
   const row = rowsById.get(payload.value);
   if (!row) return null;
-  // Visual depth cue (F-11, optional): each level beyond a direct child
-  // nudges the label right with non-breaking spaces (an SVG text glyph, not
-  // an inline style) — direct children (depth 1) are unindented, matching
-  // the original flat layout. A <title> discloses the full label when
-  // `shortId` has elided a long id, since row height shrinks at scale and
-  // labels can't grow to fit.
-  const indent = '  '.repeat(Math.max(0, row.depth - 1));
+  const axisRight = Number(x);
+  const rowY = Number(y);
+  if (!Number.isFinite(axisRight) || !Number.isFinite(rowY)) return null;
+  const gutterLeft = Math.max(8, axisRight - 182);
+  const depthIndent = Math.min(row.depth, 6) * 16;
+  const branchX = gutterLeft + depthIndent;
+  const labelX = row.isRoot ? gutterLeft + 14 : branchX + 13;
   return (
-    // biome-ignore lint/a11y/useSemanticElements: SVG text node inside a Recharts axis tick — a real <button> cannot be nested in this position; role="button" + tabIndex + onKeyDown is the closest reachable equivalent
-    <text
+    // biome-ignore lint/a11y/useSemanticElements: SVG group inside a Recharts axis tick; HTML button elements cannot be nested here
+    <g
       aria-label={`Open profile for ${row.label}`}
-      className="cursor-pointer fill-foreground text-xs"
+      className="group cursor-pointer outline-none"
       data-row-depth={row.depth}
-      dy={4}
       onClick={() => onOpenNode(row.id)}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -605,13 +854,47 @@ function RowTick({
       }}
       role="button"
       tabIndex={0}
-      textAnchor="end"
-      x={x}
-      y={y}
     >
       <title>{row.label}</title>
-      {indent}
-      {row.label}
-    </text>
+      <rect
+        className="fill-transparent transition-colors group-hover:fill-muted/60 group-focus-visible:fill-muted group-focus-visible:stroke-ring"
+        height={30}
+        rx={5}
+        stroke="transparent"
+        width={Math.max(24, axisRight - gutterLeft - 2)}
+        x={gutterLeft - 4}
+        y={rowY - 15}
+      />
+      {row.isRoot ? (
+        <circle cx={gutterLeft + 4} cy={rowY} fill="var(--token-model-1)" r={3} />
+      ) : row.parentRowId === null ? (
+        <circle
+          cx={branchX + 3}
+          cy={rowY}
+          fill="var(--background)"
+          r={3}
+          stroke="var(--muted-foreground)"
+          strokeWidth={1.25}
+        />
+      ) : (
+        <path
+          d={`M ${branchX} ${rowY - 8} V ${rowY} H ${branchX + 8}`}
+          fill="none"
+          stroke="var(--muted-foreground)"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={1.25}
+        />
+      )}
+      <text
+        className={row.isRoot ? 'fill-foreground font-medium text-xs' : 'fill-foreground text-xs'}
+        dominantBaseline="middle"
+        textAnchor="start"
+        x={labelX}
+        y={rowY}
+      >
+        {row.label}
+      </text>
+    </g>
   );
 }

@@ -6,6 +6,8 @@ import { makeDiagnostic } from '../contract/diagnostic';
  * (1) any session whose `parent_id` does not resolve to a real session gets
  * `parent_id` set NULL (depth/relation left as declared by the adapter -
  * plan P7) plus a warn `orphan-child` diagnostic, and becomes a root; (2)
+ * a depth-2+ session flattened onto the root is reparented when exactly one
+ * agent at the preceding depth owns the matching spawn call; (3)
  * `steps.child_id` is reset to NULL for every step, then set on `tool`
  * steps with `tool_category = 'agent'` to the child whose `parent_id` is
  * that session and whose `spawn_call_id` equals the step's `call_id`,
@@ -16,9 +18,52 @@ import { makeDiagnostic } from '../contract/diagnostic';
 export function linkSessions(db: Database): void {
   const run = db.transaction(() => {
     resolveOrphans(db);
+    recoverCausalParents(db);
     fillChildIds(db);
   });
   run();
+}
+
+/**
+ * Some harnesses report a useful `depth` and `spawn_call_id`, but identify the
+ * root session as every descendant's parent. Recover the immediate parent from
+ * the stronger causal evidence: an agent tool step at depth N-1 with the same
+ * call id. The candidate must be unique and belong to the same harness,
+ * project, and preceding depth. Repeated call ids therefore remain ambiguous
+ * rather than cross-linking unrelated sessions.
+ *
+ * The operation is idempotent. Ambiguous or absent evidence leaves the
+ * adapter-declared relationship untouched.
+ */
+function recoverCausalParents(db: Database): void {
+  db.run(
+    `UPDATE sessions AS child
+     SET parent_id = (
+       SELECT MIN(candidate.id)
+       FROM steps spawn
+       JOIN sessions candidate ON candidate.id = spawn.session_id
+       WHERE spawn.kind = 'tool'
+         AND spawn.tool_category = 'agent'
+         AND spawn.call_id = child.spawn_call_id
+         AND candidate.harness_id = child.harness_id
+         AND candidate.project_key IS child.project_key
+         AND candidate.depth = child.depth - 1
+     )
+     WHERE child.depth >= 2
+       AND child.parent_id IS NOT NULL
+       AND child.spawn_call_id IS NOT NULL
+       AND 1 = (
+         SELECT COUNT(DISTINCT candidate.id)
+         FROM steps spawn
+         JOIN sessions candidate ON candidate.id = spawn.session_id
+         WHERE spawn.kind = 'tool'
+           AND spawn.tool_category = 'agent'
+           AND spawn.call_id = child.spawn_call_id
+           AND candidate.harness_id = child.harness_id
+           AND candidate.project_key IS child.project_key
+           AND candidate.depth = child.depth - 1
+       )`,
+  );
 }
 
 function resolveOrphans(db: Database): void {

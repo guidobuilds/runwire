@@ -5,7 +5,7 @@ The three commands of the `scout` CLI. Definitions of the stored fields: [what-s
 ## `scout import`
 
 ```text
-scout import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles]
+scout import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles] [--force]
 ```
 
 Runs adapters and stores their sessions. Reads harness data; writes only to the Scout database.
@@ -16,10 +16,12 @@ Runs adapters and stores their sessions. Reads harness data; writes only to the 
 | `--home <dir>` | real OS home | Where adapters look for harness data. |
 | `--db <path>` | `~/.scout/scout.db` | Database location. `--db :memory:` imports into RAM. |
 | `--no-titles` | off | Do not store harness-generated session titles. |
+| `--force` | off | Re-read and recompute every discovered source, ignoring the stored size/mtime cache. Does not delete the database. |
 
 Behavior:
 
 - Incremental: sources whose size and mtime match the stored record are skipped.
+- Forced: `--force` bypasses incremental skipping while preserving normal vanished-source detection.
 - Removal: stored sessions whose source no longer exists are deleted, after a full successful discovery pass only.
 - Rollups and aggregates are recomputed after each import (inclusive of a session's subagents).
 

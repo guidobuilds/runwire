@@ -205,7 +205,8 @@ for each adapter:
             discover() throw keeps what was persisted and skips removal. A DB-backed sourceExists returns
             true (retain) on any DB open/read/stat error and false (delete) only on a CONFIRMED absent source,
             so a transient error or an unreadable store never mass-deletes.
-  link      parent_id from bundles; steps.child_id = the child whose spawn_call_id equals that step's call_id
+  link      parent_id from bundles; for a flattened depth-2+ child, recover its immediate parent when exactly one
+            agent step at depth N-1 in the same tree owns its spawn_call_id; steps.child_id = the child whose spawn_call_id equals that step's call_id
             depth as declared by the adapter; unresolved parent → diagnostic `orphan-child`, child kept as a root
   rollups   exclusive = the row; inclusive = row + all descendants (turns copied from the root, not summed)
   aggregates per project and per harness, from root sessions
@@ -246,7 +247,7 @@ Rollups are a table (`rollups`, §5) recomputed by core after each import: inclu
 | `bun run test` | `bun test` in every package — never bare `bun test` at the root |
 | `bun run typecheck` | `tsc --noEmit` per package |
 | `bun run lint` | Biome + dependency-cruiser boundaries |
-| `bun run scout import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles]` | Imports every registered adapter (or just `--adapter`) into `~/.scout/scout.db` (`--db` overrides, `--db :memory:` allowed); prints the `ImportReport` to stderr; exits 1 if any adapter errored or a bundle failed validation, else 0. |
+| `bun run scout import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles] [--force]` | Imports every registered adapter (or just `--adapter`) into `~/.scout/scout.db` (`--db` overrides, `--db :memory:` allowed); `--force` bypasses the size/mtime cache and recomputes every source; prints the `ImportReport` to stderr; exits 1 if any adapter errored or a bundle failed validation, else 0. |
 | `bun run scout discover --adapter <id> [--home <dir>] [--json]` | Streams the named adapter's bundles read-only, without touching the store; `--json` writes one `SessionBundle` per line (NDJSON) to stdout and nothing else, so the output can be piped straight into a file or `jq`. |
 
 ## 10. Open items

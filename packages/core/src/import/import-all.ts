@@ -46,6 +46,10 @@ export async function importAll(opts: {
   adapters: HarnessAdapter[];
   db: Database;
   ctx: AdapterContext;
+  /** Re-read every discovered source instead of passing the persisted
+   * size/mtime cache to adapters. The real known set is still retained for
+   * vanished-source removal and report accounting. */
+  force?: boolean;
 }): Promise<ImportReport> {
   const start = Date.now();
   const perAdapter: Record<string, AdapterReport> = {};
@@ -59,9 +63,10 @@ export async function importAll(opts: {
       } else {
         upsertHarness(opts.db, adapter);
         const known = loadKnown(opts.db, adapter.id, probe.roots);
+        const discoveryKnown = opts.force ? new Map() : known;
         const emitted = new Set<string>();
 
-        for await (const bundle of adapter.discover(opts.ctx, known)) {
+        for await (const bundle of adapter.discover(opts.ctx, discoveryKnown)) {
           report.discovered++;
           // Keyed by the EFFECTIVE source id (sourceId ?? sourcePath), so a
           // DB-backed adapter that separates sourceId from sourcePath tracks

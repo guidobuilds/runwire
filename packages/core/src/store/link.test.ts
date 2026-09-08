@@ -14,12 +14,12 @@ function seed(db: Database) {
 function insertSession(
   db: Database,
   id: string,
-  opts: { parentId?: string; spawnCallId?: string } = {},
+  opts: { parentId?: string; spawnCallId?: string; depth?: number } = {},
 ) {
   db.run(
     `INSERT INTO sessions (id, harness_id, project_key, parent_id, spawn_call_id, depth, source_path, source_size, source_mtime)
-     VALUES (?, 'fake', 'k', ?, ?, 0, ?, 1, 1)`,
-    [id, opts.parentId ?? null, opts.spawnCallId ?? null, `/fake/${id}.jsonl`],
+     VALUES (?, 'fake', 'k', ?, ?, ?, ?, 1, 1)`,
+    [id, opts.parentId ?? null, opts.spawnCallId ?? null, opts.depth ?? 0, `/fake/${id}.jsonl`],
   );
 }
 
@@ -102,6 +102,104 @@ describe('linkSessions - child_id by spawn_call_id', () => {
     db.run('DELETE FROM sessions WHERE id = ?', ['fake:child1']);
     linkSessions(db);
     expect(childIdOf(db, 'fake:root', 0)).toBeNull();
+  });
+});
+
+describe('linkSessions - causal parent recovery', () => {
+  test('reparents a flattened depth-2 agent to the depth-1 agent that spawned it', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:root');
+    insertSession(db, 'fake:worker', { parentId: 'fake:root', depth: 1 });
+    insertAgentToolStep(db, 'fake:worker', 0, 'spawn-leaf');
+    insertSession(db, 'fake:leaf', {
+      parentId: 'fake:root',
+      spawnCallId: 'spawn-leaf',
+      depth: 2,
+    });
+
+    linkSessions(db);
+
+    const leaf = db.query('SELECT parent_id FROM sessions WHERE id = ?').get('fake:leaf') as {
+      parent_id: string;
+    };
+    expect(leaf.parent_id).toBe('fake:worker');
+    expect(childIdOf(db, 'fake:worker', 0)).toBe('fake:leaf');
+  });
+
+  test('leaves a flattened relationship untouched when the causal parent is ambiguous', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:root');
+    insertSession(db, 'fake:worker-a', { parentId: 'fake:root', depth: 1 });
+    insertSession(db, 'fake:worker-b', { parentId: 'fake:root', depth: 1 });
+    insertAgentToolStep(db, 'fake:worker-a', 0, 'shared-call');
+    insertAgentToolStep(db, 'fake:worker-b', 0, 'shared-call');
+    insertSession(db, 'fake:leaf', {
+      parentId: 'fake:root',
+      spawnCallId: 'shared-call',
+      depth: 2,
+    });
+
+    linkSessions(db);
+
+    const leaf = db.query('SELECT parent_id FROM sessions WHERE id = ?').get('fake:leaf') as {
+      parent_id: string;
+    };
+    expect(leaf.parent_id).toBe('fake:root');
+  });
+
+  test('causal recovery is idempotent', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:root');
+    insertSession(db, 'fake:worker', { parentId: 'fake:root', depth: 1 });
+    insertAgentToolStep(db, 'fake:worker', 0, 'spawn-leaf');
+    insertSession(db, 'fake:leaf', {
+      parentId: 'fake:root',
+      spawnCallId: 'spawn-leaf',
+      depth: 2,
+    });
+
+    linkSessions(db);
+    linkSessions(db);
+
+    const leaf = db.query('SELECT parent_id FROM sessions WHERE id = ?').get('fake:leaf') as {
+      parent_id: string;
+    };
+    expect(leaf.parent_id).toBe('fake:worker');
+    expect(childIdOf(db, 'fake:worker', 0)).toBe('fake:leaf');
+  });
+
+  test('recovers multiple flattened generations in one pass', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:root');
+    insertSession(db, 'fake:worker', { parentId: 'fake:root', depth: 1 });
+    insertAgentToolStep(db, 'fake:worker', 0, 'spawn-leaf');
+    insertSession(db, 'fake:leaf', {
+      parentId: 'fake:root',
+      spawnCallId: 'spawn-leaf',
+      depth: 2,
+    });
+    insertAgentToolStep(db, 'fake:leaf', 0, 'spawn-reviewer');
+    insertSession(db, 'fake:reviewer', {
+      parentId: 'fake:root',
+      spawnCallId: 'spawn-reviewer',
+      depth: 3,
+    });
+
+    linkSessions(db);
+
+    const rows = db
+      .query(
+        "SELECT id, parent_id FROM sessions WHERE id IN ('fake:leaf', 'fake:reviewer') ORDER BY depth",
+      )
+      .all() as { id: string; parent_id: string }[];
+    expect(rows).toEqual([
+      { id: 'fake:leaf', parent_id: 'fake:worker' },
+      { id: 'fake:reviewer', parent_id: 'fake:leaf' },
+    ]);
   });
 });
 

@@ -9,6 +9,7 @@ export type ImportOptions = {
   home?: string;
   db?: string;
   titles: boolean;
+  force?: boolean;
 };
 
 /**
@@ -34,7 +35,7 @@ export async function runImport(opts: ImportOptions): Promise<number> {
   const ctx = createContext({ home: opts.home, titles: opts.titles });
   const { db, close } = openStore(dbPath);
   try {
-    const report = await importAll({ adapters: selected, db, ctx });
+    const report = await importAll({ adapters: selected, db, ctx, force: opts.force });
     console.error(formatReport(report));
     const failed = Object.values(report.perAdapter).some(
       (r) => r.error !== undefined || r.failed > 0,

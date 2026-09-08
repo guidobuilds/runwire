@@ -182,6 +182,23 @@ describe('importAll', () => {
     });
   });
 
+  test('force reimports unchanged sources instead of passing the size/mtime cache to discovery', async () => {
+    const { db } = openStore(':memory:');
+    const adapter = createFakeAdapter();
+    const ctx = ctxWithFiles(BASE_PATHS);
+    await importAll({ adapters: [adapter], db, ctx });
+
+    const forced = await importAll({ adapters: [adapter], db, ctx, force: true });
+
+    expect(forced.perAdapter.fake).toEqual({
+      discovered: 9,
+      imported: 9,
+      skipped: 0,
+      removed: 0,
+      failed: 0,
+    });
+  });
+
   test('a source removed from the fs is deleted with its child rows on the next run', async () => {
     const { db } = openStore(':memory:');
     const adapter = createFakeAdapter();

@@ -5,7 +5,7 @@ import { runImport } from './commands/import';
 import { runServe } from './commands/serve';
 
 const USAGE = `Usage:
-  scout import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles]
+  scout import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles] [--force]
   scout discover --adapter <id> [--home <dir>] [--json] [--no-titles]
   scout serve [--db <path>] [--host <host>] [--port <n>]
 
@@ -15,7 +15,7 @@ async function main(argv: string[]): Promise<number> {
   const [subcommand, ...rest] = argv;
 
   if (subcommand === 'import') {
-    let values: { adapter?: string; home?: string; db?: string; titles: boolean };
+    let values: { adapter?: string; home?: string; db?: string; titles: boolean; force: boolean };
     try {
       const parsed = parseArgs({
         args: rest,
@@ -24,6 +24,7 @@ async function main(argv: string[]): Promise<number> {
           home: { type: 'string' },
           db: { type: 'string' },
           'no-titles': { type: 'boolean', default: false },
+          force: { type: 'boolean', default: false },
         },
         strict: true,
         allowPositionals: false,
@@ -33,6 +34,7 @@ async function main(argv: string[]): Promise<number> {
         home: parsed.values.home,
         db: parsed.values.db,
         titles: !parsed.values['no-titles'],
+        force: parsed.values.force ?? false,
       };
     } catch (e) {
       console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
@@ -45,6 +47,7 @@ async function main(argv: string[]): Promise<number> {
       home: values.home,
       db: values.db,
       titles: values.titles,
+      force: values.force,
     });
   }
 
