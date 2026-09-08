@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { AdapterContext } from '@scout/core';
 import { createBunFs } from '@scout/core';
 import { computeBundle, computeDepth } from './compute';
-import { type OpenCodeSession, readOrigin } from './records';
+import { type OpenCodeMessage, type OpenCodeSession, readOrigin } from './records';
 
 const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', 'fixtures', 'opencode');
 
@@ -39,6 +39,57 @@ describe('computeDepth', () => {
 });
 
 describe('computeBundle', () => {
+  test('maps current name/time tool parts to CORE tool steps', async () => {
+    const ctx = ctxFor('small');
+    const session: OpenCodeSession = {
+      id: 'current-tool',
+      projectId: 'p',
+      directory: '/home/u/proj',
+      spawnCallId: 'parent-call',
+    };
+    const messages: OpenCodeMessage[] = [
+      {
+        type: 'assistant',
+        seq: 1,
+        data: {
+          time: { created: 50, completed: 500 },
+          content: [
+            {
+              type: 'tool',
+              id: 'tool-1',
+              name: 'subagent',
+              time: { created: 100, completed: 225 },
+              state: { status: 'completed', metadata: { sessionID: 'child' } },
+            },
+          ],
+        },
+      },
+    ];
+    const bundle = await computeBundle({
+      harnessId: 'opencode',
+      origin: 'current',
+      session,
+      messages,
+      sessionsById: new Map([[session.id, session]]),
+      projects: new Map(),
+      recordDiagnostics: [],
+      ctx,
+    });
+
+    expect(bundle.session.spawnCallId).toBe('parent-call');
+    expect(bundle.session.toolCalls).toBe(1);
+    expect(bundle.steps).toEqual([
+      expect.objectContaining({
+        kind: 'tool',
+        toolName: 'subagent',
+        toolCategory: 'agent',
+        callId: 'tool-1',
+        at: '1970-01-01T00:00:00.100Z',
+        durationMs: 125,
+      }),
+    ]);
+  });
+
   test('turns the small current session into the expected CORE bundle', async () => {
     const ctx = ctxFor('small');
     const records = await readOrigin(ctx, 'current');

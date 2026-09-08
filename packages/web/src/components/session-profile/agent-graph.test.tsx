@@ -388,6 +388,13 @@ describe('AgentGraph — depth-2 and orphan rows (f4-t2 repair)', () => {
     '2026-09-01T10:09:00.000Z',
     '2026-09-01T10:11:00.000Z',
   );
+  const D_ROOT_SIBLING = node(
+    'd-root/sibling',
+    D_ROOT.id,
+    'reviewer',
+    '2026-09-01T10:22:00.000Z',
+    '2026-09-01T10:25:00.000Z',
+  );
   // In `nodes` but reachable through no SpawnItem at all.
   const D_ORPHAN = node(
     'd-root/orphan',
@@ -405,20 +412,38 @@ describe('AgentGraph — depth-2 and orphan rows (f4-t2 repair)', () => {
     '2026-09-01T10:07:30.000Z',
   );
   const ITEM_UNLINKED_GRANDCHILD = spawnEdge(D_CHILD, D_GRANDCHILD_UNLINKED, 'ambiguous', null);
+  const ITEM_ROOT_SIBLING = spawnEdge(
+    D_ROOT_NODE,
+    D_ROOT_SIBLING,
+    'linked',
+    '2026-09-01T10:21:30.000Z',
+  );
 
   function depthSpawnsPage(): ProfileSpawnsResponse & { view: 'spawns' } {
-    const items = [ITEM_ROOT_CHILD, ITEM_LINKED_GRANDCHILD, ITEM_UNLINKED_GRANDCHILD];
+    const items = [
+      ITEM_ROOT_CHILD,
+      ITEM_LINKED_GRANDCHILD,
+      ITEM_UNLINKED_GRANDCHILD,
+      ITEM_ROOT_SIBLING,
+    ];
     return {
       view: 'spawns',
       sessionId: D_ROOT.id,
       scope: 'tree',
-      nodes: [D_ROOT_NODE, D_CHILD, D_GRANDCHILD_LINKED, D_GRANDCHILD_UNLINKED, D_ORPHAN],
+      nodes: [
+        D_ROOT_NODE,
+        D_CHILD,
+        D_GRANDCHILD_LINKED,
+        D_GRANDCHILD_UNLINKED,
+        D_ROOT_SIBLING,
+        D_ORPHAN,
+      ],
       items,
       total: items.length,
       limit: 50,
       offset: 0,
       counts: {
-        linked: 2,
+        linked: 3,
         'missing-call-id': 0,
         'call-not-found': 0,
         ambiguous: 1,
@@ -473,6 +498,31 @@ describe('AgentGraph — depth-2 and orphan rows (f4-t2 repair)', () => {
     expect(connector).not.toBeNull();
   });
 
+  it('renders nested agents as visibly indented children of their actual parent', async () => {
+    installDepthHandlers();
+    const { container } = render(
+      <AgentGraph onOpenNode={() => {}} rootSession={D_ROOT} sessionId={D_ROOT.id} />,
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect(
+        container.querySelector(`[data-tree-row-id="${D_GRANDCHILD_LINKED.id}"]`),
+      ).not.toBeNull();
+    });
+
+    const childRow = container.querySelector(`[data-tree-row-id="${D_CHILD.id}"]`);
+    const grandchildRow = container.querySelector(`[data-tree-row-id="${D_GRANDCHILD_LINKED.id}"]`);
+    expect(childRow?.getAttribute('data-row-depth')).toBe('1');
+    expect(grandchildRow?.getAttribute('data-row-depth')).toBe('2');
+    expect(grandchildRow?.getAttribute('data-parent-row-id')).toBe(D_CHILD.id);
+
+    const childLabelX = Number(childRow?.querySelector('text')?.getAttribute('x'));
+    const grandchildLabelX = Number(grandchildRow?.querySelector('text')?.getAttribute('x'));
+    expect(grandchildLabelX - childLabelX).toBe(20);
+    expect(grandchildRow?.querySelector('[data-tree-branch]')).not.toBeNull();
+    expect(grandchildRow?.querySelector('[data-tree-guide-depth="1"]')).not.toBeNull();
+  });
+
   it('gives an unlinked (callAt: null) depth-2 grandchild its own row and no connector', async () => {
     installDepthHandlers();
     const { container } = render(
@@ -512,7 +562,7 @@ describe('AgentGraph — depth-2 and orphan rows (f4-t2 repair)', () => {
       { wrapper },
     );
     await waitFor(() => {
-      expect(container.querySelectorAll('rect[data-row-id]').length).toBe(5);
+      expect(container.querySelectorAll('rect[data-row-id]').length).toBe(6);
     });
   });
 

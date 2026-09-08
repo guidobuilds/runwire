@@ -43,11 +43,22 @@ describe('parseMessageData', () => {
       time: { created: 100, completed: 200 },
       model: { id: 'gpt-5.6-sol' },
       tokens: { input: 10, output: 5, cache: { read: 2, write: 0 } },
-      content: [{ type: 'tool', id: 't1', tool: 'read', state: { status: 'completed' } }],
+      content: [
+        {
+          type: 'tool',
+          id: 't1',
+          name: 'subagent',
+          time: { created: 120, completed: 180 },
+          state: { status: 'completed', metadata: { sessionID: 'ses_child' } },
+        },
+      ],
     });
     expect(data).toBeDefined();
     expect(data?.model?.id).toBe('gpt-5.6-sol');
     expect(data?.tokens?.cache?.read).toBe(2);
+    expect(data?.content?.[0]?.name).toBe('subagent');
+    expect(data?.content?.[0]?.time?.completed).toBe(180);
+    expect(data?.content?.[0]?.state?.metadata?.sessionID).toBe('ses_child');
   });
 
   test('accepts a legacy simple assistant shape (no tokens/cache)', () => {

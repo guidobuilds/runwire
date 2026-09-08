@@ -76,8 +76,19 @@ const messageSchema = z
           .object({
             type: z.string().optional(),
             id: z.string().optional(),
+            name: z.string().optional(),
             tool: z.string().optional(),
-            state: z.object({ status: z.string().optional() }).passthrough().optional(),
+            time: z
+              .object({ created: z.number().optional(), completed: z.number().optional() })
+              .passthrough()
+              .optional(),
+            state: z
+              .object({
+                status: z.string().optional(),
+                metadata: z.object({ sessionID: z.string().optional() }).passthrough().optional(),
+              })
+              .passthrough()
+              .optional(),
           })
           .passthrough(),
       )

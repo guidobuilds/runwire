@@ -1,6 +1,6 @@
 # Adapter: OpenCode
 
-Status: implements the 2026-09-04 contract (D68–D74), `adapterVersion: '1.0.0'`. Reads both the current and legacy OpenCode SQLite stores **read-only, WAL-aware** (`bun:sqlite` `readonly`; never `immutable=1`, which ignores the WAL and shows an empty database). `discover(ctx, known)` computes every `SessionBundle` field itself (records.ts + compute.ts + project.ts); core only validates, persists, links and rolls up. The package also exposes a **metadata-only, CORE-representable** connector surface (`inventorySessions` / `retrieveSession` / `retrieveSessionParts`) that returns exactly the non-sensitive data the bundle path produces, for one session on demand — it never bypasses the CORE allowlist and never persists into CORE.
+Status: implements the 2026-09-04 contract (D68–D74), `adapterVersion: '1.1.0'`. Reads both the current and legacy OpenCode SQLite stores **read-only, WAL-aware** (`bun:sqlite` `readonly`; never `immutable=1`, which ignores the WAL and shows an empty database). `discover(ctx, known)` computes every `SessionBundle` field itself (records.ts + compute.ts + project.ts); core only validates, persists, links and rolls up. The package also exposes a **metadata-only, CORE-representable** connector surface (`inventorySessions` / `retrieveSession` / `retrieveSessionParts`) that returns exactly the non-sensitive data the bundle path produces, for one session on demand — it never bypasses the CORE allowlist and never persists into CORE.
 
 ## Location and layout
 
@@ -32,7 +32,7 @@ Status: implements the 2026-09-04 contract (D68–D74), `adapterVersion: '1.0.0'
 | `type` | Produces | Fields used (from `data`) |
 |---|---|---|
 | `user` | `Step kind=turn` → `turns` | `time.created`, `text` (dropped) |
-| `assistant` | `Step kind=call` per message with `tokens` (`model`, token columns) → token totals, `api_calls`, `model_primary`; `Step kind=tool` per `content[].tool` part (`tool_name`, `tool_category`, `call_id = part.id`, `error = state.status === 'error'`, `duration_ms = completed − created`) → `tool_calls`, `session_tool_counts` | `model.id`, `time.{created,completed}`, `tokens.{input,output,reasoning,cache.{read,write}}`, `content[].{type,id,tool,state.status}` |
+| `assistant` | `Step kind=call` per message with `tokens` (`model`, token columns) → token totals, `api_calls`, `model_primary`; `Step kind=tool` per tool part (`tool_name = content[].name`, with legacy `tool` fallback; `tool_category`, `call_id = part.id`, `error = state.status === 'error'`, part-local `duration_ms = completed − created`) → `tool_calls`, `session_tool_counts`. An explicit subagent `state.metadata.sessionID` matching a child whose declared parent owns the call supplies that child's `spawn_call_id`; because CORE stores one spawn call per child, the first explicit match in source order is retained and later matches remain agent tool steps. | `model.id`, `time.{created,completed}`, `tokens.{input,output,reasoning,cache.{read,write}}`, `content[].{type,id,name,tool,time.{created,completed},state.status,state.metadata.sessionID}` |
 | `model-switched` | `Step kind=model-change` (`from_value = previous.id`, `to_value = model.id`) → `model_changes` | `time.created`, `model.id`, `previous.id` |
 | `compaction` | `Step kind=compaction` (`compaction_trigger = reason`) → `compactions` | `time.created`, `reason` (content `summary` dropped) |
 | `agent-switched` | `Step kind=harness` (`tool_name = 'agent-switched'`) | `time.created` |
@@ -41,7 +41,7 @@ Status: implements the 2026-09-04 contract (D68–D74), `adapterVersion: '1.0.0'
 | `synthetic` | skipped (injected content, not a turn) | — |
 | (other) | timestamps only; diagnostic `unknown-record-type` | `time.*` |
 
-`session` / `session_v2` columns read: `id`, `project_id`, `parent_id`, `fork_session_id`, `directory`, `title`, `agent`, `model`, `version`, `cost`, `time_created`, `time_updated`, `time_suspended`, `tokens_*`. `parent_id` set → `relation='subagent'`; `fork_session_id` set (no parent) → `relation='fork'`, `forkedFrom = opencode:<origin>:<fork_session_id>`. `resumed = time_suspended != null`. `harness_version_first/last = version`. `mode`/`effort`/`git`/`initiator` are not stored per OpenCode session → those capabilities are not declared.
+`session` / `session_v2` columns read: `id`, `project_id`, `parent_id`, `fork_session_id`, `directory`, `title`, `agent`, `model`, `version`, `cost`, `time_created`, `time_updated`, `time_suspended`, `tokens_*`. `parent_id` set → `relation='subagent'`; an explicitly matching parent subagent tool part supplies `spawn_call_id`; `fork_session_id` set (no parent) → `relation='fork'`, `forkedFrom = opencode:<origin>:<fork_session_id>`. `resumed = time_suspended != null`. `harness_version_first/last = version`. `mode`/`effort`/`git`/`initiator` are not stored per OpenCode session → those capabilities are not declared.
 
 ## Tool categories (OpenCode names are lowercase)
 
@@ -49,7 +49,7 @@ Status: implements the 2026-09-04 contract (D68–D74), `adapterVersion: '1.0.0'
 
 ## Allowlist (projection)
 
-`allowlist` (`opencodeAllowlist`) is the only projection both the bundle path and the connector use. It keeps `type`, `role`, `model.id`, `previous.id`, `time.{created,completed,streamed}`, `tokens.{input,output,reasoning,cache.{read,write}}`, `content[].{type,id,tool,state.status}` and `reason`. It drops `text` (prompt/reasoning), `content[].text`, `content[].state.{input,content,error.message,reasoningEncryptedContent}`, `snapshot`, `summary`, `recent`, `metadata`, `share_url`, `revert`, `instruction_*` values. `sessionRowAllowlist` keeps only the metadata `session`/`session_v2` columns (also dropping `summary_diffs`, `metadata`, `share_url`, `revert`).
+`allowlist` (`opencodeAllowlist`) is the only projection both the bundle path and the connector use. It keeps `type`, `role`, `model.id`, `previous.id`, `time.{created,completed,streamed}`, `tokens.{input,output,reasoning,cache.{read,write}}`, `content[].{type,id,name,tool,time.{created,completed},state.status,state.metadata.sessionID}` and `reason`. The narrowly projected `sessionID` is an opaque causal identifier; no other metadata key is retained. It drops `text` (prompt/reasoning), `content[].text`, all of `content[].state.input`, `content[].state.{content,error.message,reasoningEncryptedContent}`, every other `state.metadata` key, `snapshot`, `summary`, `recent`, top-level `metadata`, `share_url`, `revert`, `instruction_*` values. `sessionRowAllowlist` keeps only the metadata `session`/`session_v2` columns (also dropping `summary_diffs`, `metadata`, `share_url`, `revert`).
 
 ## Capabilities
 

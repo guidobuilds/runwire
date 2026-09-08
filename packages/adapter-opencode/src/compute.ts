@@ -182,19 +182,22 @@ export async function computeBundle(input: ComputeSessionInput): Promise<Session
         }
 
         for (const part of msg.data.content ?? []) {
-          if (part.type === 'tool' && part.tool) {
+          const toolName = part.name ?? part.tool;
+          if (part.type === 'tool' && toolName) {
+            const toolCreated = part.time?.created ?? created;
+            const toolCompleted = part.time?.completed ?? completed;
             const toolStep: Step = {
               sessionId: sourceId,
               seq: seq++,
-              at: isoFromMs(completed ?? created),
+              at: isoFromMs(toolCreated ?? toolCompleted),
               kind: 'tool',
-              toolCategory: opencodeToolCategory(part.tool),
-              toolName: part.tool,
+              toolCategory: opencodeToolCategory(toolName),
+              toolName,
               callId: part.id,
               error: part.state?.status === 'error',
             };
-            if (completed !== undefined && created !== undefined) {
-              const dur = completed - created;
+            if (toolCompleted !== undefined && toolCreated !== undefined) {
+              const dur = toolCompleted - toolCreated;
               if (Number.isFinite(dur) && dur >= 0) toolStep.durationMs = dur;
             }
             steps.push(toolStep);
@@ -322,6 +325,7 @@ export async function computeBundle(input: ComputeSessionInput): Promise<Session
     relation,
     depth,
     agentType: session.agent,
+    spawnCallId: session.spawnCallId,
     title: ctx.privacy.titles ? session.title : undefined,
     cwd: session.directory,
     startedAt: isoFromMs(firstAt),

@@ -27,7 +27,7 @@ export function createOpencodeAdapter(): HarnessAdapter {
   return {
     id: 'opencode',
     displayName: 'OpenCode',
-    adapterVersion: '1.0.0',
+    adapterVersion: '1.1.0',
     capabilities: CAPABILITIES,
     allowlist: opencodeAllowlist,
     probe,

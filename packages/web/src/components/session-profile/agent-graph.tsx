@@ -57,6 +57,11 @@ type Row = {
   /** Tree depth from the root (root = 0); used only for the optional visual
    * indent cue (F-11), never for row inclusion. */
   depth: number;
+  /** For each ancestor level, whether that ancestor has a following sibling.
+   * Used to continue the vertical tree guide through this row. */
+  ancestorHasNextSibling: readonly boolean[];
+  /** Whether this node is the final child of its parent. */
+  isLastSibling: boolean;
   isRoot: boolean;
 };
 
@@ -124,6 +129,8 @@ function buildRows(
     callAt: null,
     parentRowId: null,
     depth: 0,
+    ancestorHasNextSibling: [],
+    isLastSibling: true,
     isRoot: true,
   };
   const rows: Row[] = [rootRow];
@@ -131,11 +138,13 @@ function buildRows(
   // visible-ancestor-set guard.
   const visited = new Set<string>([rootSession.id]);
 
-  function walk(parentRowId: string, depth: number) {
-    for (const item of childrenByParent.get(parentRowId) ?? []) {
+  function walk(parentRowId: string, depth: number, ancestorHasNextSibling: readonly boolean[]) {
+    const children = childrenByParent.get(parentRowId) ?? [];
+    for (const [index, item] of children.entries()) {
       const child = item.child as ProfileNode;
       if (visited.has(child.id)) continue;
       visited.add(child.id);
+      const isLastSibling = index === children.length - 1;
       rows.push({
         id: child.id,
         label: labelFor(child),
@@ -144,12 +153,14 @@ function buildRows(
         callAt: item.callAt,
         parentRowId,
         depth,
+        ancestorHasNextSibling,
+        isLastSibling,
         isRoot: false,
       });
-      walk(child.id, depth + 1);
+      walk(child.id, depth + 1, [...ancestorHasNextSibling, !isLastSibling]);
     }
   }
-  walk(rootSession.id, 1);
+  walk(rootSession.id, 1, []);
 
   for (const page of pages) {
     for (const n of page.nodes) {
@@ -163,6 +174,8 @@ function buildRows(
         callAt: null,
         parentRowId: null,
         depth: 1,
+        ancestorHasNextSibling: [],
+        isLastSibling: true,
         isRoot: false,
       });
     }
@@ -172,6 +185,7 @@ function buildRows(
 }
 
 const ROW_HEIGHT = 36;
+const TREE_LEVEL_INDENT = 20;
 const MIN_CHART_HEIGHT = 150;
 const MAX_VIEWPORT_HEIGHT = 560;
 const MIN_GAP_MS = 30 * 60 * 1000;
@@ -836,15 +850,22 @@ function RowTick({
   const rowY = Number(y);
   if (!Number.isFinite(axisRight) || !Number.isFinite(rowY)) return null;
   const gutterLeft = Math.max(8, axisRight - 182);
-  const depthIndent = Math.min(row.depth, 6) * 16;
-  const branchX = gutterLeft + depthIndent;
-  const labelX = row.isRoot ? gutterLeft + 14 : branchX + 13;
+  const treeRootX = gutterLeft + 4;
+  const visibleDepth = Math.min(row.depth, 6);
+  const branchX = treeRootX + visibleDepth * TREE_LEVEL_INDENT;
+  const labelX = row.isRoot ? treeRootX + 10 : branchX + 12;
+  const rowHalfHeight = ROW_HEIGHT / 2;
+  const ancestorGuides = row.ancestorHasNextSibling.flatMap((hasNextSibling, index) =>
+    hasNextSibling ? [{ depth: index + 1, id: `${row.id}:ancestor-${index + 1}` }] : [],
+  );
   return (
     // biome-ignore lint/a11y/useSemanticElements: SVG group inside a Recharts axis tick; HTML button elements cannot be nested here
     <g
       aria-label={`Open profile for ${row.label}`}
       className="group cursor-pointer outline-none"
+      data-parent-row-id={row.parentRowId ?? undefined}
       data-row-depth={row.depth}
+      data-tree-row-id={row.id}
       onClick={() => onOpenNode(row.id)}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -865,11 +886,23 @@ function RowTick({
         x={gutterLeft - 4}
         y={rowY - 15}
       />
+      {ancestorGuides.map((guide) => (
+        <line
+          className="stroke-muted-foreground/45"
+          data-tree-guide-depth={guide.depth}
+          key={guide.id}
+          strokeWidth={1.25}
+          x1={treeRootX + guide.depth * TREE_LEVEL_INDENT}
+          x2={treeRootX + guide.depth * TREE_LEVEL_INDENT}
+          y1={rowY - rowHalfHeight}
+          y2={rowY + rowHalfHeight}
+        />
+      ))}
       {row.isRoot ? (
-        <circle cx={gutterLeft + 4} cy={rowY} fill="var(--token-model-1)" r={3} />
+        <circle cx={treeRootX} cy={rowY} fill="var(--token-model-1)" r={3} />
       ) : row.parentRowId === null ? (
         <circle
-          cx={branchX + 3}
+          cx={branchX}
           cy={rowY}
           fill="var(--background)"
           r={3}
@@ -878,9 +911,14 @@ function RowTick({
         />
       ) : (
         <path
-          d={`M ${branchX} ${rowY - 8} V ${rowY} H ${branchX + 8}`}
+          className="stroke-muted-foreground"
+          d={
+            row.isLastSibling
+              ? `M ${branchX} ${rowY - rowHalfHeight} V ${rowY} H ${branchX + 8}`
+              : `M ${branchX} ${rowY - rowHalfHeight} V ${rowY + rowHalfHeight} M ${branchX} ${rowY} H ${branchX + 8}`
+          }
+          data-tree-branch={row.isLastSibling ? 'last' : 'middle'}
           fill="none"
-          stroke="var(--muted-foreground)"
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeWidth={1.25}

@@ -19,8 +19,14 @@ describe('opencodeAllowlist (message data projection)', () => {
       {
         type: 'tool',
         id: 't1',
-        tool: 'read',
-        state: { status: 'completed', input: { secret: 'io' }, content: 'SECRET_CONTENT' },
+        name: 'read',
+        time: { created: 120, completed: 180, ignored: 'SECRET_TIME' },
+        state: {
+          status: 'completed',
+          input: { sessionID: 'SECRET_INPUT_SESSION', secret: 'io' },
+          metadata: { sessionID: 'ses_child', secret: 'SECRET_METADATA' },
+          content: 'SECRET_CONTENT',
+        },
       },
     ],
     snapshot: { start: 'a', files: [] },
@@ -40,8 +46,9 @@ describe('opencodeAllowlist (message data projection)', () => {
     expect(content[2]).toEqual({
       type: 'tool',
       id: 't1',
-      tool: 'read',
-      state: { status: 'completed' },
+      name: 'read',
+      time: { created: 120, completed: 180 },
+      state: { status: 'completed', metadata: { sessionID: 'ses_child' } },
     });
   });
 
@@ -51,12 +58,23 @@ describe('opencodeAllowlist (message data projection)', () => {
     expect(JSON.stringify(out)).not.toContain('SECRET_REASONING');
     expect(JSON.stringify(out)).not.toContain('SECRET_ENCRYPTED');
     expect(JSON.stringify(out)).not.toContain('SECRET_CONTENT');
+    expect(JSON.stringify(out)).not.toContain('SECRET_INPUT_SESSION');
+    expect(JSON.stringify(out)).not.toContain('SECRET_METADATA');
+    expect(JSON.stringify(out)).not.toContain('SECRET_TIME');
     expect(JSON.stringify(out)).not.toContain('SECRET_SUMMARY');
     expect(JSON.stringify(out)).not.toContain('SECRET_RECENT');
     expect('snapshot' in out).toBe(false);
     expect('summary' in out).toBe(false);
     expect('recent' in out).toBe(false);
     expect('metadata' in out).toBe(false);
+  });
+
+  test('retains the legacy tool key without opening the projection', () => {
+    const out = project(
+      { content: [{ type: 'tool', id: 'legacy', tool: 'grep', unknown: 'SECRET_UNKNOWN' }] },
+      opencodeAllowlist,
+    ) as { content: Record<string, unknown>[] };
+    expect(out.content[0]).toEqual({ type: 'tool', id: 'legacy', tool: 'grep' });
   });
 
   test('a canary sentinel in content never survives the projection', () => {

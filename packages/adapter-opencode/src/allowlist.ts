@@ -14,7 +14,9 @@ import type { Projection } from '@scout/core';
  * `content[].state.error.message` (tool IO / error text), `snapshot`, `summary`,
  * `recent`, `metadata`, `share_url`, `revert`, `instruction_*` values. Only
  * `content[].state.status` is kept — it is the metadata used to mark a tool step
- * `error`, and it carries no content.
+ * `error`, and it carries no content. `state.metadata.sessionID` is the sole
+ * metadata key retained: it is an opaque identifier used to link an explicit
+ * subagent call to the child session declared by `session_v2.parent_id`.
  */
 export const opencodeAllowlist: Projection = {
   type: true,
@@ -28,7 +30,17 @@ export const opencodeAllowlist: Projection = {
     reasoning: true,
     cache: { read: true, write: true },
   },
-  content: [{ type: true, id: true, tool: true, state: { status: true } }],
+  content: [
+    {
+      type: true,
+      id: true,
+      // Current OpenCode uses `name`; `tool` is retained for legacy stores.
+      name: true,
+      tool: true,
+      time: { created: true, completed: true },
+      state: { status: true, metadata: { sessionID: true } },
+    },
+  ],
   reason: true,
 };
 

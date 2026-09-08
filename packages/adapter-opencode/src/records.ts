@@ -21,6 +21,8 @@ export type OpenCodeSession = {
   id: string;
   projectId: string;
   parentId?: string;
+  /** Explicit parent tool call whose metadata names this child session. */
+  spawnCallId?: string;
   forkSessionId?: string;
   directory?: string;
   title?: string;
@@ -145,6 +147,7 @@ export async function readOrigin(ctx: AdapterContext, origin: DbOrigin): Promise
     }
 
     for (const list of messagesBySession.values()) list.sort((a, b) => a.seq - b.seq);
+    attachSpawnCallIds(sessions, messagesBySession);
 
     return { origin, kind, sessions, messagesBySession, projects, diagnostics };
   } catch (err) {
@@ -159,6 +162,47 @@ export async function readOrigin(ctx: AdapterContext, origin: DbOrigin): Promise
     };
   } finally {
     reader?.close();
+  }
+}
+
+/**
+ * Links only explicit OpenCode evidence: the child must declare the message's
+ * owner as its parent and a `subagent` tool part must name that exact child in
+ * `state.metadata.sessionID`. No timestamps, titles, agent names, or other
+ * heuristics are used. CORE has one `spawnCallId` per child, so the first
+ * explicit match in source order is retained; later matches remain ordinary
+ * agent tool steps.
+ */
+export function attachSpawnCallIds(
+  sessions: OpenCodeSession[],
+  messagesBySession: Map<string, OpenCodeMessage[]>,
+): void {
+  const firstCallByParentAndChild = new Map<string, Map<string, string>>();
+  for (const [parentId, messages] of messagesBySession) {
+    const firstCallByChild = new Map<string, string>();
+    for (const message of messages) {
+      if (message.type !== 'assistant') continue;
+      for (const part of message.data.content ?? []) {
+        const toolName = part.name ?? part.tool;
+        const childId = part.state?.metadata?.sessionID;
+        if (
+          part.type === 'tool' &&
+          toolName === 'subagent' &&
+          part.id &&
+          childId &&
+          !firstCallByChild.has(childId)
+        ) {
+          firstCallByChild.set(childId, part.id);
+        }
+      }
+    }
+    if (firstCallByChild.size > 0) firstCallByParentAndChild.set(parentId, firstCallByChild);
+  }
+
+  for (const child of sessions) {
+    if (!child.parentId) continue;
+    const callId = firstCallByParentAndChild.get(child.parentId)?.get(child.id);
+    if (callId) child.spawnCallId = callId;
   }
 }
 

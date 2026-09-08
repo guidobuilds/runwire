@@ -2,7 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 import type { AdapterContext } from '@scout/core';
 import { createBunFs } from '@scout/core';
-import { readOrigin } from './records';
+import {
+  attachSpawnCallIds,
+  type OpenCodeMessage,
+  type OpenCodeSession,
+  readOrigin,
+} from './records';
 
 const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', 'fixtures', 'opencode');
 
@@ -58,5 +63,47 @@ describe('readOrigin', () => {
     const proj = records.projects.get('p1');
     expect(proj?.worktree).toBe('/home/u/proj');
     expect(proj?.vcs).toBe('git');
+  });
+});
+
+describe('attachSpawnCallIds', () => {
+  test('uses only an explicit subagent sessionID from the declared parent', () => {
+    const sessions: OpenCodeSession[] = [
+      { id: 'root', projectId: 'p' },
+      { id: 'child', projectId: 'p', parentId: 'root' },
+      { id: 'grandchild', projectId: 'p', parentId: 'child' },
+      { id: 'unlinked', projectId: 'p', parentId: 'root' },
+    ];
+    const assistant = (
+      seq: number,
+      id: string,
+      target: string,
+      name = 'subagent',
+    ): OpenCodeMessage => ({
+      type: 'assistant',
+      seq,
+      data: {
+        content: [
+          {
+            type: 'tool',
+            id,
+            name,
+            state: { status: 'completed', metadata: { sessionID: target } },
+          },
+        ],
+      },
+    });
+    const messages = new Map<string, OpenCodeMessage[]>([
+      ['root', [assistant(1, 'spawn-child', 'child'), assistant(2, 'resume-child', 'child')]],
+      ['child', [assistant(1, 'spawn-grandchild', 'grandchild')]],
+      // Explicit target from the wrong parent must not link `unlinked`.
+      ['other', [assistant(1, 'wrong-parent', 'unlinked')]],
+    ]);
+
+    attachSpawnCallIds(sessions, messages);
+
+    expect(sessions.find((s) => s.id === 'child')?.spawnCallId).toBe('spawn-child');
+    expect(sessions.find((s) => s.id === 'grandchild')?.spawnCallId).toBe('spawn-grandchild');
+    expect(sessions.find((s) => s.id === 'unlinked')?.spawnCallId).toBeUndefined();
   });
 });
