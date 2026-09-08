@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { HttpResponse, http } from 'msw';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -48,6 +49,17 @@ describe('TokenChart — happy path', () => {
     });
   });
 
+  it('renders a draggable timeline navigator for zooming', async () => {
+    const { container } = render(
+      <TokenChart field="output" onFieldChange={() => {}} sessionId={PROFILE_ROOT_ID} />,
+      { wrapper },
+    );
+    expect(
+      await screen.findByText('Drag across the chart or use the timeline handles to zoom'),
+    ).toBeInTheDocument();
+    expect(container.querySelector('.recharts-brush')).toBeInTheDocument();
+  });
+
   it('shows the excludedNullAtCount footer whenever it is greater than zero', async () => {
     render(<TokenChart field="output" onFieldChange={() => {}} sessionId={PROFILE_ROOT_ID} />, {
       wrapper,
@@ -58,6 +70,43 @@ describe('TokenChart — happy path', () => {
           `${mockProfileTimelineTree.excludedNullAtCount} calls without timestamp not shown.`,
         ),
       ).toBeInTheDocument();
+    });
+  });
+
+  it('compresses long periods without token activity and allows restoring wall-clock time', async () => {
+    const user = userEvent.setup();
+    const points = [
+      { at: '2026-09-01T10:00:00.000Z', totalCumulative: 100 },
+      { at: '2026-09-01T10:05:00.000Z', totalCumulative: 200 },
+      { at: '2026-09-01T20:05:00.000Z', totalCumulative: 300 },
+      { at: '2026-09-01T20:10:00.000Z', totalCumulative: 400 },
+    ].map((point) => ({
+      ...point,
+      cumulative: [point.totalCumulative, 0],
+      delta: [100, 0],
+      totalDelta: 100,
+    }));
+    server.use(
+      http.get('/api/session-profiles/:id', ({ request }) => {
+        const url = new URL(request.url);
+        if (url.searchParams.get('view') !== 'timeline') return undefined;
+        return HttpResponse.json({
+          ...mockProfileTimelineTree,
+          points,
+          spawns: [],
+          timeDomain: { start: points[0]?.at, end: points.at(-1)?.at },
+        });
+      }),
+    );
+
+    render(<TokenChart field="output" onFieldChange={() => {}} sessionId={PROFILE_ROOT_ID} />, {
+      wrapper,
+    });
+
+    expect(await screen.findByText('No token activity · 10h 0m')).toBeInTheDocument();
+    await user.click(screen.getByText('Wall clock'));
+    await waitFor(() => {
+      expect(screen.queryByText('No token activity · 10h 0m')).not.toBeInTheDocument();
     });
   });
 });
