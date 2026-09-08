@@ -26,8 +26,8 @@ export type SignalsRequest = SignalsQuery;
 export type TimelineRequest = TimelineQuery;
 export type MergedEventsRequest = MergedEventsQuery;
 
-function path(id: string): string {
-  return `/api/session-profiles/${encodeURIComponent(id)}`;
+function path(id: string, endpoint: 'spawns' | 'signals' | 'timeline' | 'events'): string {
+  return `/api/sessions/${encodeURIComponent(id)}/profile/${endpoint}`;
 }
 
 function search(values: Record<string, string | number | undefined>): string {
@@ -306,7 +306,7 @@ export function fetchSessionProfileSpawns(
   signal?: AbortSignal,
 ): Promise<SessionProfileSpawns> {
   return apiFetch<SessionProfileSpawns>(
-    `${path(id)}${search({ view: 'spawns', scope: request.scope, limit: request.limit, offset: request.offset })}`,
+    `${path(id, 'spawns')}${search({ scope: request.scope, limit: request.limit, offset: request.offset })}`,
     { signal },
   );
 }
@@ -317,7 +317,7 @@ export async function fetchSessionProfileSignals(
   signal?: AbortSignal,
 ): Promise<SessionProfileSignals> {
   const response = await apiFetch<unknown>(
-    `${path(id)}${search({ view: 'signals', scope: request.scope })}`,
+    `${path(id, 'signals')}${search({ scope: request.scope })}`,
     { signal },
   );
   return normalizeSignals(response);
@@ -329,7 +329,7 @@ export async function fetchSessionProfileTimeline(
   signal?: AbortSignal,
 ): Promise<SessionProfileTimeline> {
   const response = await apiFetch<unknown>(
-    `${path(id)}${search({ view: 'timeline', scope: request.scope, field: request.field })}`,
+    `${path(id, 'timeline')}${search({ scope: request.scope, field: request.field })}`,
     { signal },
   );
   return normalizeTimeline(response);
@@ -341,8 +341,7 @@ export async function fetchSessionProfileMergedEvents(
   signal?: AbortSignal,
 ): Promise<SessionProfileMergedEvents> {
   const response = await apiFetch<unknown>(
-    `${path(id)}${search({
-      view: 'merged',
+    `${path(id, 'events')}${search({
       scope: request.scope,
       filter: request.filter,
       limit: request.limit,

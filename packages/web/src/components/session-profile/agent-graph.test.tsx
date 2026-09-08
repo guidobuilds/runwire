@@ -189,19 +189,15 @@ function installHandlers(
 ) {
   const spawnsFor = options.spawns ?? spawnsPage;
   server.use(
-    http.get('/api/session-profiles/:id', ({ request }) => {
+    http.get('/api/sessions/:id/profile/spawns', ({ request }) => {
+      if (options.spawnsError) return HttpResponse.json({ error: 'boom' }, { status: 500 });
       const url = new URL(request.url);
-      const view = url.searchParams.get('view');
-      if (view === 'spawns') {
-        if (options.spawnsError) return HttpResponse.json({ error: 'boom' }, { status: 500 });
-        const offset = Number(url.searchParams.get('offset') ?? '0');
-        return HttpResponse.json(spawnsFor(offset));
-      }
-      if (view === 'merged') {
-        return HttpResponse.json(options.merged ?? mergedEventsResponse());
-      }
-      return undefined;
+      const offset = Number(url.searchParams.get('offset') ?? '0');
+      return HttpResponse.json(spawnsFor(offset));
     }),
+    http.get('/api/sessions/:id/profile/events', () =>
+      HttpResponse.json(options.merged ?? mergedEventsResponse()),
+    ),
   );
 }
 
@@ -471,13 +467,8 @@ describe('AgentGraph — depth-2 and orphan rows (f4-t2 repair)', () => {
 
   function installDepthHandlers() {
     server.use(
-      http.get('/api/session-profiles/:id', ({ request }) => {
-        const url = new URL(request.url);
-        const view = url.searchParams.get('view');
-        if (view === 'spawns') return HttpResponse.json(depthSpawnsPage());
-        if (view === 'merged') return HttpResponse.json(emptyMerged(D_ROOT.id));
-        return undefined;
-      }),
+      http.get('/api/sessions/:id/profile/spawns', () => HttpResponse.json(depthSpawnsPage())),
+      http.get('/api/sessions/:id/profile/events', () => HttpResponse.json(emptyMerged(D_ROOT.id))),
     );
   }
 
@@ -588,34 +579,29 @@ describe('AgentGraph — depth-2 and orphan rows (f4-t2 repair)', () => {
     const bToA = spawnEdge(CYCLE_B, CYCLE_A, 'linked', '2026-09-01T10:02:30.000Z');
     const items = [rootToA, aToB, bToA];
     server.use(
-      http.get('/api/session-profiles/:id', ({ request }) => {
-        const url = new URL(request.url);
-        const view = url.searchParams.get('view');
-        if (view === 'spawns') {
-          return HttpResponse.json({
-            view: 'spawns',
-            sessionId: D_ROOT.id,
-            scope: 'tree',
-            nodes: [D_ROOT_NODE, CYCLE_A, CYCLE_B],
-            items,
-            total: items.length,
-            limit: 50,
-            offset: 0,
-            counts: {
-              linked: 3,
-              'missing-call-id': 0,
-              'call-not-found': 0,
-              ambiguous: 0,
-              inconsistent: 0,
-              unresolved: 0,
-            },
-            orphanSessionCount: 0,
-            spawns: items,
-          });
-        }
-        if (view === 'merged') return HttpResponse.json(emptyMerged(D_ROOT.id));
-        return undefined;
-      }),
+      http.get('/api/sessions/:id/profile/spawns', () =>
+        HttpResponse.json({
+          view: 'spawns',
+          sessionId: D_ROOT.id,
+          scope: 'tree',
+          nodes: [D_ROOT_NODE, CYCLE_A, CYCLE_B],
+          items,
+          total: items.length,
+          limit: 50,
+          offset: 0,
+          counts: {
+            linked: 3,
+            'missing-call-id': 0,
+            'call-not-found': 0,
+            ambiguous: 0,
+            inconsistent: 0,
+            unresolved: 0,
+          },
+          orphanSessionCount: 0,
+          spawns: items,
+        }),
+      ),
+      http.get('/api/sessions/:id/profile/events', () => HttpResponse.json(emptyMerged(D_ROOT.id))),
     );
     const { container } = render(
       <AgentGraph onOpenNode={() => {}} rootSession={D_ROOT} sessionId={D_ROOT.id} />,
@@ -661,46 +647,41 @@ describe('AgentGraph — onNodeCount (f5-t1 repair)', () => {
       spawnEdge(D_CHILD, D_GRANDCHILD, 'linked', '2026-09-01T10:07:30.000Z'),
     ];
     server.use(
-      http.get('/api/session-profiles/:id', ({ request }) => {
-        const url = new URL(request.url);
-        const view = url.searchParams.get('view');
-        if (view === 'spawns') {
-          return HttpResponse.json({
-            view: 'spawns',
-            sessionId: D_ROOT.id,
-            scope: 'tree',
-            nodes: [D_ROOT_NODE, D_CHILD, D_GRANDCHILD],
-            items,
-            total: items.length,
-            limit: 50,
-            offset: 0,
-            counts: {
-              linked: 2,
-              'missing-call-id': 0,
-              'call-not-found': 0,
-              ambiguous: 0,
-              inconsistent: 0,
-              unresolved: 0,
-            },
-            orphanSessionCount: 0,
-            spawns: items,
-          });
-        }
-        if (view === 'merged') {
-          return HttpResponse.json({
-            view: 'merged',
-            sessionId: D_ROOT.id,
-            scope: 'tree',
-            filter: 'signals',
-            items: [],
-            total: 0,
-            limit: 200,
-            offset: 0,
-            excludedNullAtCount: 0,
-          });
-        }
-        return undefined;
-      }),
+      http.get('/api/sessions/:id/profile/spawns', () =>
+        HttpResponse.json({
+          view: 'spawns',
+          sessionId: D_ROOT.id,
+          scope: 'tree',
+          nodes: [D_ROOT_NODE, D_CHILD, D_GRANDCHILD],
+          items,
+          total: items.length,
+          limit: 50,
+          offset: 0,
+          counts: {
+            linked: 2,
+            'missing-call-id': 0,
+            'call-not-found': 0,
+            ambiguous: 0,
+            inconsistent: 0,
+            unresolved: 0,
+          },
+          orphanSessionCount: 0,
+          spawns: items,
+        }),
+      ),
+      http.get('/api/sessions/:id/profile/events', () =>
+        HttpResponse.json({
+          view: 'merged',
+          sessionId: D_ROOT.id,
+          scope: 'tree',
+          filter: 'signals',
+          items: [],
+          total: 0,
+          limit: 200,
+          offset: 0,
+          excludedNullAtCount: 0,
+        }),
+      ),
     );
 
     const onNodeCount = vi.fn();
@@ -799,25 +780,20 @@ describe('AgentGraph — scale (F-11)', () => {
 
   it('renders 25 rows at a constant row height inside a bounded, genuinely scrollable viewport', async () => {
     server.use(
-      http.get('/api/session-profiles/:id', ({ request }) => {
-        const url = new URL(request.url);
-        const view = url.searchParams.get('view');
-        if (view === 'spawns') return HttpResponse.json(scaleSpawnsPage());
-        if (view === 'merged') {
-          return HttpResponse.json({
-            view: 'merged',
-            sessionId: S_ROOT.id,
-            scope: 'tree',
-            filter: 'signals',
-            items: [],
-            total: 0,
-            limit: 200,
-            offset: 0,
-            excludedNullAtCount: 0,
-          });
-        }
-        return undefined;
-      }),
+      http.get('/api/sessions/:id/profile/spawns', () => HttpResponse.json(scaleSpawnsPage())),
+      http.get('/api/sessions/:id/profile/events', () =>
+        HttpResponse.json({
+          view: 'merged',
+          sessionId: S_ROOT.id,
+          scope: 'tree',
+          filter: 'signals',
+          items: [],
+          total: 0,
+          limit: 200,
+          offset: 0,
+          excludedNullAtCount: 0,
+        }),
+      ),
     );
     const { container } = render(
       <AgentGraph onOpenNode={() => {}} rootSession={S_ROOT} sessionId={S_ROOT.id} />,

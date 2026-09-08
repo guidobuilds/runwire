@@ -17,12 +17,11 @@ export type SignalsAccordionProps = {
   session: ApiSessionDetail;
   /** From the already-fetched agent graph node list (nodes.length - 1); null while unknown. */
   subagentCount: number | null;
-  /** The currently selected token field, shared with the token chart's selector. */
-  field: TokenField;
   refresh?: number;
 };
 
 const SKELETON_ROW_KEYS = ['row-0', 'row-1', 'row-2', 'row-3', 'row-4'] as const;
+const DELEGATION_SHARE_FIELD: TokenField = 'output';
 
 function percentage(part: number, total: number): string {
   if (total <= 0) return '0%';
@@ -67,7 +66,6 @@ export function SignalsAccordion({
   sessionId,
   session,
   subagentCount,
-  field,
   refresh = 0,
 }: SignalsAccordionProps) {
   const query = useSessionProfileSignals(sessionId, { scope: 'tree', refresh });
@@ -124,7 +122,10 @@ export function SignalsAccordion({
               <SignalRow label="MCP servers" value={<BadgeList items={query.data.mcpServers} />} />
               <SignalRow label="Skill calls" value={formatNumber(query.data.skillCalls)} />
               <SignalRow label="Skills used" value={<BadgeList items={query.data.skillNames} />} />
-              <SignalRow label="Delegation share" value={delegationShare(session, field)} />
+              <SignalRow
+                label="Delegation share"
+                value={delegationShare(session, DELEGATION_SHARE_FIELD)}
+              />
               <SignalRow
                 label="Subagents"
                 value={subagentCount === null ? '—' : formatNumber(subagentCount)}

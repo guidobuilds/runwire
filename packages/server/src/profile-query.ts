@@ -41,10 +41,10 @@ export type ProfileQueryParseResult =
   | { ok: false; parameter: string };
 
 const VIEW_KEYS = {
-  spawns: new Set(['view', 'scope', 'limit', 'offset']),
-  signals: new Set(['view', 'scope']),
-  timeline: new Set(['view', 'scope', 'field']),
-  merged: new Set(['view', 'scope', 'filter', 'limit', 'offset']),
+  spawns: new Set(['scope', 'limit', 'offset']),
+  signals: new Set(['scope']),
+  timeline: new Set(['scope', 'field']),
+  merged: new Set(['scope', 'filter', 'limit', 'offset']),
 } as const;
 
 function integer(value: string, min: number, max: number): number | null {
@@ -59,20 +59,15 @@ function invalid(parameter: string): ProfileQueryParseResult {
 
 /** Strict, view-specific parser. Nothing reaches a core reader before every
  * parameter and cross-parameter constraint has been checked. */
-export function parseProfileQuery(params: URLSearchParams): ProfileQueryParseResult {
+export function parseProfileQuery(
+  params: URLSearchParams,
+  viewRaw: ParsedProfileQuery['view'],
+): ProfileQueryParseResult {
   for (const key of params.keys()) {
     if (params.getAll(key).length !== 1) return invalid(key);
   }
 
-  const viewRaw = params.get('view');
-  if (
-    viewRaw !== 'spawns' &&
-    viewRaw !== 'signals' &&
-    viewRaw !== 'timeline' &&
-    viewRaw !== 'merged'
-  ) {
-    return invalid('view');
-  }
+  if (params.has('view')) return invalid('view');
   for (const key of params.keys()) {
     if (!VIEW_KEYS[viewRaw].has(key)) return invalid(key);
   }

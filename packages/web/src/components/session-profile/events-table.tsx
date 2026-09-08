@@ -1,4 +1,5 @@
 import type { Event, EventFilter } from '@scout/core';
+import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,13 +31,12 @@ import { formatNumber, formatTime } from './format';
 
 export type EventsTableProps = {
   sessionId: string;
-  filter?: EventFilter;
-  /** 1-based page number. */
-  page?: number;
+  /** Optional initial state for isolated component tests. */
+  initialFilter?: EventFilter;
+  /** Optional initial state for isolated component tests; 1-based. */
+  initialPage?: number;
   pageSize?: number;
   refresh?: number;
-  onFilterChange?: (filter: EventFilter) => void;
-  onPageChange?: (page: number) => void;
 };
 
 const EVENT_FILTERS: readonly EventFilter[] = [
@@ -124,13 +124,13 @@ function pageCount(total: number, pageSize: number): number {
  * merged reader has no per-lane view, it covers the whole session tree. */
 export function EventsTable({
   sessionId,
-  filter = 'signals',
-  page = 1,
+  initialFilter = 'signals',
+  initialPage = 1,
   pageSize = 50,
   refresh = 0,
-  onFilterChange,
-  onPageChange,
 }: EventsTableProps) {
+  const [filter, setFilter] = useState<EventFilter>(initialFilter);
+  const [page, setPage] = useState(initialPage);
   const offset = (page - 1) * pageSize;
   const query = useSessionProfileMergedEvents(sessionId, {
     scope: 'tree',
@@ -150,8 +150,8 @@ export function EventsTable({
         </CardTitle>
         <Select
           onValueChange={(value) => {
-            onFilterChange?.(value as EventFilter);
-            onPageChange?.(1);
+            setFilter(value as EventFilter);
+            setPage(1);
           }}
           value={filter}
         >
@@ -254,7 +254,7 @@ export function EventsTable({
                   href="#"
                   onClick={(event) => {
                     event.preventDefault();
-                    if (page > 1) onPageChange?.(page - 1);
+                    if (page > 1) setPage(page - 1);
                   }}
                 />
               </PaginationItem>
@@ -269,7 +269,7 @@ export function EventsTable({
                   href="#"
                   onClick={(event) => {
                     event.preventDefault();
-                    if (page < pages) onPageChange?.(page + 1);
+                    if (page < pages) setPage(page + 1);
                   }}
                 />
               </PaginationItem>

@@ -26,7 +26,7 @@ describe('EventsTable — request shape', () => {
   it('requests scope=tree, filter=signals, limit=50, offset=0 by default, via the real handlers', async () => {
     let capturedUrl: URL | undefined;
     server.use(
-      http.get('/api/session-profiles/:id', ({ request }) => {
+      http.get('/api/sessions/:id/profile/events', ({ request }) => {
         capturedUrl = new URL(request.url);
         return HttpResponse.json({
           view: 'merged',
@@ -45,7 +45,10 @@ describe('EventsTable — request shape', () => {
     renderTable();
 
     await screen.findByText('No events for this filter');
-    expect(capturedUrl?.searchParams.get('view')).toBe('merged');
+    expect(capturedUrl?.pathname).toBe(
+      `/api/sessions/${encodeURIComponent(PROFILE_ROOT_ID)}/profile/events`,
+    );
+    expect(capturedUrl?.searchParams.get('view')).toBeNull();
     expect(capturedUrl?.searchParams.get('scope')).toBe('tree');
     expect(capturedUrl?.searchParams.get('filter')).toBe('signals');
     expect(capturedUrl?.searchParams.get('limit')).toBe('50');
@@ -70,7 +73,7 @@ describe('EventsTable — loaded state', () => {
   });
 
   it('shows an error badge only on the error-flagged row', async () => {
-    renderTable({ filter: 'all' });
+    renderTable({ initialFilter: 'all' });
 
     await screen.findByRole('row', { name: /compaction/i });
     const rows = screen.getAllByRole('row');
@@ -82,7 +85,7 @@ describe('EventsTable — loaded state', () => {
 describe('EventsTable — empty state', () => {
   it('shows a single "No events for this filter" row when items is empty', async () => {
     server.use(
-      http.get('/api/session-profiles/:id', () =>
+      http.get('/api/sessions/:id/profile/events', () =>
         HttpResponse.json({
           view: 'merged',
           sessionId: PROFILE_ROOT_ID,
@@ -107,7 +110,7 @@ describe('EventsTable — error + retry', () => {
   it('shows an inline error and Retry, which recovers on success', async () => {
     let failNext = true;
     server.use(
-      http.get('/api/session-profiles/:id', () => {
+      http.get('/api/sessions/:id/profile/events', () => {
         if (failNext) {
           failNext = false;
           return HttpResponse.json({ error: 'internal error' }, { status: 500 });
@@ -135,19 +138,14 @@ describe('EventsTable — error + retry', () => {
 });
 
 describe('EventsTable — pagination', () => {
-  it('changing the page prop changes the offset requested (via limit=1 against the 2-item signals fixture)', async () => {
-    const { rerender } = renderTable({ page: 1, pageSize: 1 });
+  it('changing the local page changes the offset requested (via limit=1 against the 2-item signals fixture)', async () => {
+    const user = userEvent.setup();
+    renderTable({ initialPage: 1, pageSize: 1 });
 
     await screen.findByRole('row', { name: /compaction/i });
     expect(screen.queryByRole('row', { name: /mcp/i })).not.toBeInTheDocument();
 
-    rerender(
-      <QueryClientProvider
-        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-      >
-        <EventsTable page={2} pageSize={1} sessionId={PROFILE_ROOT_ID} />
-      </QueryClientProvider>,
-    );
+    await user.click(screen.getByRole('button', { name: 'Go to next page' }));
 
     await screen.findByRole('row', { name: /mcp/i });
     expect(screen.queryByRole('row', { name: /compaction/i })).not.toBeInTheDocument();
@@ -157,20 +155,25 @@ describe('EventsTable — pagination', () => {
 describe('EventsTable — filter change', () => {
   it('resets to page 1 and requests the new filter when the select changes', async () => {
     const user = userEvent.setup();
-    const filters: string[] = [];
-    const pages: number[] = [];
+    const requests: URL[] = [];
+    server.use(
+      http.get('/api/sessions/:id/profile/events', ({ request }) => {
+        requests.push(new URL(request.url));
+        return undefined;
+      }),
+    );
 
-    renderTable({
-      onFilterChange: (filter) => filters.push(filter),
-      onPageChange: (page) => pages.push(page),
-      page: 2,
-    });
+    renderTable({ initialPage: 2, pageSize: 1 });
 
     await screen.findByRole('combobox', { name: 'Event filter' });
     await user.click(screen.getByRole('combobox', { name: 'Event filter' }));
     await user.click(await screen.findByRole('option', { name: 'All events' }));
 
-    expect(filters).toEqual(['all']);
-    expect(pages).toEqual([1]);
+    await screen.findByRole('row', { name: /compaction/i });
+    expect(
+      requests.some(
+        (url) => url.searchParams.get('filter') === 'all' && url.searchParams.get('offset') === '0',
+      ),
+    ).toBe(true);
   });
 });
