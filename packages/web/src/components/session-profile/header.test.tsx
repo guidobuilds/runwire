@@ -12,7 +12,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { Header } from './header';
 
-/** Header renders parent/child links via the typed router `Link` (to
+/** Header renders the parent link via the typed router `Link` (to
  * `/sessions/$id`), which needs a real router context to resolve a href.
  * A minimal self-contained tree — just enough for `Link`'s path-template
  * resolution to work — avoids depending on the real app's route tree/data
@@ -177,7 +177,7 @@ describe('Header — no tool-call/turn/API-call fields (G9)', () => {
   });
 });
 
-describe('Header — parent/child links', () => {
+describe('Header — session navigation', () => {
   it('links the parent into the session profile route', async () => {
     const parentSummary: ApiSessionSummary = { ...baseSummary, id: 'root-0', name: 'Root parent' };
     await renderHeader(detail({ parent: parentSummary }));
@@ -185,10 +185,9 @@ describe('Header — parent/child links', () => {
     expect(link).toHaveAttribute('href', '/sessions/root-0');
   });
 
-  it('links each child into the session profile route, percent-encoding slashes in the id', async () => {
+  it('does not show child sessions in the header', async () => {
     await renderHeader(detail({ children: [childSummary] }));
-    const link = screen.getByRole('link', { name: childSummary.name });
-    expect(link).toHaveAttribute('href', `/sessions/${encodeURIComponent(childSummary.id)}`);
-    expect(link.getAttribute('href')).not.toContain('root-1/child-a');
+    expect(screen.queryByText('Child sessions')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: childSummary.name })).not.toBeInTheDocument();
   });
 });

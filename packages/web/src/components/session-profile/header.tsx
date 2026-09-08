@@ -27,7 +27,7 @@ const DEFINITION_SKELETON_KEYS = [
   'cost',
 ] as const;
 
-/** Parent/child navigation uses the typed router `Link` — no manual
+/** Parent navigation uses the typed router `Link` — no manual
  * percent-encoding, the router's own params-based encoding handles an id
  * containing a literal '/' or ':'. */
 function SessionRefLink({ session }: { session: ApiSessionSummary }) {
@@ -142,19 +142,6 @@ export function Header({ session }: HeaderProps) {
           <div className="flex flex-col gap-1">
             <span className="text-muted-foreground text-sm">Parent session</span>
             <SessionRefLink session={session.parent} />
-          </div>
-        ) : null}
-
-        {session.children.length > 0 ? (
-          <div className="flex flex-col gap-1">
-            <span className="text-muted-foreground text-sm">Child sessions</span>
-            <ul className="flex flex-col gap-1">
-              {session.children.map((child) => (
-                <li key={child.id}>
-                  <SessionRefLink session={child} />
-                </li>
-              ))}
-            </ul>
           </div>
         ) : null}
       </CardContent>
