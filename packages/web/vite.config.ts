@@ -6,7 +6,16 @@ import { defineConfig } from 'vite';
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [tailwindcss(), tanstackRouter({ target: 'react', autoCodeSplitting: true }), react()],
+  plugins: [
+    tailwindcss(),
+    tanstackRouter({
+      target: 'react',
+      autoCodeSplitting: true,
+      // Colocated route tests are not routes: keep them out of the generated route tree.
+      routeFileIgnorePattern: '\\.(test|spec)\\.[jt]sx?$',
+    }),
+    react(),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
