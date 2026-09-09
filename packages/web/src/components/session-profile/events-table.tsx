@@ -1,5 +1,5 @@
 import type { Event, EventFilter } from '@scout/core';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,7 +27,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useSessionProfileMergedEvents } from '@/queries/session-profile';
-import { formatNumber, formatTime } from './format';
+import { formatNumber, formatTime, readableAgent, readableModel } from './format';
+
+const EM_DASH = '—';
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 
 export type EventsTableProps = {
   sessionId: string;
@@ -88,11 +91,23 @@ const KIND_BADGE_VARIANT: Record<Event['kind'], 'default' | 'secondary' | 'outli
 };
 
 /** Never the raw full session id in a cell (merged events span the whole
- * tree): the tail after the last '/' or ':' — the response carries no
- * per-node agentType, so this is the fallback the design allows. */
+ * tree): the tail after the last '/' or ':' — used when the scope nodes
+ * carry no agentType for this stream. */
 function agentLabel(sessionId: string): string {
   const cut = Math.max(sessionId.lastIndexOf('/'), sessionId.lastIndexOf(':'));
   return cut === -1 ? sessionId : sessionId.slice(cut + 1);
+}
+
+/** Prefer the scope node's agentType (human-readable); fall back to the short id tail. */
+function agentCell(sessionId: string, agentTypeById: Map<string, string | null>): string {
+  const agentType = agentTypeById.get(sessionId);
+  return agentType == null || agentType === '' ? agentLabel(sessionId) : readableAgent(agentType);
+}
+
+/** Model only exists on `call` events; every other kind shows an em dash. */
+function modelCell(event: Event): string {
+  if (event.kind !== 'call') return EM_DASH;
+  return event.model ? readableModel(event.model) : EM_DASH;
 }
 
 /** Metadata-only: only the fields already on the Event union, never args/paths/output. */
@@ -126,11 +141,12 @@ export function EventsTable({
   sessionId,
   initialFilter = 'signals',
   initialPage = 1,
-  pageSize = 50,
+  pageSize: initialPageSize = 50,
   refresh = 0,
 }: EventsTableProps) {
   const [filter, setFilter] = useState<EventFilter>(initialFilter);
   const [page, setPage] = useState(initialPage);
+  const [pageSize, setPageSize] = useState(initialPageSize);
   const offset = (page - 1) * pageSize;
   const query = useSessionProfileMergedEvents(sessionId, {
     scope: 'tree',
@@ -139,6 +155,12 @@ export function EventsTable({
     offset,
     refresh,
   });
+
+  const agentTypeById = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const node of query.data?.nodes ?? []) map.set(node.id, node.agentType);
+    return map;
+  }, [query.data?.nodes]);
 
   const pages = query.data ? pageCount(query.data.total, pageSize) : 1;
 
@@ -196,13 +218,14 @@ export function EventsTable({
                   <TableHead>Time</TableHead>
                   <TableHead>Agent</TableHead>
                   <TableHead>Kind</TableHead>
+                  <TableHead>Model</TableHead>
                   <TableHead>Detail</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {query.data.items.length === 0 ? (
                   <TableRow>
-                    <TableCell className="text-muted-foreground" colSpan={4}>
+                    <TableCell className="text-muted-foreground" colSpan={5}>
                       No events for this filter
                     </TableCell>
                   </TableRow>
@@ -211,13 +234,14 @@ export function EventsTable({
                     <TableRow key={`${event.sessionId}\0${event.seq}`}>
                       <TableCell className="font-mono text-xs">{formatTime(event.at)}</TableCell>
                       <TableCell className="font-mono text-xs">
-                        {agentLabel(event.sessionId)}
+                        {agentCell(event.sessionId, agentTypeById)}
                       </TableCell>
                       <TableCell>
                         <Badge variant={KIND_BADGE_VARIANT[event.kind]}>
                           {KIND_LABELS[event.kind]}
                         </Badge>
                       </TableCell>
+                      <TableCell className="font-mono text-xs">{modelCell(event)}</TableCell>
                       <TableCell className="max-w-xs truncate text-muted-foreground text-xs">
                         {eventDetail(event)}
                         {event.error ? (
@@ -236,12 +260,35 @@ export function EventsTable({
 
         {query.data ? (
           <div className="flex flex-wrap items-center justify-between gap-3 text-muted-foreground text-xs">
-            <span>{formatNumber(query.data.total)} events total</span>
-            {query.data.excludedNullAtCount > 0 ? (
-              <span>
-                {formatNumber(query.data.excludedNullAtCount)} events without timestamp not shown
-              </span>
-            ) : null}
+            <div className="flex flex-wrap items-center gap-3">
+              <span>{formatNumber(query.data.total)} events total</span>
+              {query.data.excludedNullAtCount > 0 ? (
+                <span>
+                  {formatNumber(query.data.excludedNullAtCount)} events without timestamp not shown
+                </span>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium">Rows per page</span>
+              <Select
+                onValueChange={(value) => {
+                  setPageSize(Number(value));
+                  setPage(1);
+                }}
+                value={String(pageSize)}
+              >
+                <SelectTrigger aria-label="Rows per page" className="w-20">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAGE_SIZE_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={String(option)}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         ) : null}
 

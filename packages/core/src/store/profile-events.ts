@@ -167,6 +167,7 @@ export function readProfileMergedEvents(
     sessionId,
     scope,
     filter,
+    nodes: nodes.map((node) => ({ id: node.id, agentType: node.agentType })),
     items: rows.map(toEvent),
     total: totalRow.n,
     limit,

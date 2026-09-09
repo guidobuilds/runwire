@@ -273,6 +273,17 @@ function normalizeMergedEvent(value: unknown): Event {
   throw new TypeError('invalid session profile merged event');
 }
 
+function normalizeMergedEventNode(value: unknown): { id: string; agentType: string | null } {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    (typeof value.agentType !== 'string' && value.agentType !== null)
+  ) {
+    throw new TypeError('invalid session profile merged event node');
+  }
+  return { id: value.id, agentType: value.agentType };
+}
+
 function normalizeMergedEvents(value: unknown): SessionProfileMergedEvents {
   if (
     !isRecord(value) ||
@@ -292,6 +303,7 @@ function normalizeMergedEvents(value: unknown): SessionProfileMergedEvents {
     sessionId: value.sessionId,
     scope: value.scope,
     filter: value.filter,
+    nodes: Array.isArray(value.nodes) ? value.nodes.map(normalizeMergedEventNode) : [],
     items: value.items.map(normalizeMergedEvent),
     total: value.total,
     limit: value.limit,
