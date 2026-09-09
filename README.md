@@ -25,6 +25,18 @@ bun run typecheck   # tsc --noEmit per package
 bun run lint        # Biome + workspace import-boundary check
 ```
 
+## Run the app
+
+```sh
+bun run dev                 # or: ./scripts/dev.sh
+```
+
+Starts both halves from the repo root under one process, one Ctrl-C: `[api]` is
+`scout serve` on http://127.0.0.1:8787, `[web]` is Vite on http://localhost:5173, whose `/api`
+proxy points at the API. Output is line-prefixed, and if either half exits the other is stopped.
+`./scripts/dev.sh --import` refreshes the database first; `--db <path>` and `--port <n>` pick the
+store and the API port (`packages/web/vite.config.ts` hardcodes 8787, so change both or neither).
+
 ## Commands
 
 ```sh
