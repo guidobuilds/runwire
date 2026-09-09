@@ -101,7 +101,12 @@ export type EventBase = {
 /** Seven source-step variants; payloads are metadata-only. */
 export type Event =
   | (EventBase & { kind: 'call'; model: string | null })
-  | (EventBase & { kind: 'tool'; category: string | null; toolName: string | null })
+  | (EventBase & {
+      kind: 'tool';
+      category: string | null;
+      toolName: string | null;
+      model: string | null;
+    })
   | (EventBase & { kind: 'turn'; durationMs: number | null })
   | (EventBase & { kind: 'harness'; toolName: string | null })
   | (EventBase & { kind: 'compaction'; trigger: string | null })
@@ -118,10 +123,15 @@ export type MergedEventsQuery = {
   offset?: number;
 };
 
+/** Slim scope-node projection: enough to label an event's agent without the full ProfileNode. */
+export type MergedEventNode = { id: string; agentType: string | null };
+
 export type MergedEventsResponse = {
   sessionId: string;
   scope: Scope;
   filter: EventFilter;
+  /** Every session node in scope (id → agentType), for agent labelling in the table. */
+  nodes: readonly MergedEventNode[];
   /** Merged across the whole scope, ordered by at ASC, then sessionId, then seq. */
   items: readonly Event[];
   /** Count of in-scope, filtered, at-NOT-NULL rows. */

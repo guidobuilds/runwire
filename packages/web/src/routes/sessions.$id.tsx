@@ -15,7 +15,7 @@ export const Route = createFileRoute('/sessions/$id')({
   component: SessionProfileRoute,
 });
 
-const PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = 50;
 
 function PageSkeleton() {
   return (
@@ -141,7 +141,7 @@ function SessionProfileRoute() {
 
       <TokenChart refresh={refresh} sessionId={id} />
 
-      <EventsTable pageSize={PAGE_SIZE} refresh={refresh} sessionId={id} />
+      <EventsTable pageSize={DEFAULT_PAGE_SIZE} refresh={refresh} sessionId={id} />
 
       <SignalsAccordion
         refresh={refresh}

@@ -103,6 +103,7 @@ function seed(db: Database): void {
     kind: 'tool',
     tool_category: 'read',
     tool_name: 'Read',
+    model: 'model-b',
     at: '2024-01-01T00:00:03.500Z',
   });
   step('root/child', 3, { kind: 'call', model: 'model-a', at: null, output: 5 });
@@ -340,6 +341,23 @@ describe('GET /api/sessions/{id}/profile/events', () => {
       );
       expect(idxAuto).toBeLessThan(idxChildRead);
       expect(idxChildRead).toBeLessThan(idxManual);
+    });
+  });
+
+  test('tool rows carry the source step model under filter=all (value and null)', async () => {
+    await withServer(async (base) => {
+      const { json } = await body(base, '/api/sessions/root/profile/events?filter=all');
+      const tools = json.items.filter((item: { kind: string }) => item.kind === 'tool');
+      const childRead = tools.find(
+        (item: { streamId: string; toolName: string }) =>
+          item.streamId === 'root/child' && item.toolName === 'Read',
+      );
+      const rootRead = tools.find(
+        (item: { streamId: string; toolName: string }) =>
+          item.streamId === 'root' && item.toolName === 'Read',
+      );
+      expect(childRead.model).toBe('model-b');
+      expect(rootRead.model).toBe(null);
     });
   });
 

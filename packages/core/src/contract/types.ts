@@ -105,7 +105,7 @@ export type Step = {
   seq: number;
   at?: string;
   kind: StepKind;
-  /** call */
+  /** call; tool (the emitting assistant message's model, absent for <synthetic>) */
   model?: string;
   /** tool; harness uses toolName = event name */
   toolCategory?: ToolCategory;

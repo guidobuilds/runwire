@@ -85,3 +85,12 @@ export function readableModel(model: string): string {
   if (model === 'other') return 'Other models';
   return model;
 }
+
+/** Title-cases a kebab/snake agent-type slug: `general-purpose` → `General Purpose`, `main` → `Main`. */
+export function readableAgent(slug: string): string {
+  return slug
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}

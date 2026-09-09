@@ -213,3 +213,84 @@ describe('computeBundle', () => {
     expect(bundle.session.uncachedInput).toBe(300);
   });
 });
+
+describe('computeBundle - tool step model from the emitting assistant message', () => {
+  test('a tool part from an assistant with data.model.id carries that model', async () => {
+    const ctx = ctxFor('small');
+    const session: OpenCodeSession = {
+      id: 'current-tool-model',
+      projectId: 'p',
+      directory: '/home/u/proj',
+    };
+    const messages: OpenCodeMessage[] = [
+      {
+        type: 'assistant',
+        seq: 1,
+        data: {
+          time: { created: 50, completed: 500 },
+          model: { id: 'claude-sonnet-5' },
+          content: [
+            {
+              type: 'tool',
+              id: 'tool-1',
+              name: 'Read',
+              time: { created: 100, completed: 225 },
+              state: { status: 'completed' },
+            },
+          ],
+        },
+      },
+    ];
+    const bundle = await computeBundle({
+      harnessId: 'opencode',
+      origin: 'current',
+      session,
+      messages,
+      sessionsById: new Map([[session.id, session]]),
+      projects: new Map(),
+      recordDiagnostics: [],
+      ctx,
+    });
+    const tool = bundle.steps.find((s) => s.kind === 'tool');
+    expect(tool?.model).toBe('claude-sonnet-5');
+  });
+
+  test('a tool part from an assistant without a model leaves model undefined', async () => {
+    const ctx = ctxFor('small');
+    const session: OpenCodeSession = {
+      id: 'current-tool-nomodel',
+      projectId: 'p',
+      directory: '/home/u/proj',
+    };
+    const messages: OpenCodeMessage[] = [
+      {
+        type: 'assistant',
+        seq: 1,
+        data: {
+          time: { created: 50, completed: 500 },
+          content: [
+            {
+              type: 'tool',
+              id: 'tool-1',
+              name: 'Read',
+              time: { created: 100, completed: 225 },
+              state: { status: 'completed' },
+            },
+          ],
+        },
+      },
+    ];
+    const bundle = await computeBundle({
+      harnessId: 'opencode',
+      origin: 'current',
+      session,
+      messages,
+      sessionsById: new Map([[session.id, session]]),
+      projects: new Map(),
+      recordDiagnostics: [],
+      ctx,
+    });
+    const tool = bundle.steps.find((s) => s.kind === 'tool');
+    expect(tool?.model).toBeUndefined();
+  });
+});

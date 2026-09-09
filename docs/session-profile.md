@@ -113,8 +113,9 @@ profile.
 - **Pagination.** `limit` (default 50, clamped [1, 200]) / `offset` (default 0,
   clamped >= 0).
 - **Metadata only.** Rows carry kind, timestamp, and kind-specific fields
-  (`model`, `category · toolName`, `durationMs`, `trigger`, `from → to`). They
-  never render args, paths, or tool output.
+  (`model`, `category · toolName`, `durationMs`, `trigger`, `from → to`). Tool
+  rows carry `model` like call rows (em-dash / NULL before a `scout import --force`
+  backfill). They never render args, paths, or tool output.
 
 ---
 

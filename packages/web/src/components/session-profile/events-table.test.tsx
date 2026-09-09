@@ -80,6 +80,22 @@ describe('EventsTable — loaded state', () => {
     const errorRows = rows.filter((row) => within(row).queryByText('error'));
     expect(errorRows).toHaveLength(1);
   });
+
+  it('renders the mcp tool row model in the Model column', async () => {
+    renderTable();
+
+    const row = await screen.findByRole('row', { name: /mcp/i });
+    const cells = within(row).getAllByRole('cell');
+    expect(cells[3]).toHaveTextContent('claude-sonnet-5');
+  });
+
+  it('renders the em dash in the Model column for a tool row with a null model', async () => {
+    renderTable({ initialFilter: 'all' });
+
+    const row = await screen.findByRole('row', { name: /bash/i });
+    const cells = within(row).getAllByRole('cell');
+    expect(cells[3]).toHaveTextContent('—');
+  });
 });
 
 describe('EventsTable — empty state', () => {

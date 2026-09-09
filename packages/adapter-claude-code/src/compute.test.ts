@@ -563,3 +563,47 @@ describe('computeBundle - skill name and D7 privacy', () => {
     expect(JSON.stringify(content)).not.toContain('SECRET_ARGS');
   });
 });
+
+describe('computeBundle - tool step model from the emitting assistant message', () => {
+  test('a tool_use from an assistant with a model carries that model', async () => {
+    const bundle = await computeBundle(
+      baseInput([
+        assistantWithUsage({
+          model: 'claude-sonnet-5',
+          toolUse: { id: 't1', name: 'Read' },
+          at: '2026-01-01T00:00:00.000Z',
+        }),
+      ]),
+    );
+    const tool = bundle.steps.find((s) => s.kind === 'tool');
+    expect(tool?.model).toBe('claude-sonnet-5');
+  });
+
+  test('a tool_use from a <synthetic> assistant leaves model undefined', async () => {
+    const bundle = await computeBundle(
+      baseInput([
+        assistantWithUsage({
+          model: '<synthetic>',
+          toolUse: { id: 't1', name: 'Read' },
+          at: '2026-01-01T00:00:00.000Z',
+        }),
+      ]),
+    );
+    const tool = bundle.steps.find((s) => s.kind === 'tool');
+    expect(tool?.model).toBeUndefined();
+  });
+
+  test('a tool_use from an assistant without a model leaves model undefined', async () => {
+    const bundle = await computeBundle(
+      baseInput([
+        rec({
+          type: 'assistant',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          message: { content: [{ type: 'tool_use', id: 't1', name: 'Read' }] },
+        }),
+      ]),
+    );
+    const tool = bundle.steps.find((s) => s.kind === 'tool');
+    expect(tool?.model).toBeUndefined();
+  });
+});

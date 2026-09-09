@@ -199,6 +199,7 @@ const MERGED_ITEMS: readonly Event[] = [
     kind: 'tool',
     category: 'mcp',
     toolName: 'mcp__plugin_engram_engram__mem_save',
+    model: 'claude-sonnet-5',
   },
   {
     streamId: PROFILE_ROOT_ID,
@@ -209,6 +210,7 @@ const MERGED_ITEMS: readonly Event[] = [
     kind: 'tool',
     category: 'exec',
     toolName: 'bash',
+    model: null,
   },
 ];
 
@@ -234,11 +236,19 @@ function mergedEventsResponse(
           ? scoped.filter((item) => item.error === true)
           : scoped.filter((item) => item.kind === 'tool' && item.category === filter);
   const page = filtered.slice(offset, offset + limit);
+  const nodes =
+    scope === 'own'
+      ? [{ id: mockRootNode.id, agentType: mockRootNode.agentType }]
+      : [
+          { id: mockRootNode.id, agentType: mockRootNode.agentType },
+          { id: mockChildNode.id, agentType: mockChildNode.agentType },
+        ];
   return {
     view: 'merged',
     sessionId: PROFILE_ROOT_ID,
     scope,
     filter,
+    nodes,
     items: page,
     total: filtered.length,
     limit,

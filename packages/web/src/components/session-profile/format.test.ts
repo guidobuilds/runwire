@@ -8,6 +8,7 @@ import {
   formatNumber,
   formatReported,
   formatTime,
+  readableAgent,
   readableModel,
   TOKEN_FIELDS,
 } from './format';
@@ -71,6 +72,14 @@ describe('readableModel', () => {
     expect(readableModel('unknown')).toBe('Unknown model');
     expect(readableModel('other')).toBe('Other models');
     expect(readableModel('claude-sonnet-5')).toBe('claude-sonnet-5');
+  });
+});
+
+describe('readableAgent', () => {
+  it('title-cases kebab/snake slugs', () => {
+    expect(readableAgent('general-purpose')).toBe('General Purpose');
+    expect(readableAgent('main')).toBe('Main');
+    expect(readableAgent('forge_worker_leaf')).toBe('Forge Worker Leaf');
   });
 });
 

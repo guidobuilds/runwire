@@ -288,6 +288,7 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
                 toolCategory === 'skill'
                   ? (block as { input?: { skill?: string } }).input?.skill
                   : undefined,
+              model: isSynthetic ? undefined : model,
             };
             steps.push(toolStep);
             toolCallCount++;

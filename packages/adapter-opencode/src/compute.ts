@@ -195,6 +195,7 @@ export async function computeBundle(input: ComputeSessionInput): Promise<Session
               toolName,
               callId: part.id,
               error: part.state?.status === 'error',
+              model: modelId ?? undefined,
             };
             if (toolCompleted !== undefined && toolCreated !== undefined) {
               const dur = toolCompleted - toolCreated;
