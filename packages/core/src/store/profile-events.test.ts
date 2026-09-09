@@ -205,4 +205,34 @@ describe('readProfileMergedEvents', () => {
     expect(readProfileMergedEvents(db, 'missing')).toBeNull();
     db.close();
   });
+
+  test('tool rows carry the source step model (value when seeded, null when absent)', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    step(db, 'root', 0, 'tool', {
+      category: 'read',
+      name: 'Read',
+      model: 'model-x',
+      at: '2025-01-01T00:00:00Z',
+    });
+    step(db, 'root', 1, 'tool', {
+      category: 'write',
+      name: 'Write',
+      at: '2025-01-01T00:00:01Z',
+    });
+    const items = readProfileMergedEvents(db, 'root', { scope: 'own', filter: 'all' })?.items ?? [];
+    expect(items).toHaveLength(2);
+    expect(items[0]).toEqual(
+      expect.objectContaining({
+        kind: 'tool',
+        category: 'read',
+        toolName: 'Read',
+        model: 'model-x',
+      }),
+    );
+    expect(items[1]).toEqual(
+      expect.objectContaining({ kind: 'tool', category: 'write', toolName: 'Write', model: null }),
+    );
+    db.close();
+  });
 });

@@ -199,6 +199,7 @@ const MERGED_ITEMS: readonly Event[] = [
     kind: 'tool',
     category: 'mcp',
     toolName: 'mcp__plugin_engram_engram__mem_save',
+    model: 'claude-sonnet-5',
   },
   {
     streamId: PROFILE_ROOT_ID,
@@ -209,6 +210,7 @@ const MERGED_ITEMS: readonly Event[] = [
     kind: 'tool',
     category: 'exec',
     toolName: 'bash',
+    model: null,
   },
 ];
 

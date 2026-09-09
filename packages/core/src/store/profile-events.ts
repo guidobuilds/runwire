@@ -44,7 +44,7 @@ profile_events(stream_id, seq, at, kind, error, model, category, tool_name, dura
          NULL, NULL, NULL, NULL, NULL, NULL
   FROM steps st JOIN profile_scope ps ON ps.id = st.session_id WHERE st.kind = 'call'
   UNION ALL
-  SELECT st.session_id, st.seq, st.at, 'tool', st.error, NULL,
+  SELECT st.session_id, st.seq, st.at, 'tool', st.error, st.model,
          st.tool_category, st.tool_name, NULL, NULL, NULL, NULL
   FROM steps st JOIN profile_scope ps ON ps.id = st.session_id WHERE st.kind = 'tool'
   UNION ALL
@@ -113,7 +113,13 @@ function toEvent(row: EventRow): Event {
     case 'call':
       return { ...base, kind: 'call', model: row.model };
     case 'tool':
-      return { ...base, kind: 'tool', category: row.category, toolName: row.tool_name };
+      return {
+        ...base,
+        kind: 'tool',
+        category: row.category,
+        toolName: row.tool_name,
+        model: row.model,
+      };
     case 'turn':
       return { ...base, kind: 'turn', durationMs: row.duration_ms };
     case 'harness':

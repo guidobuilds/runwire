@@ -70,8 +70,29 @@ const mergedEventsResponse = {
       kind: 'compaction',
       trigger: 'auto',
     },
+    {
+      streamId: 'root',
+      sessionId: 'root',
+      seq: 2,
+      at: '2026-09-01T10:01:00.000Z',
+      error: null,
+      kind: 'tool',
+      category: 'mcp',
+      toolName: 'mcp__engram__mem_save',
+      model: 'claude-sonnet-5',
+    },
+    {
+      streamId: 'root',
+      sessionId: 'root',
+      seq: 3,
+      at: '2026-09-01T10:02:00.000Z',
+      error: null,
+      kind: 'tool',
+      category: 'exec',
+      toolName: 'bash',
+    },
   ],
-  total: 1,
+  total: 3,
   limit: 50,
   offset: 0,
   excludedNullAtCount: 3,
@@ -172,6 +193,21 @@ describe('session profile API', () => {
     );
     expect(result.items[0]).toMatchObject({ kind: 'compaction', trigger: 'auto' });
     expect(result.excludedNullAtCount).toBe(3);
+  });
+
+  it('passes tool model through as a string and defaults an absent model to null', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(mergedEventsResponse), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    const result = await fetchSessionProfileMergedEvents('root', {
+      scope: 'tree',
+      filter: 'signals',
+    });
+    // Tool row whose source carried a model: it survives normalization verbatim.
+    expect(result.items[1]).toMatchObject({ kind: 'tool', model: 'claude-sonnet-5' });
+    // Tool row whose source omitted `model`: additive-with-default → null, never a throw.
+    expect(result.items[2]).toMatchObject({ kind: 'tool', model: null });
   });
 
   it('rejects a malformed merged events response', async () => {

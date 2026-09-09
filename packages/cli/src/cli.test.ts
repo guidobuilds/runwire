@@ -141,6 +141,14 @@ describe('scout import', () => {
       expect(forced.code).toBe(0);
       expect(forced.stderr).toContain('imported=1');
       expect(forced.stderr).toContain('skipped=0');
+
+      // The forced upsert stored fresh sourceSize/sourceMtime (persist.ts:95,
+      // :137-138), so a normal run after the forced one resumes incremental
+      // skipping rather than re-importing the unchanged source again.
+      const postForce = await run(args);
+      expect(postForce.code).toBe(0);
+      expect(postForce.stderr).toContain('imported=0');
+      expect(postForce.stderr).toContain('skipped=1');
     } finally {
       await rm(tmpDir, { recursive: true, force: true });
     }

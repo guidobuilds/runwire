@@ -104,9 +104,9 @@ function agentCell(sessionId: string, agentTypeById: Map<string, string | null>)
   return agentType == null || agentType === '' ? agentLabel(sessionId) : readableAgent(agentType);
 }
 
-/** Model only exists on `call` events; every other kind shows an em dash. */
+/** Model exists on `call` and `tool` events; every other kind shows an em dash. */
 function modelCell(event: Event): string {
-  if (event.kind !== 'call') return EM_DASH;
+  if (event.kind !== 'call' && event.kind !== 'tool') return EM_DASH;
   return event.model ? readableModel(event.model) : EM_DASH;
 }
 

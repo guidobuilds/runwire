@@ -108,7 +108,7 @@ export const CAPABILITY_FIELDS: Record<Capability, CapabilityGate> = {
   model: {
     sessionFields: ['modelPrimary', 'modelChanges'],
     stepKinds: ['model-change'],
-    stepFields: ['call.model', 'model-change.fromValue', 'model-change.toValue'],
+    stepFields: ['call.model', 'tool.model', 'model-change.fromValue', 'model-change.toValue'],
   },
   mode: {
     sessionFields: ['modePrimary', 'modeChanges'],

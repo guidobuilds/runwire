@@ -153,6 +153,7 @@ const SIGNAL_EVENTS: readonly Event[] = [
     kind: 'tool',
     category: 'mcp',
     toolName: 'mcp__plugin_engram_engram__mem_save',
+    model: null,
   },
   {
     streamId: ROOT.id,
@@ -163,6 +164,7 @@ const SIGNAL_EVENTS: readonly Event[] = [
     kind: 'tool',
     category: 'exec',
     toolName: 'bash',
+    model: null,
   },
 ];
 

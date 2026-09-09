@@ -101,7 +101,12 @@ export type EventBase = {
 /** Seven source-step variants; payloads are metadata-only. */
 export type Event =
   | (EventBase & { kind: 'call'; model: string | null })
-  | (EventBase & { kind: 'tool'; category: string | null; toolName: string | null })
+  | (EventBase & {
+      kind: 'tool';
+      category: string | null;
+      toolName: string | null;
+      model: string | null;
+    })
   | (EventBase & { kind: 'turn'; durationMs: number | null })
   | (EventBase & { kind: 'harness'; toolName: string | null })
   | (EventBase & { kind: 'compaction'; trigger: string | null })

@@ -251,7 +251,15 @@ function normalizeMergedEvent(value: unknown): Event {
         (typeof value.toolName !== 'string' && value.toolName !== null)
       )
         break;
-      return { ...base, kind: 'tool', category: value.category, toolName: value.toolName };
+      return {
+        ...base,
+        kind: 'tool',
+        category: value.category,
+        toolName: value.toolName,
+        // Additive-with-default: responses predating the `model` field (or a
+        // null model) normalize to null rather than throwing (see merged-events-nodes-normalizer).
+        model: typeof value.model === 'string' ? value.model : null,
+      };
     case 'turn':
       if (typeof value.durationMs !== 'number' && value.durationMs !== null) break;
       return { ...base, kind: 'turn', durationMs: value.durationMs };

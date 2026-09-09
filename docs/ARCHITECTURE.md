@@ -177,7 +177,7 @@ rollups(session_id PK → sessions, uncached_input, cached_input, cache_write, o
 | `steps.kind` | Columns used |
 |---|---|
 | `call` | `model`, `uncached_input` … `reasoning_output` |
-| `tool` | `tool_category`, `tool_name`, `skill_name`, `call_id`, `child_id`, `duration_ms`, `error` |
+| `tool` | `model`, `tool_category`, `tool_name`, `skill_name`, `call_id`, `child_id`, `duration_ms`, `error` |
 | `turn` | `duration_ms` |
 | `harness` | `tool_name` (event name, e.g. `hook:PreToolUse`) |
 | `compaction` | `compaction_trigger`, `pre_tokens`, `post_tokens` |
