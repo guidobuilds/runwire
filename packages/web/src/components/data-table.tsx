@@ -1,54 +1,32 @@
-import {
-  closestCenter,
-  DndContext,
-  type DragEndEvent,
-  KeyboardSensor,
-  MouseSensor,
-  TouchSensor,
-  type UniqueIdentifier,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
-import {
-  arrayMove,
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import type { ApiSessionSummary, ApiTokenTotals } from '@scout/core';
 import { Link } from '@tanstack/react-router';
 import {
-  type ColumnFiltersState,
   type ColumnVisibilityState,
-  columnFilteringFeature,
   columnVisibilityFeature,
   createColumnHelper,
-  createFilteredRowModel,
-  createPaginatedRowModel,
-  createSortedRowModel,
   FlexRender,
-  type Row,
-  rowPaginationFeature,
   rowSelectionFeature,
-  rowSortingFeature,
-  type SortingState,
   tableFeatures,
   useTable,
 } from '@tanstack/react-table';
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
   ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   ChevronsLeftIcon,
   ChevronsRightIcon,
+  ChevronsUpDownIcon,
+  CircleDollarSignIcon,
+  ClockIcon,
   Columns3Icon,
-  GripVerticalIcon,
-  PlusIcon,
+  ListFilterIcon,
+  SearchIcon,
+  XIcon,
 } from 'lucide-react';
 import * as React from 'react';
-import { HarnessIdentity } from '@/components/harness-identity';
+import { HarnessIcon, HarnessIdentity } from '@/components/harness-identity';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -66,8 +44,13 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -85,23 +68,62 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useIsMobile } from '@/hooks/use-mobile';
+import {
+  PAGE_SIZES,
+  type SessionsFilters,
+  type SessionsSortState,
+  type SortField,
+} from '@/lib/sessions-table';
+import { cn } from '@/lib/utils';
+import { useHarnesses } from '@/queries/harnesses';
 
-// New in v9: declare the features this table uses — anything you don't
-// register is tree-shaken out of the bundle.
+// v9: declare the features this table uses — anything you don't register is
+// tree-shaken out of the bundle. Sorting/filtering/pagination now live in the
+// server query, so only the client-only column-visibility and row-selection
+// features remain.
 const features = tableFeatures({
-  columnFilteringFeature,
   columnVisibilityFeature,
-  rowPaginationFeature,
   rowSelectionFeature,
-  rowSortingFeature,
-  filteredRowModel: createFilteredRowModel(),
-  paginatedRowModel: createPaginatedRowModel(),
-  sortedRowModel: createSortedRowModel(),
 });
 
 const columnHelper = createColumnHelper<typeof features, ApiSessionSummary>();
+
+type DurationPreset = SessionsFilters['duration'];
+type CostPreset = SessionsFilters['cost'];
+
+const DURATION_OPTIONS: { value: DurationPreset; label: string }[] = [
+  { value: '', label: 'All' },
+  { value: '5m', label: '≥ 5m' },
+  { value: '30m', label: '≥ 30m' },
+  { value: '1h', label: '≥ 1h' },
+];
+
+const COST_OPTIONS: { value: CostPreset; label: string }[] = [
+  { value: '', label: 'All' },
+  { value: 'gt0', label: 'Cost > $0' },
+];
+
+function durationLabel(value: DurationPreset): string {
+  return DURATION_OPTIONS.find((option) => option.value === value)?.label ?? 'All';
+}
+
+function costLabel(value: CostPreset): string {
+  return COST_OPTIONS.find((option) => option.value === value)?.label ?? 'All';
+}
+
+/** The sorted state to display for a column (server-owned sort). */
+function toSortedState(sort: SessionsSortState, id: SortField): false | 'asc' | 'desc' {
+  if (!sort || sort.id !== id) return false;
+  return sort.desc ? 'desc' : 'asc';
+}
+
+/** Clicking a header cycles its sort: asc -> desc -> unsorted. */
+function cycleSort(sort: SessionsSortState, id: SortField): SessionsSortState {
+  if (!sort || sort.id !== id) return { id, desc: false };
+  if (!sort.desc) return { id, desc: true };
+  return null;
+}
 
 function sumTokens(totals: ApiTokenTotals): number {
   return (
@@ -147,201 +169,323 @@ function formatCurrency(value: number | null): string {
   }).format(value);
 }
 
-// Create a separate component for the drag handle
-function DragHandle({ id }: { id: string }) {
-  const { attributes, listeners } = useSortable({
-    id,
-  });
+/** A plain, server-controlled sortable header button. */
+function SortableHeader({
+  label,
+  align = 'left',
+  sorted,
+  onToggle,
+}: {
+  label: string;
+  align?: 'left' | 'right';
+  sorted: false | 'asc' | 'desc';
+  onToggle: () => void;
+}) {
   return (
-    <Button
-      {...attributes}
-      {...listeners}
-      variant="ghost"
-      size="icon"
-      className="size-7 text-muted-foreground hover:bg-transparent"
+    <button
+      type="button"
+      onClick={onToggle}
+      className={cn(
+        'group/sort -mx-2 inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium text-foreground transition-colors select-none hover:bg-accent/60',
+        align === 'right' && 'w-full justify-end',
+      )}
     >
-      <GripVerticalIcon className="size-3 text-muted-foreground" />
-      <span className="sr-only">Drag to reorder</span>
-    </Button>
+      <span>{label}</span>
+      {sorted === 'asc' ? (
+        <ArrowUpIcon className="size-3.5 text-foreground" />
+      ) : sorted === 'desc' ? (
+        <ArrowDownIcon className="size-3.5 text-foreground" />
+      ) : (
+        <ChevronsUpDownIcon className="size-3.5 text-muted-foreground opacity-0 group-hover/sort:opacity-100" />
+      )}
+    </button>
   );
 }
-const columns = columnHelper.columns([
-  columnHelper.display({
-    id: 'drag',
-    header: () => null,
-    cell: ({ row }) => <DragHandle id={row.original.id} />,
-  }),
-  columnHelper.display({
-    id: 'select',
-    header: ({ table }) => (
-      <div className="flex items-center justify-center">
-        <Checkbox
-          checked={table.getIsAllPageRowsSelected()}
-          indeterminate={table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()}
-          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="Select all"
-        />
-      </div>
-    ),
-    cell: ({ row }) => (
-      <div className="flex items-center justify-center">
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label="Select row"
-        />
-      </div>
-    ),
-    enableSorting: false,
-    enableHiding: false,
-  }),
-  columnHelper.accessor('name', {
-    header: 'Name',
-    cell: ({ row }) => <TableCellViewer item={row.original} />,
-    enableHiding: false,
-  }),
-  columnHelper.accessor((row) => row.harness.displayName, {
-    id: 'harness',
-    header: 'Harness',
-    cell: ({ row }) => <HarnessIdentity harness={row.original.harness} />,
-  }),
-  columnHelper.accessor('startedAt', {
-    id: 'startedAt',
-    header: 'Started At',
-    cell: ({ getValue }) => formatDateTime(getValue()),
-  }),
-  columnHelper.accessor('durationMs', {
-    id: 'duration',
-    header: () => <div className="w-full text-right">Duration</div>,
-    cell: ({ getValue }) => <div className="text-right">{formatDuration(getValue())}</div>,
-  }),
-  columnHelper.accessor((row) => sumTokens(row.tokensInclusive), {
-    id: 'tokens',
-    header: () => <div className="w-full text-right">Tokens</div>,
-    cell: ({ getValue }) => <div className="text-right">{formatCompactNumber(getValue())}</div>,
-  }),
-  columnHelper.accessor('costUsd', {
-    id: 'cost',
-    header: () => <div className="w-full text-right">Cost</div>,
-    cell: ({ getValue }) => <div className="text-right">{formatCurrency(getValue())}</div>,
-  }),
-]);
-function DraggableRow({ row }: { row: Row<typeof features, ApiSessionSummary> }) {
-  const { transform, transition, setNodeRef, isDragging } = useSortable({
-    id: row.original.id,
-  });
-  return (
-    <TableRow
-      data-state={row.getIsSelected() && 'selected'}
-      data-dragging={isDragging}
-      ref={setNodeRef}
-      className="relative z-0 data-[dragging=true]:z-10 data-[dragging=true]:opacity-80"
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition: transition,
-      }}
-    >
-      {row.getVisibleCells().map((cell) => (
-        <TableCell key={cell.id}>
-          <FlexRender cell={cell} />
-        </TableCell>
-      ))}
-    </TableRow>
-  );
-}
-export function DataTable({ data: initialData }: { data: ApiSessionSummary[] }) {
-  const [data, setData] = React.useState(() => initialData);
-  // Local `data` state exists so drag-to-reorder can hold a mutable row order
-  // (a local UI concern, not a server write) without losing it on every
-  // render. But `initialData` is a live TanStack Query result that changes on
-  // refetch (e.g. the v5 defaults refetchOnWindowFocus/refetchOnReconnect) --
-  // re-sync whenever the prop's reference changes so the table doesn't
-  // silently freeze on the first fetch's rows.
-  React.useEffect(() => {
-    setData(initialData);
-  }, [initialData]);
-  const [rowSelection, setRowSelection] = React.useState({});
+
+export function DataTable({
+  data,
+  total,
+  isFetching,
+  filters,
+  sort,
+  pagination,
+  onFiltersChange,
+  onSortChange,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  data: ApiSessionSummary[];
+  total: number;
+  isFetching: boolean;
+  filters: SessionsFilters;
+  sort: SessionsSortState;
+  pagination: { pageIndex: number; pageSize: number };
+  onFiltersChange: (next: SessionsFilters, options?: { immediate?: boolean }) => void;
+  onSortChange: (next: SessionsSortState) => void;
+  onPageChange: (pageIndex: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+}) {
   const [columnVisibility, setColumnVisibility] = React.useState<ColumnVisibilityState>({});
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
-  const [sorting, setSorting] = React.useState<SortingState>([]);
-  const [pagination, setPagination] = React.useState({
-    pageIndex: 0,
-    pageSize: 10,
-  });
-  const sortableId = React.useId();
-  const sensors = useSensors(
-    useSensor(MouseSensor, {}),
-    useSensor(TouchSensor, {}),
-    useSensor(KeyboardSensor, {}),
+  const [rowSelection, setRowSelection] = React.useState({});
+
+  const { data: harnessOptions, isPending: harnessesPending } = useHarnesses();
+
+  function toggleHarness(id: string, checked: boolean) {
+    const next = checked
+      ? [...filters.harnessIds, id]
+      : filters.harnessIds.filter((value) => value !== id);
+    onFiltersChange({ ...filters, harnessIds: next }, { immediate: true });
+  }
+
+  const columns = React.useMemo(
+    () =>
+      columnHelper.columns([
+        columnHelper.display({
+          id: 'select',
+          header: ({ table }) => (
+            <div className="flex items-center justify-center">
+              <Checkbox
+                checked={table.getIsAllPageRowsSelected()}
+                indeterminate={
+                  table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()
+                }
+                onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+                aria-label="Select all"
+              />
+            </div>
+          ),
+          cell: ({ row }) => (
+            <div className="flex items-center justify-center">
+              <Checkbox
+                checked={row.getIsSelected()}
+                onCheckedChange={(value) => row.toggleSelected(!!value)}
+                aria-label="Select row"
+              />
+            </div>
+          ),
+          enableHiding: false,
+        }),
+        columnHelper.accessor('name', {
+          header: () => (
+            <SortableHeader
+              label="Name"
+              sorted={toSortedState(sort, 'name')}
+              onToggle={() => onSortChange(cycleSort(sort, 'name'))}
+            />
+          ),
+          cell: ({ row }) => <TableCellViewer item={row.original} />,
+          enableHiding: false,
+        }),
+        columnHelper.accessor((row) => row.harness.id, {
+          id: 'harness',
+          header: () => (
+            <SortableHeader
+              label="Harness"
+              sorted={toSortedState(sort, 'harness')}
+              onToggle={() => onSortChange(cycleSort(sort, 'harness'))}
+            />
+          ),
+          cell: ({ row }) => <HarnessIdentity harness={row.original.harness} />,
+        }),
+        columnHelper.accessor('startedAt', {
+          id: 'startedAt',
+          header: () => (
+            <SortableHeader
+              label="Started At"
+              sorted={toSortedState(sort, 'startedAt')}
+              onToggle={() => onSortChange(cycleSort(sort, 'startedAt'))}
+            />
+          ),
+          cell: ({ getValue }) => formatDateTime(getValue()),
+        }),
+        columnHelper.accessor('durationMs', {
+          id: 'duration',
+          header: () => (
+            <SortableHeader
+              align="right"
+              label="Duration"
+              sorted={toSortedState(sort, 'duration')}
+              onToggle={() => onSortChange(cycleSort(sort, 'duration'))}
+            />
+          ),
+          cell: ({ getValue }) => <div className="text-right">{formatDuration(getValue())}</div>,
+        }),
+        columnHelper.accessor((row) => sumTokens(row.tokensInclusive), {
+          id: 'tokens',
+          header: () => (
+            <SortableHeader
+              align="right"
+              label="Tokens"
+              sorted={toSortedState(sort, 'tokens')}
+              onToggle={() => onSortChange(cycleSort(sort, 'tokens'))}
+            />
+          ),
+          cell: ({ getValue }) => (
+            <div className="text-right">{formatCompactNumber(getValue())}</div>
+          ),
+        }),
+        columnHelper.accessor('costUsd', {
+          id: 'cost',
+          header: () => (
+            <SortableHeader
+              align="right"
+              label="Cost"
+              sorted={toSortedState(sort, 'cost')}
+              onToggle={() => onSortChange(cycleSort(sort, 'cost'))}
+            />
+          ),
+          cell: ({ getValue }) => <div className="text-right">{formatCurrency(getValue())}</div>,
+        }),
+      ]),
+    [sort, onSortChange],
   );
-  const dataIds = React.useMemo<UniqueIdentifier[]>(() => data?.map(({ id }) => id) || [], [data]);
+
   const table = useTable({
     features,
     data,
     columns,
-    state: {
-      sorting,
-      columnVisibility,
-      rowSelection,
-      columnFilters,
-      pagination,
-    },
+    state: { columnVisibility, rowSelection },
     getRowId: (row) => row.id,
     enableRowSelection: true,
     onRowSelectionChange: setRowSelection,
-    onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
-    onPaginationChange: setPagination,
   });
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (active && over && active.id !== over.id) {
-      setData((data) => {
-        const oldIndex = dataIds.indexOf(active.id);
-        const newIndex = dataIds.indexOf(over.id);
-        return arrayMove(data, oldIndex, newIndex);
-      });
-    }
-  }
+
+  const rangeStart = pagination.pageIndex * pagination.pageSize + 1;
+  const rangeEnd = Math.min(total, rangeStart + data.length - 1);
+  const rangeLabel =
+    data.length === 0 ? '0 of 0 rows' : `${rangeStart}–${rangeEnd} of ${total} rows`;
+  const totalPages = Math.max(1, Math.ceil(total / pagination.pageSize));
+  const canPreviousPage = pagination.pageIndex > 0;
+  const canNextPage = pagination.pageIndex + 1 < totalPages;
+
   return (
-    <Tabs defaultValue="outline" className="w-full flex-col justify-start gap-6">
-      <div className="flex items-center justify-between px-4 lg:px-6">
-        <Label htmlFor="view-selector" className="sr-only">
-          View
-        </Label>
-        <Select
-          defaultValue="outline"
-          items={[
-            { label: 'Outline', value: 'outline' },
-            { label: 'Past Performance', value: 'past-performance' },
-            { label: 'Key Personnel', value: 'key-personnel' },
-            { label: 'Focus Documents', value: 'focus-documents' },
-          ]}
-        >
-          <SelectTrigger className="flex w-fit @4xl/main:hidden" size="sm" id="view-selector">
-            <SelectValue placeholder="Select a view" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value="outline">Outline</SelectItem>
-              <SelectItem value="past-performance">Past Performance</SelectItem>
-              <SelectItem value="key-personnel">Key Personnel</SelectItem>
-              <SelectItem value="focus-documents">Focus Documents</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-        <TabsList className="hidden **:data-[slot=badge]:size-5 **:data-[slot=badge]:rounded-full **:data-[slot=badge]:bg-muted-foreground/30 **:data-[slot=badge]:px-1 @4xl/main:flex">
-          <TabsTrigger value="outline">Outline</TabsTrigger>
-          <TabsTrigger value="past-performance">
-            Past Performance <Badge variant="secondary">3</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="key-personnel">
-            Key Personnel <Badge variant="secondary">2</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="focus-documents">Focus Documents</TabsTrigger>
-        </TabsList>
-        <div className="flex items-center gap-2">
+    <div className="flex w-full flex-col justify-start gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 lg:px-6">
+        <div className="relative w-full max-w-xs min-w-0">
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label="Search sessions"
+            className="pr-8 pl-8"
+            placeholder="Search sessions…"
+            value={filters.q}
+            onChange={(event) => onFiltersChange({ ...filters, q: event.target.value })}
+          />
+          {filters.q ? (
+            <button
+              type="button"
+              aria-label="Clear search"
+              className="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-0.5 text-muted-foreground hover:text-foreground"
+              onClick={() => onFiltersChange({ ...filters, q: '' }, { immediate: true })}
+            >
+              <XIcon className="size-4" />
+            </button>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+              <ListFilterIcon data-icon="inline-start" />
+              Harness
+              {filters.harnessIds.length > 0 ? (
+                <Badge variant="secondary">{filters.harnessIds.length}</Badge>
+              ) : (
+                <ChevronDownIcon data-icon="inline-end" />
+              )}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {harnessesPending ? (
+                <DropdownMenuItem disabled>Loading harnesses…</DropdownMenuItem>
+              ) : harnessOptions && harnessOptions.length > 0 ? (
+                harnessOptions.map((option) => (
+                  <DropdownMenuCheckboxItem
+                    key={option.id}
+                    checked={filters.harnessIds.includes(option.id)}
+                    onCheckedChange={(checked) => toggleHarness(option.id, !!checked)}
+                  >
+                    <HarnessIcon id={option.id} />
+                    {option.displayName}
+                  </DropdownMenuCheckboxItem>
+                ))
+              ) : (
+                <DropdownMenuItem disabled>No harnesses</DropdownMenuItem>
+              )}
+              {filters.harnessIds.length > 0 ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() =>
+                      onFiltersChange({ ...filters, harnessIds: [] }, { immediate: true })
+                    }
+                  >
+                    <XIcon />
+                    Clear
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+              <ClockIcon data-icon="inline-start" />
+              Duration
+              {filters.duration ? (
+                <Badge variant="secondary">{durationLabel(filters.duration)}</Badge>
+              ) : (
+                <ChevronDownIcon data-icon="inline-end" />
+              )}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuRadioGroup
+                value={filters.duration}
+                onValueChange={(value) =>
+                  onFiltersChange(
+                    { ...filters, duration: value as DurationPreset },
+                    { immediate: true },
+                  )
+                }
+              >
+                {DURATION_OPTIONS.map((option) => (
+                  <DropdownMenuRadioItem
+                    key={option.value || 'all'}
+                    closeOnClick
+                    value={option.value}
+                  >
+                    {option.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+              <CircleDollarSignIcon data-icon="inline-start" />
+              Cost
+              {filters.cost ? (
+                <Badge variant="secondary">{costLabel(filters.cost)}</Badge>
+              ) : (
+                <ChevronDownIcon data-icon="inline-end" />
+              )}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuRadioGroup
+                value={filters.cost}
+                onValueChange={(value) =>
+                  onFiltersChange({ ...filters, cost: value as CostPreset }, { immediate: true })
+                }
+              >
+                {COST_OPTIONS.map((option) => (
+                  <DropdownMenuRadioItem
+                    key={option.value || 'all'}
+                    closeOnClick
+                    value={option.value}
+                  >
+                    {option.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
               <Columns3Icon data-icon="inline-start" />
@@ -366,60 +510,55 @@ export function DataTable({ data: initialData }: { data: ApiSessionSummary[] }) 
                 })}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button variant="outline" size="sm">
-            <PlusIcon />
-            <span className="hidden lg:inline">Add Section</span>
-          </Button>
         </div>
       </div>
-      <TabsContent
-        value="outline"
-        className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6"
-      >
-        <div className="overflow-hidden rounded-lg border">
-          <DndContext
-            collisionDetection={closestCenter}
-            modifiers={[restrictToVerticalAxis]}
-            onDragEnd={handleDragEnd}
-            sensors={sensors}
-            id={sortableId}
-          >
-            <Table>
-              <TableHeader className="sticky top-0 z-10 bg-muted">
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => {
-                      return (
-                        <TableHead key={header.id} colSpan={header.colSpan}>
-                          {header.isPlaceholder ? null : <FlexRender header={header} />}
-                        </TableHead>
-                      );
-                    })}
-                  </TableRow>
-                ))}
-              </TableHeader>
-              <TableBody className="**:data-[slot=table-cell]:first:w-8">
-                {table.getRowModel().rows?.length ? (
-                  <SortableContext items={dataIds} strategy={verticalListSortingStrategy}>
-                    {table.getRowModel().rows.map((row) => (
-                      <DraggableRow key={row.id} row={row} />
+      <div className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6">
+        <div
+          aria-busy={isFetching}
+          className={cn(
+            'overflow-hidden rounded-lg border transition-opacity duration-200',
+            isFetching && 'opacity-60',
+          )}
+        >
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-muted">
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    return (
+                      <TableHead key={header.id} colSpan={header.colSpan}>
+                        {header.isPlaceholder ? null : <FlexRender header={header} />}
+                      </TableHead>
+                    );
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody className="**:data-[slot=table-cell]:first:w-8">
+              {table.getRowModel().rows?.length ? (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'}>
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        <FlexRender cell={cell} />
+                      </TableCell>
                     ))}
-                  </SortableContext>
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={columns.length} className="h-24 text-center">
-                      No results.
-                    </TableCell>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </DndContext>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={columns.length} className="h-24 text-center">
+                    No results.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+          {isFetching ? <span className="sr-only">Refreshing sessions…</span> : null}
         </div>
         <div className="flex items-center justify-between px-4">
           <div className="hidden flex-1 text-sm text-muted-foreground lg:flex">
-            {table.getFilteredSelectedRowModel().rows.length} of{' '}
-            {table.getFilteredRowModel().rows.length} row(s) selected.
+            {table.getSelectedRowModel().rows.length} of {data.length} row(s) selected.
           </div>
           <div className="flex w-full items-center gap-8 lg:w-fit">
             <div className="hidden items-center gap-2 lg:flex">
@@ -427,21 +566,19 @@ export function DataTable({ data: initialData }: { data: ApiSessionSummary[] }) 
                 Rows per page
               </Label>
               <Select
-                value={`${table.state.pagination.pageSize}`}
-                onValueChange={(value) => {
-                  table.setPageSize(Number(value));
-                }}
-                items={[10, 20, 30, 40, 50].map((pageSize) => ({
+                value={`${pagination.pageSize}`}
+                onValueChange={(value) => onPageSizeChange(Number(value))}
+                items={PAGE_SIZES.map((pageSize) => ({
                   label: `${pageSize}`,
                   value: `${pageSize}`,
                 }))}
               >
                 <SelectTrigger size="sm" className="w-20" id="rows-per-page">
-                  <SelectValue placeholder={table.state.pagination.pageSize} />
+                  <SelectValue placeholder={pagination.pageSize} />
                 </SelectTrigger>
                 <SelectContent side="top">
                   <SelectGroup>
-                    {[10, 20, 30, 40, 50].map((pageSize) => (
+                    {PAGE_SIZES.map((pageSize) => (
                       <SelectItem key={pageSize} value={`${pageSize}`}>
                         {pageSize}
                       </SelectItem>
@@ -451,14 +588,14 @@ export function DataTable({ data: initialData }: { data: ApiSessionSummary[] }) 
               </Select>
             </div>
             <div className="flex w-fit items-center justify-center text-sm font-medium">
-              Page {table.state.pagination.pageIndex + 1} of {table.getPageCount()}
+              {rangeLabel}
             </div>
             <div className="ml-auto flex items-center gap-2 lg:ml-0">
               <Button
                 variant="outline"
                 className="hidden h-8 w-8 p-0 lg:flex"
-                onClick={() => table.setPageIndex(0)}
-                disabled={!table.getCanPreviousPage()}
+                onClick={() => onPageChange(0)}
+                disabled={!canPreviousPage}
               >
                 <span className="sr-only">Go to first page</span>
                 <ChevronsLeftIcon />
@@ -467,8 +604,8 @@ export function DataTable({ data: initialData }: { data: ApiSessionSummary[] }) 
                 variant="outline"
                 className="size-8"
                 size="icon"
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
+                onClick={() => onPageChange(pagination.pageIndex - 1)}
+                disabled={!canPreviousPage}
               >
                 <span className="sr-only">Go to previous page</span>
                 <ChevronLeftIcon />
@@ -477,8 +614,8 @@ export function DataTable({ data: initialData }: { data: ApiSessionSummary[] }) 
                 variant="outline"
                 className="size-8"
                 size="icon"
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
+                onClick={() => onPageChange(pagination.pageIndex + 1)}
+                disabled={!canNextPage}
               >
                 <span className="sr-only">Go to next page</span>
                 <ChevronRightIcon />
@@ -487,8 +624,8 @@ export function DataTable({ data: initialData }: { data: ApiSessionSummary[] }) 
                 variant="outline"
                 className="hidden size-8 lg:flex"
                 size="icon"
-                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                disabled={!table.getCanNextPage()}
+                onClick={() => onPageChange(totalPages - 1)}
+                disabled={!canNextPage}
               >
                 <span className="sr-only">Go to last page</span>
                 <ChevronsRightIcon />
@@ -496,17 +633,8 @@ export function DataTable({ data: initialData }: { data: ApiSessionSummary[] }) 
             </div>
           </div>
         </div>
-      </TabsContent>
-      <TabsContent value="past-performance" className="flex flex-col px-4 lg:px-6">
-        <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
-      </TabsContent>
-      <TabsContent value="key-personnel" className="flex flex-col px-4 lg:px-6">
-        <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
-      </TabsContent>
-      <TabsContent value="focus-documents" className="flex flex-col px-4 lg:px-6">
-        <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
-      </TabsContent>
-    </Tabs>
+      </div>
+    </div>
   );
 }
 

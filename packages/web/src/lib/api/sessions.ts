@@ -3,7 +3,9 @@ import { apiFetch } from './client';
 
 /** Builds `/sessions?...` from only the defined fields of `query` — omits
  * undefined fields entirely rather than sending empty-string params (matches
- * createServer.ts's strict "unknown/empty query param" 400 validation). */
+ * createServer.ts's strict "unknown/empty query param" 400 validation). Note
+ * `costOnly` is the exception to "truthy only": `false` is a real filter value
+ * and is serialized as `'false'`, never omitted. */
 function toSearchParams(query: ListSessionsQuery): string {
   const params = new URLSearchParams();
   if (query.limit !== undefined) params.set('limit', String(query.limit));
@@ -11,6 +13,10 @@ function toSearchParams(query: ListSessionsQuery): string {
   if (query.harness !== undefined) params.set('harness', query.harness);
   if (query.startedAfter !== undefined) params.set('startedAfter', query.startedAfter);
   if (query.model !== undefined) params.set('model', query.model);
+  if (query.q !== undefined) params.set('q', query.q);
+  if (query.durationMin !== undefined) params.set('durationMin', String(query.durationMin));
+  if (query.costOnly !== undefined) params.set('costOnly', query.costOnly ? 'true' : 'false');
+  if (query.sort !== undefined) params.set('sort', query.sort);
   const qs = params.toString();
   return qs === '' ? '' : `?${qs}`;
 }

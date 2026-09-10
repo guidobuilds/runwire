@@ -68,6 +68,12 @@ export type ApiSessionDetail = ApiSessionSummary & {
  * be any valid ISO-8601 datetime — core normalizes it to canonical `.sssZ` UTC
  * (design D-4), which is load-bearing: a millis-less value mis-compares against
  * canonical stored `started_at` values otherwise.
+ *
+ * `harness` is a comma-separated list of harness ids (trimmed, empty segments
+ * dropped, de-duplicated). `q` is a case-insensitive substring matched against
+ * `title ?? project name ?? id` with `%`/`_`/`\` treated as literals. `sort` is
+ * a whitelisted field name, optionally `-`-prefixed for DESC; an unknown value
+ * falls back to the default order. All filter values are bound via `?`.
  */
 export type ListSessionsQuery = {
   limit?: number;
@@ -75,6 +81,10 @@ export type ListSessionsQuery = {
   harness?: string;
   startedAfter?: string;
   model?: string;
+  q?: string;
+  durationMin?: number;
+  costOnly?: boolean;
+  sort?: string;
 };
 
 /** The paged list envelope: the filtered root set, `total` before pagination. */
@@ -83,6 +93,12 @@ export type PagedSessions = {
   total: number;
   limit: number;
   offset: number;
+};
+
+/** A harness option for the web filter: only harnesses with at least one root session. */
+export type ApiHarnessOption = {
+  id: string;
+  displayName: string;
 };
 
 type SessionRow = {
@@ -352,24 +368,81 @@ const MODEL_MATCH = `(
 )`;
 
 /**
- * Root sessions only (`parent_id IS NULL`), ordered `started_at DESC, id`,
- * filtered by the optional AND filters (`harness`, `startedAfter`, `model`) and
- * paginated by `limit`/`offset`. `total` is the real COUNT of the filtered root
- * set BEFORE pagination. Models/childCounts are computed ONLY for the paginated
- * slice (design D-12) — never for all roots after deciding the page. No N+1.
+ * The display-name expression used by both the `q` filter and the `name` sort.
+ * It mirrors `toSummary`'s `title ?? project_name ?? id` exactly, and is a
+ * scalar subquery (never a join) so the join-free COUNT query stays valid.
+ */
+const NAME_EXPR = `COALESCE(s.title, (SELECT p.name FROM projects p WHERE p.key = s.project_key), s.id)`;
+
+/**
+ * Module-level ORDER BY whitelist. `sort` is a user-supplied field name, so the
+ * column text must come from this constant map — never from interpolation of the
+ * input. Values are safe SQL fragments over the ITEM_SQL aliases (`s`, `h`, `r`).
+ */
+const SORT_COLUMNS: Record<string, string> = {
+  name: `LOWER(${NAME_EXPR})`,
+  harness: 'LOWER(h.display_name)',
+  startedAt: 's.started_at',
+  duration: 's.duration_ms',
+  tokens:
+    '(COALESCE(r.uncached_input,0)+COALESCE(r.cached_input,0)+COALESCE(r.cache_write,0)+COALESCE(r.output,0)+COALESCE(r.reasoning_output,0))',
+  cost: 's.cost_usd',
+};
+
+const DEFAULT_ORDER_BY = 's.started_at DESC, s.id';
+
+/**
+ * Maps a `sort` string (`<field>` ASC / `-<field>` DESC) to a safe ORDER BY via
+ * the `SORT_COLUMNS` whitelist. An absent or unknown field falls back to the
+ * default `started_at DESC, id`. Every produced clause ends with `, s.id` so a
+ * tie on the sort field is always deterministic.
+ */
+function buildOrderBy(sort: string | undefined): string {
+  if (sort === undefined) return DEFAULT_ORDER_BY;
+  const desc = sort.startsWith('-');
+  const field = desc ? sort.slice(1) : sort;
+  const column = SORT_COLUMNS[field];
+  if (column === undefined) return DEFAULT_ORDER_BY;
+  return `${column} ${desc ? 'DESC' : 'ASC'}, s.id`;
+}
+
+/**
+ * Root sessions only (`parent_id IS NULL`), ordered by the whitelisted `sort`
+ * (default `started_at DESC, id`), filtered by the optional AND filters
+ * (`harness` comma-list, `startedAfter`, `model`, `q`, `durationMin`,
+ * `costOnly`) and paginated by `limit`/`offset`. `total` is the real COUNT of
+ * the filtered root set BEFORE pagination. Models/childCounts are computed ONLY
+ * for the paginated slice (design D-12) — never for all roots after deciding the
+ * page. No N+1.
  */
 export function listSessions(db: Database, query: ListSessionsQuery = {}): PagedSessions {
   const limit = query.limit ?? 50;
   const offset = query.offset ?? 0;
 
   // Base root filter (design T1 step 2): roots only, plus optional exact harness
-  // (case-sensitive on harness_id) and exclusive startedAt (`started_at > ?`,
-  // NULL never matches). All values bound with `?`; never interpolated.
+  // (case-sensitive on harness_id; a comma list becomes `= ?` for one id and
+  // `IN (?,…)` for several), exclusive startedAt (`started_at > ?`, NULL never
+  // matches), `q` substring, `durationMin` lower bound (NULL excluded) and
+  // `costOnly` (> 0, NULL excluded). All values bound with `?`; never
+  // interpolated.
   let where = 's.parent_id IS NULL';
   const baseParams: SQLQueryBindings[] = [];
   if (query.harness !== undefined) {
-    where += ' AND s.harness_id = ?';
-    baseParams.push(query.harness);
+    const harnessIds = [
+      ...new Set(
+        query.harness
+          .split(',')
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0),
+      ),
+    ];
+    if (harnessIds.length === 1) {
+      where += ' AND s.harness_id = ?';
+      baseParams.push(harnessIds[0] as string);
+    } else if (harnessIds.length > 1) {
+      where += ` AND s.harness_id IN (${harnessIds.map(() => '?').join(',')})`;
+      baseParams.push(...harnessIds);
+    }
   }
   if (query.startedAfter !== undefined) {
     where += ' AND s.started_at > ?';
@@ -378,6 +451,20 @@ export function listSessions(db: Database, query: ListSessionsQuery = {}): Paged
     // same-instant and 1-ms-later canonical stored values, wrongly excluding
     // a session that should be included.
     baseParams.push(new Date(query.startedAfter).toISOString());
+  }
+  if (query.q !== undefined) {
+    // Scalar subquery, NOT a join: the COUNT query above has no joins and must
+    // stay valid. `%`/`_`/`\` in the user text are escaped and `\` is declared
+    // as the LIKE escape character so they match literally.
+    where += ` AND ${NAME_EXPR} LIKE ? ESCAPE '\\'`;
+    baseParams.push(`%${query.q.replace(/[\\%_]/g, '\\$&')}%`);
+  }
+  if (query.durationMin !== undefined) {
+    where += ' AND s.duration_ms >= ?';
+    baseParams.push(query.durationMin * 60000);
+  }
+  if (query.costOnly === true) {
+    where += ' AND s.cost_usd > 0';
   }
 
   // Model filter (design D-1 / T1 step 3): a cycle-guarded recursive CTE applied
@@ -403,7 +490,7 @@ export function listSessions(db: Database, query: ListSessionsQuery = {}): Paged
   const total = countRow.c;
 
   // The paginated, ordered item slice (D-2 / D-8 / D-9).
-  const itemSql = `${ctePrefix}${ITEM_SQL} WHERE ${where}${modelSubquery} ORDER BY s.started_at DESC, s.id LIMIT ? OFFSET ?`;
+  const itemSql = `${ctePrefix}${ITEM_SQL} WHERE ${where}${modelSubquery} ORDER BY ${buildOrderBy(query.sort)} LIMIT ? OFFSET ?`;
   const itemParams = hasModel
     ? [...baseParams, ...baseParams, ...modelParams, limit, offset]
     : [...baseParams, limit, offset];
@@ -423,6 +510,22 @@ export function listSessions(db: Database, query: ListSessionsQuery = {}): Paged
 
   const items = rows.map((r) => toSummary(r, childCounts, modelsOwn, modelsDescendants));
   return { items, total, limit, offset };
+}
+
+/**
+ * Harness options for the web filter: every harness that has at least one root
+ * session (`parent_id IS NULL`), ordered by display name. Harnesses with only
+ * descendant rows are omitted.
+ */
+export function listHarnesses(db: Database): ApiHarnessOption[] {
+  const rows = db
+    .query(
+      `SELECT h.id AS id, h.display_name AS display_name FROM harnesses h
+       WHERE EXISTS (SELECT 1 FROM sessions s WHERE s.harness_id = h.id AND s.parent_id IS NULL)
+       ORDER BY h.display_name`,
+    )
+    .all() as { id: string; display_name: string }[];
+  return rows.map((r) => ({ id: r.id, displayName: r.display_name }));
 }
 
 /**

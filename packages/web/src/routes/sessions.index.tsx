@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { type ChartAreaDataPoint, ChartAreaInteractive } from '@/components/chart-area-interactive';
 import { DataTable } from '@/components/data-table';
 import { type SectionCardData, SectionCards } from '@/components/section-cards';
+import { useSessionsTableState } from '@/hooks/use-sessions-table-state';
 import { useSessions } from '@/queries/sessions';
 
 // The one deliberate hand-written composition file for f4 (see plan.md decision
@@ -12,7 +13,7 @@ import { useSessions } from '@/queries/sessions';
 // `useSessions()` call -- no separate API endpoint for the card metrics or chart
 // series, both are computed client-side from that one list. The AppSidebar/
 // SiteHeader chrome moved to __root.tsx in f6 (shared app-wide, not re-wrapped
-// here).
+// here). Table state is intentionally client-only (no URL search params).
 export const Route = createFileRoute('/sessions/')({
   component: SessionsDashboard,
 });
@@ -83,7 +84,8 @@ function computeChartData(sessions: ApiSessionSummary[]): ChartAreaDataPoint[] {
 }
 
 function SessionsDashboard() {
-  const { data, isPending, isError, error } = useSessions();
+  const t = useSessionsTableState();
+  const { data, isPending, isError, error, isFetching } = useSessions(t.query);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -99,14 +101,25 @@ function SessionsDashboard() {
             <>
               {data.total > data.items.length ? (
                 <p className="px-4 text-sm text-muted-foreground lg:px-6">
-                  Showing metrics for the first {data.items.length} of {data.total} sessions.
+                  Showing metrics for this page's {data.items.length} of {data.total} sessions.
                 </p>
               ) : null}
               <SectionCards cards={computeCards(data.items)} />
               <div className="px-4 lg:px-6">
                 <ChartAreaInteractive data={computeChartData(data.items)} />
               </div>
-              <DataTable data={data.items} />
+              <DataTable
+                data={data.items}
+                total={data.total}
+                isFetching={isFetching}
+                filters={t.filters}
+                sort={t.sort}
+                pagination={t.pagination}
+                onFiltersChange={t.setFilters}
+                onSortChange={t.setSort}
+                onPageChange={t.setPage}
+                onPageSizeChange={t.setPageSize}
+              />
             </>
           )}
         </div>

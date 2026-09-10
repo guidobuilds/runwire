@@ -1,8 +1,11 @@
+import type { ListSessionsQuery, PagedSessions } from '@scout/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
+import { delay, HttpResponse, http } from 'msw';
 import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
-import { mockSessionDetail, mockSessionSummary } from '@/mocks/handlers';
+import { mockPagedSessions, mockSessionDetail, mockSessionSummary } from '@/mocks/handlers';
+import { server } from '@/mocks/node';
 import { useSession, useSessions } from './sessions';
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -26,5 +29,54 @@ describe('useSession', () => {
     const { result } = renderHook(() => useSession('sess-1'), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(mockSessionDetail);
+  });
+});
+
+describe('useSessions keepPreviousData', () => {
+  it('keeps the previous page visible while a different query key fetches', async () => {
+    // Stable client across rerenders: the module-level `wrapper` builds a fresh
+    // QueryClient each render, which would discard the cache this test needs.
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const stableWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    const pageB: PagedSessions = {
+      items: [
+        { ...mockSessionSummary, id: 'sess-b', name: 'Fix flaky test', title: 'Fix flaky test' },
+      ],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    };
+
+    server.use(
+      http.get('/api/sessions', async ({ request }) => {
+        const q = new URL(request.url).searchParams.get('q');
+        if (q === 'b') {
+          await delay(150);
+          return HttpResponse.json(pageB);
+        }
+        return HttpResponse.json(mockPagedSessions);
+      }),
+    );
+
+    const { result, rerender } = renderHook(
+      ({ query }: { query: ListSessionsQuery }) => useSessions(query),
+      { wrapper: stableWrapper, initialProps: { query: { q: 'a' } } },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.items).toEqual([mockSessionSummary]);
+
+    rerender({ query: { q: 'b' } });
+
+    // The old payload is still shown (as placeholder data) while B is fetching.
+    expect(result.current.data?.items).toEqual([mockSessionSummary]);
+    expect(result.current.isPlaceholderData).toBe(true);
+    expect(result.current.isFetching).toBe(true);
+
+    await waitFor(() => expect(result.current.data?.items).toEqual(pageB.items));
+    expect(result.current.isPlaceholderData).toBe(false);
   });
 });

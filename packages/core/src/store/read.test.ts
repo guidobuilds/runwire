@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { getSession, listSessions } from './read';
+import { getSession, listHarnesses, listSessions } from './read';
 import { recomputeRollups } from './rollups';
 import { openStore } from './store';
 
@@ -28,6 +28,7 @@ type SessionSeed = {
   title?: string | null;
   modelPrimary?: string | null;
   startedAt?: string | null;
+  durationMs?: number | null;
   harnessId?: string;
   turns?: number | null;
   apiCalls?: number | null;
@@ -45,10 +46,10 @@ function insertSession(db: Database, id: string, opts: SessionSeed = {}) {
   db.run(
     `INSERT INTO sessions (
        id, harness_id, project_key, parent_id, depth, title, model_primary_id,
-       started_at, turns, api_calls, tool_calls, compactions, cost_usd,
+       started_at, duration_ms, turns, api_calls, tool_calls, compactions, cost_usd,
        uncached_input, cached_input, cache_write, output, reasoning_output,
        source_path, source_size, source_mtime
-     ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+     ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
     [
       id,
       opts.harnessId ?? 'fake',
@@ -57,6 +58,7 @@ function insertSession(db: Database, id: string, opts: SessionSeed = {}) {
       opts.title ?? null,
       opts.modelPrimary == null ? null : modelId(db, opts.modelPrimary),
       opts.startedAt ?? null,
+      opts.durationMs ?? null,
       opts.turns ?? null,
       opts.apiCalls ?? null,
       opts.toolCalls ?? null,
@@ -477,6 +479,331 @@ describe('getSession', () => {
     expect(detail!.children[0]!.childCount).toBe(0);
     expect(detail!.children[0]!.modelsOwn).toEqual(['child-model']);
 
+    db.close();
+  });
+});
+
+/** Adds a harness row; `seed` already inserts `fake`/`Fake`. */
+function insertHarness(db: Database, id: string, displayName: string) {
+  db.run(
+    'INSERT INTO harnesses (id, display_name, adapter_version, capabilities) VALUES (?, ?, ?, ?)',
+    [id, displayName, '1.0.0', '[]'],
+  );
+}
+
+describe('listSessions q filter (title / project / id, LIKE escaping)', () => {
+  test('q is case-insensitive and matches title, project name, or id', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:title', { title: 'Hello World', startedAt: '2024-01-03T00:00:00Z' });
+    // title NULL -> project.name ("Project One")
+    insertSession(db, 'fake:project', { title: null, startedAt: '2024-01-02T00:00:00Z' });
+    // title NULL + project NULL -> id
+    insertSession(db, 'fake:id-only', {
+      title: null,
+      projectKey: null,
+      startedAt: '2024-01-01T00:00:00Z',
+    });
+    recomputeRollups(db);
+
+    expect(listSessions(db, { q: 'hello' }).items.map((s) => s.id)).toEqual(['fake:title']);
+    expect(listSessions(db, { q: 'HELLO WORLD' }).items.map((s) => s.id)).toEqual(['fake:title']);
+    // title-null session falls back to project.name
+    expect(listSessions(db, { q: 'project one' }).items.map((s) => s.id)).toEqual(['fake:project']);
+    // title-null + project-null session falls back to id
+    expect(listSessions(db, { q: 'id-only' }).items.map((s) => s.id)).toEqual(['fake:id-only']);
+    // total is the real pre-pagination count
+    expect(listSessions(db, { q: 'hello' }).total).toBe(1);
+    db.close();
+  });
+
+  test('q escapes % and _ so they match literally (ESCAPE)', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:pct', { title: '100% done', startedAt: '2024-01-03T00:00:00Z' });
+    insertSession(db, 'fake:under', { title: 'ab_cd', startedAt: '2024-01-02T00:00:00Z' });
+    insertSession(db, 'fake:plain', { title: 'abcX', startedAt: '2024-01-01T00:00:00Z' });
+    recomputeRollups(db);
+
+    // '%' is literal: only the title containing '%' matches.
+    expect(listSessions(db, { q: '100%' }).items.map((s) => s.id)).toEqual(['fake:pct']);
+    // '_' is literal: 'ab_cd' matches, 'abcX' must NOT (an unescaped _ would match it).
+    expect(listSessions(db, { q: 'ab_c' }).items.map((s) => s.id)).toEqual(['fake:under']);
+    // a literal backslash in the query neither throws nor over-matches
+    expect(listSessions(db, { q: '\\' }).items).toEqual([]);
+    db.close();
+  });
+
+  test('q with offset beyond the filtered total returns empty items without error', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:title', { title: 'Hello World', startedAt: '2024-01-01T00:00:00Z' });
+    recomputeRollups(db);
+
+    const res = listSessions(db, { q: 'hello', limit: 10, offset: 5 });
+    expect(res.items).toEqual([]);
+    expect(res.total).toBe(1);
+    expect(res.limit).toBe(10);
+    expect(res.offset).toBe(5);
+    db.close();
+  });
+});
+
+describe('listSessions durationMin filter', () => {
+  test('durationMin is inclusive, measured in minutes, and excludes NULL duration', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:at', { durationMs: 300000, startedAt: '2024-01-03T00:00:00Z' });
+    insertSession(db, 'fake:below', { durationMs: 299999, startedAt: '2024-01-02T00:00:00Z' });
+    insertSession(db, 'fake:null', { durationMs: null, startedAt: '2024-01-01T00:00:00Z' });
+    recomputeRollups(db);
+
+    const res = listSessions(db, { durationMin: 5 });
+    expect(res.items.map((s) => s.id)).toEqual(['fake:at']);
+    expect(res.total).toBe(1);
+    db.close();
+  });
+});
+
+describe('listSessions costOnly filter', () => {
+  test('costOnly keeps only cost > 0 and excludes 0 and NULL', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:paid', { costUsd: 0.01, startedAt: '2024-01-03T00:00:00Z' });
+    insertSession(db, 'fake:zero', { costUsd: 0, startedAt: '2024-01-02T00:00:00Z' });
+    insertSession(db, 'fake:null', { costUsd: null, startedAt: '2024-01-01T00:00:00Z' });
+    recomputeRollups(db);
+
+    const res = listSessions(db, { costOnly: true });
+    expect(res.items.map((s) => s.id)).toEqual(['fake:paid']);
+    expect(res.total).toBe(1);
+    // false applies no filter at all
+    expect(listSessions(db, { costOnly: false }).items).toHaveLength(3);
+    db.close();
+  });
+});
+
+describe('listSessions harness comma-list filter', () => {
+  test('single id stays exact/case-sensitive; multiple ids become IN; trims and dedupes', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertHarness(db, 'opencode', 'OpenCode');
+    insertSession(db, 'fake:cc', { harnessId: 'fake', startedAt: '2024-01-03T00:00:00Z' });
+    insertSession(db, 'oc:one', { harnessId: 'opencode', startedAt: '2024-01-02T00:00:00Z' });
+    recomputeRollups(db);
+
+    // unknown + known -> known (the row from the unknown id is simply absent)
+    expect(listSessions(db, { harness: 'missing,opencode' }).items.map((s) => s.id)).toEqual([
+      'oc:one',
+    ]);
+    // whitespace trimmed, duplicates removed, order irrelevant
+    expect(
+      listSessions(db, { harness: ' opencode , fake , fake ' }).items.map((s) => s.id),
+    ).toEqual(['fake:cc', 'oc:one']);
+    // a single id remains exact and case-sensitive
+    expect(listSessions(db, { harness: 'OpenCode' }).items).toEqual([]);
+    expect(listSessions(db, { harness: 'opencode' }).items.map((s) => s.id)).toEqual(['oc:one']);
+    // an all-empty list applies no filter (safe default; server rejects it)
+    expect(listSessions(db, { harness: ' , ' }).items).toHaveLength(2);
+    db.close();
+  });
+});
+
+describe('listSessions sort whitelist', () => {
+  test('name sorts case-insensitively by the name expression', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    // Inverted insertion vs. LOWER(order): default (id ASC) puts `one` first.
+    insertSession(db, 'fake:one', { title: 'Zebra' });
+    insertSession(db, 'fake:two', { title: 'apple' });
+    recomputeRollups(db);
+
+    expect(listSessions(db).items.map((s) => s.id)).toEqual(['fake:one', 'fake:two']);
+    expect(listSessions(db, { sort: 'name' }).items.map((s) => s.id)).toEqual([
+      'fake:two',
+      'fake:one',
+    ]);
+    expect(listSessions(db, { sort: '-name' }).items.map((s) => s.id)).toEqual([
+      'fake:one',
+      'fake:two',
+    ]);
+    db.close();
+  });
+
+  test('harness sorts case-insensitively by display name', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertHarness(db, 'zzz', 'Zulu');
+    insertHarness(db, 'aaa', 'alpha');
+    // Inverted insertion vs. LOWER(display_name): alpha, Fake, Zulu.
+    insertSession(db, 'zzz:root', { harnessId: 'zzz' });
+    insertSession(db, 'fake:root', { harnessId: 'fake' });
+    insertSession(db, 'aaa:root', { harnessId: 'aaa' });
+    recomputeRollups(db);
+
+    expect(listSessions(db, { sort: 'harness' }).items.map((s) => s.id)).toEqual([
+      'aaa:root',
+      'fake:root',
+      'zzz:root',
+    ]);
+    db.close();
+  });
+
+  test('startedAt sorts ascending/descending and ties fall back to id ASC', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    // Inverted insertion: earlier first, later second (default DESC differs).
+    insertSession(db, 'fake:early', { startedAt: '2024-01-01T00:00:00Z' });
+    insertSession(db, 'fake:late', { startedAt: '2024-01-02T00:00:00Z' });
+    // A tie on started_at must break by id ASC regardless of direction.
+    insertSession(db, 'fake:zid', { startedAt: '2024-06-01T00:00:00Z' });
+    insertSession(db, 'fake:aid', { startedAt: '2024-06-01T00:00:00Z' });
+    recomputeRollups(db);
+
+    expect(listSessions(db, { sort: 'startedAt' }).items.map((s) => s.id)).toEqual([
+      'fake:early',
+      'fake:late',
+      'fake:aid',
+      'fake:zid',
+    ]);
+    expect(listSessions(db, { sort: '-startedAt' }).items.map((s) => s.id)).toEqual([
+      'fake:aid',
+      'fake:zid',
+      'fake:late',
+      'fake:early',
+    ]);
+    db.close();
+  });
+
+  test('duration sorts numerically ascending/descending', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:long', { durationMs: 600000, startedAt: '2024-01-02T00:00:00Z' });
+    insertSession(db, 'fake:short', { durationMs: 60000, startedAt: '2024-01-01T00:00:00Z' });
+    recomputeRollups(db);
+
+    expect(listSessions(db, { sort: 'duration' }).items.map((s) => s.id)).toEqual([
+      'fake:short',
+      'fake:long',
+    ]);
+    expect(listSessions(db, { sort: '-duration' }).items.map((s) => s.id)).toEqual([
+      'fake:long',
+      'fake:short',
+    ]);
+    db.close();
+  });
+
+  test('tokens sorts by the sum of every rollup token field (missing rollup -> 0)', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    // 40+30+20+10+0 = 100, spread across every summed field.
+    insertSession(db, 'fake:multi', {
+      uncachedInput: 40,
+      cachedInput: 30,
+      cacheWrite: 20,
+      output: 10,
+      reasoningOutput: 0,
+      startedAt: '2024-01-03T00:00:00Z',
+    });
+    // 99 via a single field: any comparator that drops a summed field changes the order.
+    insertSession(db, 'fake:single', { output: 99, startedAt: '2024-01-02T00:00:00Z' });
+    recomputeRollups(db);
+
+    expect(listSessions(db, { sort: 'tokens' }).items.map((s) => s.id)).toEqual([
+      'fake:single',
+      'fake:multi',
+    ]);
+    expect(listSessions(db, { sort: '-tokens' }).items.map((s) => s.id)).toEqual([
+      'fake:multi',
+      'fake:single',
+    ]);
+
+    // A session inserted after the rollup pass has no rollups row -> counts as 0.
+    insertSession(db, 'fake:norow', { uncachedInput: 999, startedAt: '2024-01-01T00:00:00Z' });
+    expect(listSessions(db, { sort: 'tokens' }).items.map((s) => s.id)).toEqual([
+      'fake:norow',
+      'fake:single',
+      'fake:multi',
+    ]);
+    db.close();
+  });
+
+  test('cost sorts numerically; NULL costs are placed by SQLite (first ASC / last DESC)', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:exp', { costUsd: 5, startedAt: '2024-01-03T00:00:00Z' });
+    insertSession(db, 'fake:cheap', { costUsd: 1, startedAt: '2024-01-02T00:00:00Z' });
+    insertSession(db, 'fake:free', { costUsd: null, startedAt: '2024-01-01T00:00:00Z' });
+    recomputeRollups(db);
+
+    expect(listSessions(db, { sort: 'cost' }).items.map((s) => s.id)).toEqual([
+      'fake:free',
+      'fake:cheap',
+      'fake:exp',
+    ]);
+    expect(listSessions(db, { sort: '-cost' }).items.map((s) => s.id)).toEqual([
+      'fake:exp',
+      'fake:cheap',
+      'fake:free',
+    ]);
+    db.close();
+  });
+
+  test('a DESC sort still ends with the id ASC tie-break', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    // Equal names, but distinct start times so the default order is NOT id ASC.
+    insertSession(db, 'fake:z', { title: 'Same', startedAt: '2024-01-02T00:00:00Z' });
+    insertSession(db, 'fake:a', { title: 'Same', startedAt: '2024-01-01T00:00:00Z' });
+    recomputeRollups(db);
+
+    expect(listSessions(db).items.map((s) => s.id)).toEqual(['fake:z', 'fake:a']);
+    expect(listSessions(db, { sort: '-name' }).items.map((s) => s.id)).toEqual([
+      'fake:a',
+      'fake:z',
+    ]);
+    db.close();
+  });
+
+  test('an unknown sort field falls back to the default order', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:early', { startedAt: '2024-01-01T00:00:00Z' });
+    insertSession(db, 'fake:late', { startedAt: '2024-01-02T00:00:00Z' });
+    recomputeRollups(db);
+
+    expect(listSessions(db, { sort: 'bogus' }).items.map((s) => s.id)).toEqual([
+      'fake:late',
+      'fake:early',
+    ]);
+    db.close();
+  });
+});
+
+describe('listHarnesses', () => {
+  test('returns harnesses with at least one root session, ordered by display name', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertHarness(db, 'zzz', 'Zulu');
+    insertHarness(db, 'aaa', 'alpha');
+    insertHarness(db, 'childonly', 'ChildOnly');
+    insertHarness(db, 'empty', 'Empty');
+    insertSession(db, 'fake:root', { harnessId: 'fake' });
+    insertSession(db, 'zzz:root', { harnessId: 'zzz' });
+    insertSession(db, 'aaa:root', { harnessId: 'aaa' });
+    // childonly has only a descendant row (non-null parent_id) -> excluded.
+    insertSession(db, 'childonly/kid', { harnessId: 'childonly', parentId: 'some-parent' });
+    recomputeRollups(db);
+
+    const harnesses = listHarnesses(db);
+    // ORDER BY h.display_name is SQLite's default BINARY collation, so uppercase
+    // sorts before lowercase (Fake, Zulu, alpha). Only harnesses with a root row
+    // are present: `empty` has none and `childonly` has only a descendant.
+    expect(harnesses).toEqual([
+      { id: 'fake', displayName: 'Fake' },
+      { id: 'zzz', displayName: 'Zulu' },
+      { id: 'aaa', displayName: 'alpha' },
+    ]);
     db.close();
   });
 });

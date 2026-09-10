@@ -15,6 +15,30 @@ const HARNESS_ICONS: Record<string, { src: string; invertInDark?: boolean }> = {
   opencode: { src: opencodeIcon, invertInDark: true },
 };
 
+/** Just the brand mark for a harness id (no tooltip/label chrome). Exposed so
+ * other surfaces (e.g. the sessions-list harness filter) can reuse the same
+ * icon set and the same neutral fallback as `HarnessIdentity`. */
+export function HarnessIcon({ id, className }: { id: string; className?: string }) {
+  const icon = HARNESS_ICONS[id];
+  if (!icon) {
+    return (
+      <CodeXmlIcon
+        aria-hidden="true"
+        className={cn('size-4 shrink-0 text-muted-foreground', className)}
+      />
+    );
+  }
+  return (
+    <img
+      alt=""
+      aria-hidden="true"
+      className={cn('size-4 shrink-0', icon.invertInDark && 'dark:invert', className)}
+      data-harness-icon={id}
+      src={icon.src}
+    />
+  );
+}
+
 type HarnessIdentityProps = ComponentPropsWithoutRef<'span'> & {
   harness: Harness;
   showId?: boolean;
@@ -29,7 +53,6 @@ export function HarnessIdentity({
   className,
   ...props
 }: HarnessIdentityProps) {
-  const icon = HARNESS_ICONS[harness.id];
   const label = showId ? `${harness.displayName} (${harness.id})` : harness.displayName;
 
   return (
@@ -43,17 +66,7 @@ export function HarnessIdentity({
           />
         }
       >
-        {icon ? (
-          <img
-            alt=""
-            aria-hidden="true"
-            className={cn('size-4 shrink-0', icon.invertInDark && 'dark:invert')}
-            data-harness-icon={harness.id}
-            src={icon.src}
-          />
-        ) : (
-          <CodeXmlIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-        )}
+        <HarnessIcon id={harness.id} />
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>

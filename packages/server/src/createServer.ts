@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite';
 import {
   getSession,
   type ListSessionsQuery,
+  listHarnesses,
   listSessions,
   readProfileMergedEvents,
   readProfileModels,
@@ -35,7 +36,20 @@ function methodNotAllowed(): Response {
 }
 
 /** The only query params accepted on `GET /api/sessions` (design D-3). */
-const VALID_QUERY_PARAMS = new Set(['limit', 'offset', 'harness', 'startedAfter', 'model']);
+const VALID_QUERY_PARAMS = new Set([
+  'limit',
+  'offset',
+  'harness',
+  'startedAfter',
+  'model',
+  'q',
+  'durationMin',
+  'costOnly',
+  'sort',
+]);
+
+/** A whitelisted `sort` field, optionally `-`-prefixed for DESC (design D-3). */
+const SORT_PATTERN = /^-?(name|harness|startedAt|duration|tokens|cost)$/;
 
 /** A strict 400 for any unknown, duplicate, or invalid query parameter (D-3/D-13). */
 function invalidQueryParam(parameter: string): Response {
@@ -70,6 +84,7 @@ function parseIntegerParam(value: string, min: number, max: number): number | nu
  */
 const API_PREFIX = '/api';
 const SESSIONS_PREFIX = `${API_PREFIX}/sessions`;
+const HARNESSES_PREFIX = `${API_PREFIX}/harnesses`;
 const PROFILE_ENDPOINTS = ['spawns', 'signals', 'timeline', 'events', 'models'] as const;
 
 type ProfileEndpoint = (typeof PROFILE_ENDPOINTS)[number];
@@ -103,7 +118,10 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
         if (path === API_PREFIX) {
           if (method !== 'GET') return methodNotAllowed();
           return json(
-            { service: 'scout', endpoints: ['/api/sessions', '/api/sessions/{id}'] },
+            {
+              service: 'scout',
+              endpoints: ['/api/sessions', '/api/sessions/{id}', '/api/harnesses'],
+            },
             200,
           );
         }
@@ -138,13 +156,46 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
           }
           const harness = params.get('harness');
           if (harness !== null) {
-            if (harness.trim() === '') return invalidQueryParam('harness');
+            // Comma list is split/trimmed/de-duped in core; here every segment
+            // must be non-empty so `harness=a,,b` (or a bare blank) is a 400.
+            if (harness.split(',').some((segment) => segment.trim() === '')) {
+              return invalidQueryParam('harness');
+            }
             query.harness = harness;
           }
           const model = params.get('model');
           if (model !== null) {
             if (model.trim() === '') return invalidQueryParam('model');
             query.model = model;
+          }
+          const q = params.get('q');
+          if (q !== null) {
+            // Non-empty after trim, but passed verbatim (the leading/trailing
+            // whitespace may be intentional in the user's query text; core
+            // matches it as-is).
+            if (q.trim() === '') return invalidQueryParam('q');
+            query.q = q;
+          }
+          const durationMinRaw = params.get('durationMin');
+          if (durationMinRaw !== null) {
+            // Integer >= 1 minute; 0, negatives, decimals and non-digits reject.
+            const durationMin = parseIntegerParam(durationMinRaw, 1, Number.MAX_SAFE_INTEGER);
+            if (durationMin === null) return invalidQueryParam('durationMin');
+            query.durationMin = durationMin;
+          }
+          const costOnlyRaw = params.get('costOnly');
+          if (costOnlyRaw !== null) {
+            // Exactly `true` or `false`; `false` means no cost filter.
+            if (costOnlyRaw !== 'true' && costOnlyRaw !== 'false') {
+              return invalidQueryParam('costOnly');
+            }
+            if (costOnlyRaw === 'true') query.costOnly = true;
+          }
+          const sortRaw = params.get('sort');
+          if (sortRaw !== null) {
+            // Whitelisted field, optional `-` DESC prefix, case-sensitive.
+            if (!SORT_PATTERN.test(sortRaw)) return invalidQueryParam('sort');
+            query.sort = sortRaw;
           }
           const startedAfter = params.get('startedAfter');
           if (startedAfter !== null) {
@@ -215,6 +266,16 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
           const session = getSession(db, id);
           if (session === null) return json({ error: 'session not found' }, 404);
           return json({ session }, 200);
+        }
+        if (path === HARNESSES_PREFIX) {
+          if (method !== 'GET') return methodNotAllowed();
+          // No query params are accepted on this endpoint (D-3): any param is
+          // a typo'd request, so reject the first one.
+          const params = new URL(req.url).searchParams;
+          for (const key of params.keys()) {
+            return invalidQueryParam(key);
+          }
+          return json(listHarnesses(db), 200);
         }
         return json({ error: 'not found' }, 404);
       } catch {

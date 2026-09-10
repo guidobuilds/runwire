@@ -1,16 +1,15 @@
 import type { ApiSessionSummary } from '@scout/core';
-import { render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import type { ReactNode } from 'react';
+import { describe, expect, it, vi } from 'vitest';
 import { DataTable } from '@/components/data-table';
+import { EMPTY_FILTERS, type SessionsFilters } from '@/lib/sessions-table';
 
-// Regression test for the f4 verify-time break: DataTable seeded its own
-// `data` state via `useState(() => initialData)` -- a lazy initializer that
-// only runs on first mount. When the `data` prop changed on a re-render (e.g.
-// a TanStack Query refetch swapping in a fresh ApiSessionSummary[]),
-// DataTable silently kept rendering the stale first-render rows instead of
-// picking up the new prop. Fixed via a useEffect that re-syncs local state
-// whenever the `data` prop's reference changes.
+// The props-data swap regression from the original f4 suite: the table must
+// render straight from the `data` prop (a fresh array identity on every
+// refetch), never from stale first-render local state.
 
 const sessionA: ApiSessionSummary = {
   id: 'a',
@@ -50,14 +49,56 @@ const sessionA: ApiSessionSummary = {
 
 const sessionB: ApiSessionSummary = { ...sessionA, id: 'b', name: 'Session B', title: 'Session B' };
 
+type DataTableProps = React.ComponentProps<typeof DataTable>;
+
+function wrapper({ children }: { children: ReactNode }) {
+  return (
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      {children}
+    </QueryClientProvider>
+  );
+}
+
+function makeProps(overrides: Partial<DataTableProps> = {}): DataTableProps {
+  return {
+    data: [sessionA, sessionB],
+    total: 2,
+    isFetching: false,
+    filters: EMPTY_FILTERS,
+    sort: null,
+    pagination: { pageIndex: 0, pageSize: 10 },
+    onFiltersChange: vi.fn(),
+    onSortChange: vi.fn(),
+    onPageChange: vi.fn(),
+    onPageSizeChange: vi.fn(),
+    ...overrides,
+  };
+}
+
+function renderTable(overrides: Partial<DataTableProps> = {}) {
+  return render(<DataTable {...makeProps(overrides)} />, { wrapper });
+}
+
+/** The toolbar dropdown trigger for `name` (as opposed to the same-named
+ * sortable column header button). */
+function toolbarMenuTrigger(name: RegExp): HTMLElement {
+  const trigger = screen
+    .getAllByRole('button', { name })
+    .find((button) => button.getAttribute('aria-haspopup') === 'menu');
+  if (!trigger) throw new Error(`No toolbar menu trigger matching ${name}`);
+  return trigger;
+}
+
 describe('DataTable prop-sync', () => {
   it('updates its rendered rows when the `data` prop changes after a refetch', () => {
-    const { rerender } = render(<DataTable data={[sessionA]} />);
+    const { rerender } = renderTable({ data: [sessionA] });
     expect(screen.getByText('Session A')).toBeInTheDocument();
 
     // Simulate a TanStack Query refetch replacing the whole items array (new
     // object identity, as a real refetch would produce).
-    rerender(<DataTable data={[sessionB]} />);
+    rerender(<DataTable {...makeProps({ data: [sessionB] })} />);
 
     expect(screen.queryByText('Session B')).toBeInTheDocument();
     expect(screen.queryByText('Session A')).not.toBeInTheDocument();
@@ -66,12 +107,132 @@ describe('DataTable prop-sync', () => {
 
 describe('DataTable harness identity', () => {
   it('renders only the SVG icon and reveals the harness name on hover', async () => {
-    const { container } = render(<DataTable data={[sessionA]} />);
+    const { container } = renderTable({ data: [sessionA] });
 
     expect(container.querySelector('img[data-harness-icon="opencode"]')).not.toBeNull();
     expect(screen.queryByText('OpenCode')).not.toBeInTheDocument();
 
     await userEvent.hover(screen.getByLabelText('OpenCode'));
     await waitFor(() => expect(screen.getByText('OpenCode')).toBeInTheDocument());
+  });
+});
+
+describe('DataTable sorting', () => {
+  it('shows an up/down arrow for the active sort and a hover chevron otherwise', () => {
+    const nameHeader = () => screen.getByRole('button', { name: 'Name' });
+
+    const { rerender } = renderTable({ sort: null });
+    expect(nameHeader().querySelector('.lucide-chevrons-up-down')).not.toBeNull();
+    expect(nameHeader().querySelector('.lucide-arrow-up')).toBeNull();
+
+    rerender(<DataTable {...makeProps({ sort: { id: 'name', desc: false } })} />);
+    expect(nameHeader().querySelector('.lucide-arrow-up')).not.toBeNull();
+
+    rerender(<DataTable {...makeProps({ sort: { id: 'name', desc: true } })} />);
+    expect(nameHeader().querySelector('.lucide-arrow-down')).not.toBeNull();
+  });
+
+  it('cycles a header click asc -> desc and delegates to onSortChange', () => {
+    const onSortChange = vi.fn();
+    const { rerender } = renderTable({ sort: null, onSortChange });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Name' }));
+    expect(onSortChange).toHaveBeenLastCalledWith({ id: 'name', desc: false });
+
+    rerender(<DataTable {...makeProps({ sort: { id: 'name', desc: false }, onSortChange })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Name' }));
+    expect(onSortChange).toHaveBeenLastCalledWith({ id: 'name', desc: true });
+  });
+});
+
+describe('DataTable filters', () => {
+  it('emits raw search text without immediate commit', () => {
+    const onFiltersChange = vi.fn();
+    renderTable({ onFiltersChange });
+
+    fireEvent.change(screen.getByLabelText('Search sessions'), { target: { value: 'auth' } });
+
+    expect(onFiltersChange).toHaveBeenCalledTimes(1);
+    const [next, options] = onFiltersChange.mock.calls[0] as [SessionsFilters, unknown];
+    expect(next).toEqual({ ...EMPTY_FILTERS, q: 'auth' });
+    expect(options).toBeUndefined();
+  });
+
+  it('clears the search immediately', () => {
+    const onFiltersChange = vi.fn();
+    renderTable({ filters: { ...EMPTY_FILTERS, q: 'auth' }, onFiltersChange });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+
+    expect(onFiltersChange).toHaveBeenCalledWith(EMPTY_FILTERS, { immediate: true });
+  });
+
+  it("commits the '≥ 30m' duration preset immediately", async () => {
+    const user = userEvent.setup();
+    const onFiltersChange = vi.fn();
+    renderTable({ onFiltersChange });
+
+    await user.click(toolbarMenuTrigger(/Duration/));
+    await user.click(await screen.findByRole('menuitemradio', { name: '≥ 30m' }));
+
+    expect(onFiltersChange).toHaveBeenCalledWith(
+      { ...EMPTY_FILTERS, duration: '30m' },
+      { immediate: true },
+    );
+  });
+
+  it('toggles a harness id from the harness dropdown', async () => {
+    const user = userEvent.setup();
+    const onFiltersChange = vi.fn();
+    renderTable({ onFiltersChange });
+
+    await user.click(toolbarMenuTrigger(/Harness/));
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: /Claude Code/ }));
+
+    expect(onFiltersChange).toHaveBeenCalledWith(
+      { ...EMPTY_FILTERS, harnessIds: ['claude-code'] },
+      { immediate: true },
+    );
+  });
+});
+
+describe('DataTable footer and loading', () => {
+  it('reports the visible range and page-size changes', async () => {
+    const user = userEvent.setup();
+    const onPageSizeChange = vi.fn();
+    renderTable({ onPageSizeChange });
+
+    expect(screen.getByText('1–2 of 2 rows')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Rows per page'));
+    await user.click(await screen.findByRole('option', { name: '20' }));
+
+    expect(onPageSizeChange).toHaveBeenCalledWith(20);
+  });
+
+  it('reports the range on a later page and 0 of 0 when empty', () => {
+    const { unmount } = renderTable({
+      data: [sessionB],
+      total: 2,
+      pagination: { pageIndex: 1, pageSize: 1 },
+    });
+    expect(screen.getByText('2–2 of 2 rows')).toBeInTheDocument();
+    unmount();
+
+    renderTable({ data: [], total: 0 });
+    expect(screen.getByText('0 of 0 rows')).toBeInTheDocument();
+  });
+
+  it('marks the table busy while refetching but keeps the previous rows', () => {
+    const { container } = renderTable({ isFetching: true });
+
+    const busy = container.querySelector('[aria-busy="true"]');
+    expect(busy).not.toBeNull();
+    expect((busy as HTMLElement).className).toContain('opacity-60');
+
+    expect(screen.getByText('Refreshing sessions…')).toBeInTheDocument();
+    expect(screen.getByText('Session A')).toBeInTheDocument();
+    expect(screen.getByText('Session B')).toBeInTheDocument();
+    expect(screen.queryByText(/No results/)).not.toBeInTheDocument();
   });
 });

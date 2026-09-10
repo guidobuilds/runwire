@@ -1,4 +1,9 @@
-import type { ApiSessionDetail, ApiSessionSummary, PagedSessions } from '@scout/core';
+import type {
+  ApiHarnessOption,
+  ApiSessionDetail,
+  ApiSessionSummary,
+  PagedSessions,
+} from '@scout/core';
 import { HttpResponse, http } from 'msw';
 import { sessionProfileHandlers } from './session-profile';
 
@@ -89,8 +94,13 @@ export const mockSessionDetail: ApiSessionDetail = {
   children: [mockChildSummary],
 };
 
+export const mockHarnessOptions: ApiHarnessOption[] = [
+  { id: 'claude-code', displayName: 'Claude Code' },
+];
+
 export const handlers = [
   http.get('/api/sessions', () => HttpResponse.json(mockPagedSessions)),
+  http.get('/api/harnesses', () => HttpResponse.json(mockHarnessOptions)),
   http.get('/api/sessions/:id', ({ params }) => {
     if (params.id !== mockSessionDetail.id) {
       return HttpResponse.json({ error: 'session not found' }, { status: 404 });

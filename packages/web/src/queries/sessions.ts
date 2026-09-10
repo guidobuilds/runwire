@@ -1,11 +1,15 @@
 import type { ListSessionsQuery } from '@scout/core';
-import { queryOptions, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, queryOptions, useQuery } from '@tanstack/react-query';
 import { fetchSession, fetchSessions } from '@/lib/api/sessions';
 
 export function sessionsQueryOptions(query: ListSessionsQuery = {}) {
   return queryOptions({
     queryKey: ['sessions', query] as const,
     queryFn: () => fetchSessions(query),
+    // Each filter/sort/pagination change is a new query key; keep the rows from
+    // the previous key on screen while the next page loads instead of flashing
+    // an empty/loading state.
+    placeholderData: keepPreviousData,
   });
 }
 

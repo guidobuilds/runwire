@@ -49,4 +49,35 @@ describe('session API URLs are /api-prefixed', () => {
     await fetchSession('a/b%25');
     expect(fetch.mock.calls[1]?.[0]).toBe('/api/sessions/a%2Fb%2525');
   });
+
+  it('serializes q/harness/durationMin/costOnly/sort and omits undefined fields', async () => {
+    // A fresh Response per call: a Response body can only be read once.
+    const fetch = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }), {
+          status: 200,
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetch);
+
+    await fetchSessions({
+      durationMin: 30,
+      costOnly: true,
+      sort: '-duration',
+      harness: 'a,b',
+      q: 'refactor',
+    });
+    expect(fetch.mock.calls[0]?.[0]).toBe(
+      '/api/sessions?harness=a%2Cb&q=refactor&durationMin=30&costOnly=true&sort=-duration',
+    );
+
+    // `costOnly: false` is a real filter value, not "unset" — it must be sent.
+    await fetchSessions({ costOnly: false });
+    expect(fetch.mock.calls[1]?.[0]).toBe('/api/sessions?costOnly=false');
+
+    // Omitted fields contribute no key at all (strict-400 contract).
+    await fetchSessions();
+    expect(fetch.mock.calls[2]?.[0]).toBe('/api/sessions');
+  });
 });

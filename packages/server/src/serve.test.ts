@@ -22,13 +22,15 @@ function seed(db: Database) {
   db.run(
     `INSERT INTO sessions (
        id, harness_id, project_key, parent_id, depth, title, model_primary_id, started_at,
-       uncached_input, api_calls, source_path, source_size, source_mtime
-     ) VALUES (?, 'fake', 'p1', ?, 0, NULL, ?, ?, ?, ?, ?, 1, 1)`,
+       duration_ms, cost_usd, uncached_input, api_calls, source_path, source_size, source_mtime
+     ) VALUES (?, 'fake', 'p1', ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
     [
       'fake:root1',
       null,
       modelId(db, 'root-model'),
       '2024-01-02T00:00:00Z',
+      3_600_000,
+      2.5,
       100,
       3,
       '/fake/root1.jsonl',
@@ -69,7 +71,7 @@ describe('createServer', () => {
       const body = await res.json();
       expect(body).toEqual({
         service: 'scout',
-        endpoints: ['/api/sessions', '/api/sessions/{id}'],
+        endpoints: ['/api/sessions', '/api/sessions/{id}', '/api/harnesses'],
       });
     } finally {
       server.stop();
@@ -118,6 +120,81 @@ describe('createServer', () => {
       expect(body.items.map((s) => s.id)).toEqual(['fake:root1']);
       expect(body.limit).toBe(10);
       expect(body.offset).toBe(0);
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('data-layer params round-trip: q/durationMin/costOnly/sort/harness reach listSessions', async () => {
+    const { store, server, base } = await startServer();
+    try {
+      const insertRoot = (
+        id: string,
+        title: string | null,
+        projectKey: string | null,
+        durationMs: number,
+        costUsd: number,
+        startedAt: string,
+        model: string,
+      ) => {
+        store.db.run(
+          `INSERT INTO sessions (
+             id, harness_id, project_key, parent_id, depth, title, model_primary_id, started_at,
+             duration_ms, cost_usd, uncached_input, api_calls, source_path, source_size, source_mtime
+           ) VALUES (?, 'fake', ?, NULL, 0, ?, ?, ?, ?, ?, 0, 0, ?, 1, 1)`,
+          [
+            id,
+            projectKey,
+            title,
+            modelId(store.db, model),
+            startedAt,
+            durationMs,
+            costUsd,
+            `/fake/${id}.jsonl`,
+          ],
+        );
+      };
+      // A matching second root whose later started_at means the DEFAULT order
+      // would put it first; `sort=-duration` must reverse that.
+      insertRoot('fake:root2', null, 'p1', 1_800_000, 1, '2024-01-03T00:00:00Z', 'm2');
+      // Each of these fails exactly one new filter:
+      insertRoot('fake:other-q', 'Other', null, 3_600_000, 1, '2024-01-01T00:00:00Z', 'm3');
+      insertRoot('fake:other-duration', null, 'p1', 0, 1, '2024-01-01T00:00:00Z', 'm4');
+      insertRoot('fake:other-cost', null, 'p1', 3_600_000, 0, '2024-01-01T00:00:00Z', 'm5');
+
+      const res = await fetch(
+        `${base}/api/sessions?durationMin=30&costOnly=true&q=project&sort=-duration&harness=fake`,
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        items: { id: string }[];
+        total: number;
+      };
+      // `durationMin=30` is inclusive (root2 is exactly 30m) and `q=project`
+      // matches root1/root2 via the project name; the other three roots fail.
+      expect(body.total).toBe(2);
+      expect(body.items.map((s) => s.id)).toEqual(['fake:root1', 'fake:root2']);
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('costOnly=false is accepted and applies no cost filter', async () => {
+    const { store, server, base } = await startServer();
+    try {
+      // A zero-cost root would be excluded by costOnly=true but not by false.
+      store.db.run(
+        `INSERT INTO sessions (
+           id, harness_id, project_key, parent_id, depth, title, started_at,
+           duration_ms, cost_usd, uncached_input, api_calls, source_path, source_size, source_mtime
+         ) VALUES ('fake:free', 'fake', NULL, NULL, 0, 'Free', '2024-01-01T00:00:00Z', 0, 0, 0, 0, '/fake/free.jsonl', 1, 1)`,
+      );
+      const res = await fetch(`${base}/api/sessions?costOnly=false`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: { id: string }[] };
+      expect(body.items.map((s) => s.id).sort()).toEqual(['fake:free', 'fake:root1']);
     } finally {
       server.stop();
       store.close();
@@ -278,6 +355,46 @@ describe('createServer /api/sessions query-param strictness', () => {
     await expect400('?model=', 'model');
   });
 
+  test('q empty or whitespace-only returns 400', async () => {
+    await expect400('?q=', 'q');
+    await expect400('?q=%20', 'q');
+  });
+
+  test('durationMin 0, negative or non-integer returns 400', async () => {
+    await expect400('?durationMin=0', 'durationMin');
+    await expect400('?durationMin=-1', 'durationMin');
+    await expect400('?durationMin=abc', 'durationMin');
+  });
+
+  test('costOnly other than true/false returns 400', async () => {
+    await expect400('?costOnly=bogus', 'costOnly');
+    await expect400('?costOnly=1', 'costOnly');
+    await expect400('?costOnly=', 'costOnly');
+  });
+
+  test('sort outside the whitelist (or wrong case) returns 400', async () => {
+    await expect400('?sort=bogus', 'sort');
+    await expect400('?sort=startedat', 'sort');
+    await expect400('?sort=', 'sort');
+  });
+
+  test('a harness comma list with an empty segment returns 400', async () => {
+    await expect400('?harness=a,,b', 'harness');
+  });
+
+  test('a valid sort field is accepted (200)', async () => {
+    const { store, server, base } = await startServer();
+    try {
+      for (const sort of ['name', '-harness', 'startedAt', 'duration', '-tokens', 'cost']) {
+        const res = await fetch(`${base}/api/sessions?sort=${sort}`);
+        expect(res.status, sort).toBe(200);
+      }
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
   test('GET /api/sessions/{id} with a query string still returns 200 (unchanged)', async () => {
     const { store, server, base } = await startServer();
     try {
@@ -285,6 +402,46 @@ describe('createServer /api/sessions query-param strictness', () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as { session: { id: string } };
       expect(body.session.id).toBe('fake:root1');
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+});
+
+describe('createServer /api/harnesses', () => {
+  test('GET /api/harnesses returns harnesses that have root sessions', async () => {
+    const { store, server, base } = await startServer();
+    try {
+      const res = await fetch(`${base}/api/harnesses`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('application/json');
+      expect(await res.json()).toEqual([{ id: 'fake', displayName: 'Fake' }]);
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('any query param on /api/harnesses returns 400', async () => {
+    const { store, server, base } = await startServer();
+    try {
+      const res = await fetch(`${base}/api/harnesses?foo=1`);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'invalid query parameter', parameter: 'foo' });
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('a non-GET on /api/harnesses returns 405 with an Allow: GET header', async () => {
+    const { store, server, base } = await startServer();
+    try {
+      const res = await fetch(`${base}/api/harnesses`, { method: 'POST' });
+      expect(res.status).toBe(405);
+      expect(res.headers.get('allow')).toBe('GET');
+      expect(await res.json()).toEqual({ error: 'method not allowed' });
     } finally {
       server.stop();
       store.close();
