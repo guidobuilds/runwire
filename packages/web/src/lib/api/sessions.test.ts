@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mockChildSummary, mockSessionDetail, mockSessionSummary } from '@/mocks/handlers';
-import { fetchSession, fetchSessions } from './sessions';
+import {
+  mockChildSummary,
+  mockSessionDetail,
+  mockSessionSummary,
+  mockSessionsStats,
+} from '@/mocks/handlers';
+import { fetchSession, fetchSessions, fetchSessionsStats } from './sessions';
 
 describe('fetchSessions', () => {
   it('parses the paged session list from GET /sessions', async () => {
@@ -10,6 +15,13 @@ describe('fetchSessions', () => {
     expect(result.offset).toBe(0);
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toEqual(mockSessionSummary);
+  });
+});
+
+describe('fetchSessionsStats', () => {
+  it('parses the full-filtered-set aggregates from GET /api/sessions/stats', async () => {
+    const result = await fetchSessionsStats();
+    expect(result).toEqual(mockSessionsStats);
   });
 });
 
@@ -79,5 +91,29 @@ describe('session API URLs are /api-prefixed', () => {
     // Omitted fields contribute no key at all (strict-400 contract).
     await fetchSessions();
     expect(fetch.mock.calls[2]?.[0]).toBe('/api/sessions');
+  });
+
+  it('requests GET /api/sessions/stats with filters only (no limit/offset/sort)', async () => {
+    const fetch = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(new Response(JSON.stringify(mockSessionsStats), { status: 200 })),
+      );
+    vi.stubGlobal('fetch', fetch);
+
+    // The stats query builder never emits pagination/sort; this pins the URL
+    // shape the endpoint's strict validator expects.
+    await fetchSessionsStats({
+      durationMin: 30,
+      costOnly: true,
+      harness: 'a,b',
+      q: 'refactor',
+    });
+    expect(fetch.mock.calls[0]?.[0]).toBe(
+      '/api/sessions/stats?harness=a%2Cb&q=refactor&durationMin=30&costOnly=true',
+    );
+
+    await fetchSessionsStats();
+    expect(fetch.mock.calls[1]?.[0]).toBe('/api/sessions/stats');
   });
 });

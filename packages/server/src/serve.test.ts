@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { openStore } from '@scout/core';
+import { openStore, recomputeRollups } from '@scout/core';
 import { createServer } from './createServer';
 
 /** Idempotently upserts a raw model string and returns its `models.id`. */
@@ -71,7 +71,7 @@ describe('createServer', () => {
       const body = await res.json();
       expect(body).toEqual({
         service: 'scout',
-        endpoints: ['/api/sessions', '/api/sessions/{id}', '/api/harnesses'],
+        endpoints: ['/api/sessions', '/api/sessions/stats', '/api/sessions/{id}', '/api/harnesses'],
       });
     } finally {
       server.stop();
@@ -439,6 +439,215 @@ describe('createServer /api/harnesses', () => {
     const { store, server, base } = await startServer();
     try {
       const res = await fetch(`${base}/api/harnesses`, { method: 'POST' });
+      expect(res.status).toBe(405);
+      expect(res.headers.get('allow')).toBe('GET');
+      expect(await res.json()).toEqual({ error: 'method not allowed' });
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+});
+
+describe('createServer /api/sessions/stats', () => {
+  type RootSeed = {
+    startedAt: string | null;
+    durationMs: number | null;
+    costUsd: number | null;
+    model: string;
+    uncachedInput?: number;
+    cachedInput?: number;
+    cacheWrite?: number;
+    output?: number;
+    reasoningOutput?: number;
+  };
+
+  function insertRoot(db: Database, id: string, opts: RootSeed) {
+    db.run(
+      `INSERT INTO sessions (
+         id, harness_id, project_key, parent_id, depth, title, model_primary_id, started_at,
+         duration_ms, cost_usd, uncached_input, cached_input, cache_write, output,
+         reasoning_output, source_path, source_size, source_mtime
+       ) VALUES (?, 'fake', 'p1', NULL, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+      [
+        id,
+        modelId(db, opts.model),
+        opts.startedAt,
+        opts.durationMs,
+        opts.costUsd,
+        opts.uncachedInput ?? 0,
+        opts.cachedInput ?? 0,
+        opts.cacheWrite ?? 0,
+        opts.output ?? 0,
+        opts.reasoningOutput ?? 0,
+        `/fake/${id}.jsonl`,
+      ],
+    );
+  }
+
+  /**
+   * Three roots — r1 (tokens + a token-bearing child whose model r1 does not
+   * use directly), r2, r3 (no started_at/duration/cost) — plus rollups.
+   */
+  async function startStatsServer() {
+    const store = openStore(':memory:');
+    // Harness + project only (unlike `seed`, no extra root session).
+    store.db.run(
+      'INSERT INTO harnesses (id, display_name, adapter_version, capabilities) VALUES (?, ?, ?, ?)',
+      ['fake', 'Fake', '1.0.0', '[]'],
+    );
+    store.db.run('INSERT INTO projects (key, name, identity) VALUES (?, ?, ?)', [
+      'p1',
+      'Project One',
+      'cwd',
+    ]);
+    insertRoot(store.db, 'fake:r1', {
+      startedAt: '2024-01-02T00:00:00Z',
+      durationMs: 3_600_000,
+      costUsd: 2.5,
+      model: 'm1',
+      uncachedInput: 100,
+      cachedInput: 10,
+      cacheWrite: 5,
+      output: 1000,
+      reasoningOutput: 50,
+    });
+    store.db.run(
+      `INSERT INTO sessions (
+         id, harness_id, project_key, parent_id, depth, title, model_primary_id,
+         uncached_input, cached_input, cache_write, output, reasoning_output,
+         source_path, source_size, source_mtime
+       ) VALUES ('fake:r1/child', 'fake', 'p1', 'fake:r1', 0, NULL, ?,
+                 20, 2, 1, 200, 10, '/fake/child.jsonl', 1, 1)`,
+      [modelId(store.db, 'm-child')],
+    );
+    insertRoot(store.db, 'fake:r2', {
+      startedAt: '2024-01-03T00:00:00Z',
+      durationMs: 1_800_000,
+      costUsd: 1,
+      model: 'm2',
+      uncachedInput: 10,
+      output: 100,
+    });
+    insertRoot(store.db, 'fake:r3', {
+      startedAt: null,
+      durationMs: null,
+      costUsd: null,
+      model: 'm3',
+    });
+    recomputeRollups(store.db);
+    const server = createServer({ db: store.db, host: '127.0.0.1', port: 0 });
+    return { store, server, base: `http://127.0.0.1:${server.port}` };
+  }
+
+  test('returns full-filtered-set aggregates: totals, inclusive tokens, avg, series', async () => {
+    const { store, server, base } = await startStatsServer();
+    try {
+      const res = await fetch(`${base}/api/sessions/stats`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('application/json');
+      expect(await res.json()).toEqual({
+        totalSessions: 3,
+        totalCostUsd: 3.5,
+        // r1 inclusive (own + child) 120/12/6/1200/60 = 1398, plus r2 110.
+        totalTokens: 1508,
+        avgDurationMs: 2_700_000,
+        // r3 has no started_at, so only two day buckets (ascending).
+        series: [
+          { date: '2024-01-02', sessions: 1 },
+          { date: '2024-01-03', sessions: 1 },
+        ],
+      });
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('aggregates ignore pagination: full totals even when the list page is 1 row', async () => {
+    const { store, server, base } = await startStatsServer();
+    try {
+      const page = (await (await fetch(`${base}/api/sessions?limit=1`)).json()) as {
+        items: unknown[];
+        total: number;
+      };
+      expect(page.items).toHaveLength(1);
+      expect(page.total).toBe(3);
+
+      const stats = (await (await fetch(`${base}/api/sessions/stats`)).json()) as {
+        totalSessions: number;
+        totalCostUsd: number;
+      };
+      expect(stats.totalSessions).toBe(3);
+      expect(stats.totalCostUsd).toBe(3.5);
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('honors every filter param with the same semantics as the list', async () => {
+    const { store, server, base } = await startStatsServer();
+    try {
+      const totals = async (query: string) =>
+        (await (await fetch(`${base}/api/sessions/stats${query}`)).json()) as {
+          totalSessions: number;
+          totalCostUsd: number;
+        };
+
+      // durationMin is inclusive (r1 = 60m, r2 = 30m) and excludes NULL (r3).
+      expect((await totals('?durationMin=30')).totalSessions).toBe(2);
+      // costOnly excludes NULL/0 cost (r3), leaving r1 + r2.
+      expect((await totals('?costOnly=true')).totalSessions).toBe(2);
+      const costOnly = await totals('?costOnly=true');
+      expect(costOnly.totalCostUsd).toBe(3.5);
+      // startedAfter is exclusive; only r2 starts later (r3 NULL excluded).
+      expect((await totals('?startedAfter=2024-01-02T12:00:00Z')).totalSessions).toBe(1);
+      // harness exact (all roots are 'fake').
+      expect((await totals('?harness=fake')).totalSessions).toBe(3);
+      // model matches a descendant-only model, so r1 is included.
+      expect((await totals('?model=m-child')).totalSessions).toBe(1);
+      // q matches the project-name fallback (titles are NULL) -> all 3.
+      expect((await totals('?q=Project')).totalSessions).toBe(3);
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('rejects limit/offset/sort (not filter params) and unknown/duplicate params', async () => {
+    const { store, server, base } = await startStatsServer();
+    try {
+      const expect400 = async (query: string, parameter: string) => {
+        const res = await fetch(`${base}/api/sessions/stats${query}`);
+        expect(res.status, query).toBe(400);
+        expect(await res.json(), query).toEqual({
+          error: 'invalid query parameter',
+          parameter,
+        });
+      };
+
+      await expect400('?limit=10', 'limit');
+      await expect400('?offset=0', 'offset');
+      await expect400('?sort=name', 'sort');
+      await expect400('?foo=1', 'foo');
+      await expect400('?limit=1&limit=2', 'limit');
+      await expect400('?harness=', 'harness');
+      await expect400('?model=', 'model');
+      await expect400('?q=%20', 'q');
+      await expect400('?durationMin=0', 'durationMin');
+      await expect400('?costOnly=bogus', 'costOnly');
+      await expect400('?startedAfter=not-a-date', 'startedAfter');
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('a non-GET returns 405 with Allow: GET (not swallowed by the {id} route)', async () => {
+    const { store, server, base } = await startStatsServer();
+    try {
+      const res = await fetch(`${base}/api/sessions/stats`, { method: 'POST' });
       expect(res.status).toBe(405);
       expect(res.headers.get('allow')).toBe('GET');
       expect(await res.json()).toEqual({ error: 'method not allowed' });

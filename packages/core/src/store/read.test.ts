@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { getSession, listHarnesses, listSessions } from './read';
+import { getSession, getSessionsStats, listHarnesses, listSessions } from './read';
 import { recomputeRollups } from './rollups';
 import { openStore } from './store';
 
@@ -804,6 +804,151 @@ describe('listHarnesses', () => {
       { id: 'zzz', displayName: 'Zulu' },
       { id: 'aaa', displayName: 'alpha' },
     ]);
+    db.close();
+  });
+});
+
+describe('getSessionsStats', () => {
+  /**
+   * root1 (tokens + a token-bearing child + a model used only by the child),
+   * root2, and root3 (no started_at/duration/cost). All three are roots; the
+   * child must never be counted in the totals.
+   */
+  function seedStatsFixture(db: Database) {
+    seed(db);
+    insertSession(db, 'fake:root1', {
+      modelPrimary: 'm1',
+      startedAt: '2024-01-02T00:00:00Z',
+      durationMs: 3_600_000,
+      costUsd: 2.5,
+      uncachedInput: 100,
+      cachedInput: 10,
+      cacheWrite: 5,
+      output: 1000,
+      reasoningOutput: 50,
+    });
+    insertSession(db, 'fake:root1/child', {
+      parentId: 'fake:root1',
+      modelPrimary: 'm-child',
+      uncachedInput: 20,
+      cachedInput: 2,
+      cacheWrite: 1,
+      output: 200,
+      reasoningOutput: 10,
+    });
+    insertSession(db, 'fake:root2', {
+      modelPrimary: 'm2',
+      startedAt: '2024-01-03T00:00:00Z',
+      durationMs: 1_800_000,
+      costUsd: 1,
+      uncachedInput: 10,
+      output: 100,
+    });
+    insertSession(db, 'fake:root3', { modelPrimary: 'm3', startedAt: null });
+    recomputeRollups(db);
+  }
+
+  test('aggregates the full root set: totals, inclusive tokens, avg duration, series', () => {
+    const { db } = openStore(':memory:');
+    seedStatsFixture(db);
+
+    const stats = getSessionsStats(db);
+
+    // root1 + root2 + root3; the child is NOT a root.
+    expect(stats.totalSessions).toBe(3);
+    expect(stats.totalCostUsd).toBeCloseTo(3.5);
+    // root1 inclusive (own + child) = 120/12/6/1200/60 = 1398; root2 = 110;
+    // root3 = 0.
+    expect(stats.totalTokens).toBe(1398 + 110);
+    // NULL duration (root3) excluded from the mean.
+    expect(stats.avgDurationMs).toBe((3_600_000 + 1_800_000) / 2);
+    // Day buckets, ascending; root3 has no started_at and is excluded.
+    expect(stats.series).toEqual([
+      { date: '2024-01-02', sessions: 1 },
+      { date: '2024-01-03', sessions: 1 },
+    ]);
+
+    db.close();
+  });
+
+  test('limit/offset are ignored: stats always cover the whole filtered set', () => {
+    const { db } = openStore(':memory:');
+    seedStatsFixture(db);
+
+    const paged = listSessions(db, { limit: 1, offset: 0 });
+    expect(paged.items).toHaveLength(1);
+    expect(paged.total).toBe(3);
+
+    const stats = getSessionsStats(db, { limit: 1, offset: 0 });
+    expect(stats.totalSessions).toBe(3);
+    expect(stats.totalCostUsd).toBeCloseTo(3.5);
+
+    db.close();
+  });
+
+  test('applies each filter with the same semantics as listSessions', () => {
+    const { db } = openStore(':memory:');
+    seedStatsFixture(db);
+
+    // costOnly excludes NULL/0 cost rows.
+    const costOnly = getSessionsStats(db, { costOnly: true });
+    expect(costOnly.totalSessions).toBe(2);
+    expect(costOnly.totalCostUsd).toBeCloseTo(3.5);
+
+    // durationMin is inclusive and excludes NULL durations.
+    expect(getSessionsStats(db, { durationMin: 30 }).totalSessions).toBe(2);
+
+    // startedAfter is exclusive and excludes NULL started_at.
+    expect(getSessionsStats(db, { startedAfter: '2024-01-02T12:00:00Z' }).totalSessions).toBe(1);
+
+    // harness is exact.
+    expect(getSessionsStats(db, { harness: 'fake' }).totalSessions).toBe(3);
+
+    // q matches the project-name fallback (title NULL).
+    expect(getSessionsStats(db, { q: 'Project' }).totalSessions).toBe(3);
+
+    db.close();
+  });
+
+  test('model filter matches a model used only by a descendant', () => {
+    const { db } = openStore(':memory:');
+    seedStatsFixture(db);
+
+    const stats = getSessionsStats(db, { model: 'm-child' });
+    expect(stats.totalSessions).toBe(1);
+    // root1's inclusive tokens, proving the descendant-scoped match.
+    expect(stats.totalTokens).toBe(1398);
+
+    db.close();
+  });
+
+  test('an empty filtered set yields zeros and an empty series', () => {
+    const { db } = openStore(':memory:');
+    seedStatsFixture(db);
+
+    const stats = getSessionsStats(db, { q: 'no-such-session' });
+    expect(stats).toEqual({
+      totalSessions: 0,
+      totalCostUsd: 0,
+      totalTokens: 0,
+      avgDurationMs: 0,
+      series: [],
+    });
+
+    db.close();
+  });
+
+  test('a single-session set has that session as its own aggregate', () => {
+    const { db } = openStore(':memory:');
+    seedStatsFixture(db);
+
+    // Only root2 starts after this bound (root3 has NULL started_at).
+    const stats = getSessionsStats(db, { startedAfter: '2024-01-02T12:00:00Z' });
+    expect(stats.totalSessions).toBe(1);
+    expect(stats.totalTokens).toBe(110);
+    expect(stats.avgDurationMs).toBe(1_800_000);
+    expect(stats.series).toEqual([{ date: '2024-01-03', sessions: 1 }]);
+
     db.close();
   });
 });

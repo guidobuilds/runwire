@@ -95,6 +95,32 @@ export type PagedSessions = {
   offset: number;
 };
 
+/** One day bucket of the stats chart series. `date` is the `YYYY-MM-DD` key the
+ * web chart already buckets by (`startedAt.slice(0, 10)`) and `sessions` is the
+ * root-session count for that day. */
+export type ApiSessionStatsSeriesPoint = {
+  date: string;
+  sessions: number;
+};
+
+/**
+ * Full-filtered-set aggregates for the dashboard cards + chart. Unlike
+ * `PagedSessions`, these are computed over the ENTIRE filtered root set (no
+ * `limit`/`offset`): `totalSessions`/`totalCostUsd`/`totalTokens`/
+ * `avgDurationMs` mirror the web's former client-side `computeCards` over all
+ * rows, and `series` mirrors `computeChartData` (sessions-per-day, ascending by
+ * date, `started_at IS NULL` excluded).
+ */
+export type ApiSessionsStats = {
+  totalSessions: number;
+  totalCostUsd: number;
+  /** Sum of inclusive (root + descendants) tokens across the filtered roots. */
+  totalTokens: number;
+  /** Mean of the non-null `duration_ms` values; 0 when none are present. */
+  avgDurationMs: number;
+  series: ApiSessionStatsSeriesPoint[];
+};
+
 /** A harness option for the web filter: only harnesses with at least one root session. */
 export type ApiHarnessOption = {
   id: string;
@@ -406,25 +432,31 @@ function buildOrderBy(sort: string | undefined): string {
   return `${column} ${desc ? 'DESC' : 'ASC'}, s.id`;
 }
 
-/**
- * Root sessions only (`parent_id IS NULL`), ordered by the whitelisted `sort`
- * (default `started_at DESC, id`), filtered by the optional AND filters
- * (`harness` comma-list, `startedAfter`, `model`, `q`, `durationMin`,
- * `costOnly`) and paginated by `limit`/`offset`. `total` is the real COUNT of
- * the filtered root set BEFORE pagination. Models/childCounts are computed ONLY
- * for the paginated slice (design D-12) — never for all roots after deciding the
- * page. No N+1.
- */
-export function listSessions(db: Database, query: ListSessionsQuery = {}): PagedSessions {
-  const limit = query.limit ?? 50;
-  const offset = query.offset ?? 0;
+/** The shared `WHERE` fragment + bound params for the filtered root set, plus
+ * the optional `model` recursive-CTE prefix. Used verbatim by both
+ * `listSessions` (paged rows) and `getSessionsStats` (aggregates) so the two
+ * can never drift on filters or binding order. */
+type RootFilter = {
+  where: string;
+  ctePrefix: string;
+  modelSubquery: string;
+  /** Params in SQL order for a query whose outer `FROM` is `sessions s` and that
+   * consumes `where` + `modelSubquery` with no extra bindings: the CTE seed
+   * params (when `model` is set), then the outer filter params, then the model
+   * predicate params. */
+  params: SQLQueryBindings[];
+};
 
-  // Base root filter (design T1 step 2): roots only, plus optional exact harness
-  // (case-sensitive on harness_id; a comma list becomes `= ?` for one id and
-  // `IN (?,…)` for several), exclusive startedAt (`started_at > ?`, NULL never
-  // matches), `q` substring, `durationMin` lower bound (NULL excluded) and
-  // `costOnly` (> 0, NULL excluded). All values bound with `?`; never
-  // interpolated.
+/**
+ * Builds the root-session filter (design T1 step 2): roots only, plus optional
+ * exact harness (case-sensitive on harness_id; a comma list becomes `= ?` for
+ * one id and `IN (?,…)` for several), exclusive startedAt (`started_at > ?`,
+ * NULL never matches), `q` substring, `durationMin` lower bound (NULL excluded)
+ * and `costOnly` (> 0, NULL excluded). All values bound with `?`; never
+ * interpolated. The `model` filter is a cycle-guarded recursive CTE applied as
+ * a subquery (see `modelCtePrefix`/`MODEL_MATCH`).
+ */
+function buildRootFilter(query: ListSessionsQuery): RootFilter {
   let where = 's.parent_id IS NULL';
   const baseParams: SQLQueryBindings[] = [];
   if (query.harness !== undefined) {
@@ -467,10 +499,6 @@ export function listSessions(db: Database, query: ListSessionsQuery = {}): Paged
     where += ' AND s.cost_usd > 0';
   }
 
-  // Model filter (design D-1 / T1 step 3): a cycle-guarded recursive CTE applied
-  // as a SUBQUERY — never a materialised placeholder list (`AND s.id IN (?,?,…)`),
-  // which would hit SQLite's max-variable limit on a large dataset. A `model` with
-  // no matches naturally yields an empty subquery and therefore an empty page.
   const hasModel = query.model !== undefined;
   const ctePrefix = hasModel ? modelCtePrefix(where) : '';
   const modelSubquery = hasModel
@@ -479,21 +507,35 @@ export function listSessions(db: Database, query: ListSessionsQuery = {}): Paged
   const modelParams: SQLQueryBindings[] = hasModel
     ? [query.model as string, query.model as string]
     : [];
+  // Binding-order gotcha (T1): when `model` is present the base-filter values
+  // are bound TWICE — CTE-seed `[harness?][startedAt?]`, then outer WHERE
+  // `[harness?][startedAt?]`, then `MODEL_MATCH` `model?` twice.
+  const params = hasModel ? [...baseParams, ...baseParams, ...modelParams] : baseParams;
+  return { where, ctePrefix, modelSubquery, params };
+}
+
+/**
+ * Root sessions only (`parent_id IS NULL`), ordered by the whitelisted `sort`
+ * (default `started_at DESC, id`), filtered by the optional AND filters
+ * (`harness` comma-list, `startedAfter`, `model`, `q`, `durationMin`,
+ * `costOnly`) and paginated by `limit`/`offset`. `total` is the real COUNT of
+ * the filtered root set BEFORE pagination. Models/childCounts are computed ONLY
+ * for the paginated slice (design D-12) — never for all roots after deciding the
+ * page. No N+1.
+ */
+export function listSessions(db: Database, query: ListSessionsQuery = {}): PagedSessions {
+  const limit = query.limit ?? 50;
+  const offset = query.offset ?? 0;
+  const { where, ctePrefix, modelSubquery, params } = buildRootFilter(query);
 
   // `total` — the real COUNT of the filtered root set BEFORE pagination (D-7).
-  // Binding-order gotcha (T1): when `model` is present the base-filter values are
-  // bound TWICE — CTE-seed `[harness?][startedAt?]`, then outer WHERE
-  // `[harness?][startedAt?]`, then `MODEL_MATCH` `model?` twice.
   const countSql = `${ctePrefix}SELECT COUNT(*) AS c FROM sessions s WHERE ${where}${modelSubquery}`;
-  const countParams = hasModel ? [...baseParams, ...baseParams, ...modelParams] : baseParams;
-  const countRow = db.query(countSql).get(...countParams) as { c: number };
+  const countRow = db.query(countSql).get(...params) as { c: number };
   const total = countRow.c;
 
   // The paginated, ordered item slice (D-2 / D-8 / D-9).
   const itemSql = `${ctePrefix}${ITEM_SQL} WHERE ${where}${modelSubquery} ORDER BY ${buildOrderBy(query.sort)} LIMIT ? OFFSET ?`;
-  const itemParams = hasModel
-    ? [...baseParams, ...baseParams, ...modelParams, limit, offset]
-    : [...baseParams, limit, offset];
+  const itemParams = [...params, limit, offset];
   const rows = db.query(itemSql).all(...itemParams) as SessionRow[];
   const sliceIds = rows.map((r) => r.id);
 
@@ -510,6 +552,59 @@ export function listSessions(db: Database, query: ListSessionsQuery = {}): Paged
 
   const items = rows.map((r) => toSummary(r, childCounts, modelsOwn, modelsDescendants));
   return { items, total, limit, offset };
+}
+
+/**
+ * Full-filtered-set aggregates for the dashboard cards + chart (see
+ * `ApiSessionsStats`). Computes the SAME filtered root set as `listSessions`
+ * via the shared `buildRootFilter` — but with no `limit`/`offset`, over every
+ * matching root, and in the data layer (SQL aggregate, never by loading all
+ * rows into the client).
+ *
+ * The four card totals mirror the web's former client-side `computeCards` over
+ * the full list: `COUNT(*)`, `SUM(cost_usd)` (NULL -> 0), the sum of each
+ * root's inclusive rollups tokens (NULL -> 0) and `AVG(duration_ms)` over the
+ * non-null values (NULL -> 0). The `series` mirrors `computeChartData`:
+ * `substr(started_at, 1, 10)` buckets, `started_at IS NULL` excluded, ascending
+ * by date.
+ */
+export function getSessionsStats(db: Database, query: ListSessionsQuery = {}): ApiSessionsStats {
+  const { where, ctePrefix, modelSubquery, params } = buildRootFilter(query);
+
+  const totalsSql = `${ctePrefix}
+    SELECT
+      COUNT(*) AS total_sessions,
+      COALESCE(SUM(s.cost_usd), 0) AS total_cost_usd,
+      COALESCE(SUM(
+        COALESCE(r.uncached_input, 0) + COALESCE(r.cached_input, 0) + COALESCE(r.cache_write, 0)
+        + COALESCE(r.output, 0) + COALESCE(r.reasoning_output, 0)
+      ), 0) AS total_tokens,
+      COALESCE(AVG(s.duration_ms), 0) AS avg_duration_ms
+    FROM sessions s
+    LEFT JOIN rollups r ON r.session_id = s.id
+    WHERE ${where}${modelSubquery}`;
+  const totals = db.query(totalsSql).get(...params) as {
+    total_sessions: number;
+    total_cost_usd: number;
+    total_tokens: number;
+    avg_duration_ms: number;
+  };
+
+  const seriesSql = `${ctePrefix}
+    SELECT substr(s.started_at, 1, 10) AS date, COUNT(*) AS sessions
+    FROM sessions s
+    WHERE ${where} AND s.started_at IS NOT NULL${modelSubquery}
+    GROUP BY date
+    ORDER BY date`;
+  const seriesRows = db.query(seriesSql).all(...params) as { date: string; sessions: number }[];
+
+  return {
+    totalSessions: totals.total_sessions,
+    totalCostUsd: totals.total_cost_usd,
+    totalTokens: totals.total_tokens,
+    avgDurationMs: totals.avg_duration_ms,
+    series: seriesRows.map((row) => ({ date: row.date, sessions: row.sessions })),
+  };
 }
 
 /**

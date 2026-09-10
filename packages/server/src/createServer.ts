@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import {
   getSession,
+  getSessionsStats,
   type ListSessionsQuery,
   listHarnesses,
   listSessions,
@@ -48,6 +49,18 @@ const VALID_QUERY_PARAMS = new Set([
   'sort',
 ]);
 
+/** The only query params accepted on `GET /api/sessions/stats`: the filters
+ * shared with `/api/sessions`, with no `limit`/`offset`/`sort` — stats are
+ * aggregates over the whole filtered set and have no page or order. */
+const VALID_STATS_QUERY_PARAMS = new Set([
+  'harness',
+  'startedAfter',
+  'model',
+  'q',
+  'durationMin',
+  'costOnly',
+]);
+
 /** A whitelisted `sort` field, optionally `-`-prefixed for DESC (design D-3). */
 const SORT_PATTERN = /^-?(name|harness|startedAt|duration|tokens|cost)$/;
 
@@ -69,6 +82,89 @@ function parseIntegerParam(value: string, min: number, max: number): number | nu
 }
 
 /**
+ * Rejects the first unknown or duplicate query param (design D-3): a typo'd or
+ * repeated filter must not silently pass. `valid` is the endpoint's whitelist,
+ * so each endpoint keeps its own surface (the stats endpoint excludes
+ * `limit`/`offset`/`sort`).
+ */
+function checkParamNames(
+  params: URLSearchParams,
+  valid: Set<string>,
+): { ok: true } | { ok: false; parameter: string } {
+  for (const key of params.keys()) {
+    if (!valid.has(key)) return { ok: false, parameter: key };
+  }
+  for (const key of params.keys()) {
+    if (params.getAll(key).length > 1) return { ok: false, parameter: key };
+  }
+  return { ok: true };
+}
+
+/**
+ * Strict parser for the filter params shared by `GET /api/sessions` and
+ * `GET /api/sessions/stats`, so the two can never drift. Pagination and `sort`
+ * are deliberately NOT here — `listSessions` parses those itself and the stats
+ * endpoint rejects them. Returns the first invalid parameter, or the built
+ * `ListSessionsQuery`.
+ */
+function parseFilterParams(
+  params: URLSearchParams,
+): { ok: true; query: ListSessionsQuery } | { ok: false; parameter: string } {
+  const query: ListSessionsQuery = {};
+
+  const harness = params.get('harness');
+  if (harness !== null) {
+    // Comma list is split/trimmed/de-duped in core; here every segment
+    // must be non-empty so `harness=a,,b` (or a bare blank) is a 400.
+    if (harness.split(',').some((segment) => segment.trim() === '')) {
+      return { ok: false, parameter: 'harness' };
+    }
+    query.harness = harness;
+  }
+  const model = params.get('model');
+  if (model !== null) {
+    if (model.trim() === '') return { ok: false, parameter: 'model' };
+    query.model = model;
+  }
+  const q = params.get('q');
+  if (q !== null) {
+    // Non-empty after trim, but passed verbatim (the leading/trailing
+    // whitespace may be intentional in the user's query text; core
+    // matches it as-is).
+    if (q.trim() === '') return { ok: false, parameter: 'q' };
+    query.q = q;
+  }
+  const durationMinRaw = params.get('durationMin');
+  if (durationMinRaw !== null) {
+    // Integer >= 1 minute; 0, negatives, decimals and non-digits reject.
+    const durationMin = parseIntegerParam(durationMinRaw, 1, Number.MAX_SAFE_INTEGER);
+    if (durationMin === null) return { ok: false, parameter: 'durationMin' };
+    query.durationMin = durationMin;
+  }
+  const costOnlyRaw = params.get('costOnly');
+  if (costOnlyRaw !== null) {
+    // Exactly `true` or `false`; `false` means no cost filter.
+    if (costOnlyRaw !== 'true' && costOnlyRaw !== 'false') {
+      return { ok: false, parameter: 'costOnly' };
+    }
+    if (costOnlyRaw === 'true') query.costOnly = true;
+  }
+  const startedAfter = params.get('startedAfter');
+  if (startedAfter !== null) {
+    // GUARD before normalizing (D-4): `new Date(value).toISOString()`
+    // throws a RangeError on an invalid date, which the outer catch
+    // would surface as a 500. Validate the date first, then normalize
+    // to canonical `.sssZ` UTC.
+    if (Number.isNaN(new Date(startedAfter).getTime())) {
+      return { ok: false, parameter: 'startedAfter' };
+    }
+    query.startedAfter = new Date(startedAfter).toISOString();
+  }
+
+  return { ok: true, query };
+}
+
+/**
  * Pure, testable transport factory (design D-N): no flag parsing, no process
  * lifecycle, no CORS headers. `Bun.serve`'s bind option is `hostname`, not
  * `host` — a bare `host` is silently ignored and would bind `0.0.0.0`,
@@ -84,6 +180,7 @@ function parseIntegerParam(value: string, min: number, max: number): number | nu
  */
 const API_PREFIX = '/api';
 const SESSIONS_PREFIX = `${API_PREFIX}/sessions`;
+const SESSIONS_STATS_PREFIX = `${SESSIONS_PREFIX}/stats`;
 const HARNESSES_PREFIX = `${API_PREFIX}/harnesses`;
 const PROFILE_ENDPOINTS = ['spawns', 'signals', 'timeline', 'events', 'models'] as const;
 
@@ -120,7 +217,12 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
           return json(
             {
               service: 'scout',
-              endpoints: ['/api/sessions', '/api/sessions/{id}', '/api/harnesses'],
+              endpoints: [
+                '/api/sessions',
+                '/api/sessions/stats',
+                '/api/sessions/{id}',
+                '/api/harnesses',
+              ],
             },
             200,
           );
@@ -129,16 +231,11 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
           if (method !== 'GET') return methodNotAllowed();
           const params = new URL(req.url).searchParams;
 
-          // Unknown query param (D-3): a typo'd filter must not silently pass.
-          for (const key of params.keys()) {
-            if (!VALID_QUERY_PARAMS.has(key)) return invalidQueryParam(key);
-          }
-          // Duplicate query param (D-3): ambiguous; first-wins would be lenient.
-          for (const key of params.keys()) {
-            if (params.getAll(key).length > 1) return invalidQueryParam(key);
-          }
-
-          const query: ListSessionsQuery = {};
+          const names = checkParamNames(params, VALID_QUERY_PARAMS);
+          if (!names.ok) return invalidQueryParam(names.parameter);
+          const filters = parseFilterParams(params);
+          if (!filters.ok) return invalidQueryParam(filters.parameter);
+          const query = filters.query;
 
           const limitRaw = params.get('limit');
           if (limitRaw !== null) {
@@ -154,62 +251,25 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
             if (offset === null) return invalidQueryParam('offset');
             query.offset = offset;
           }
-          const harness = params.get('harness');
-          if (harness !== null) {
-            // Comma list is split/trimmed/de-duped in core; here every segment
-            // must be non-empty so `harness=a,,b` (or a bare blank) is a 400.
-            if (harness.split(',').some((segment) => segment.trim() === '')) {
-              return invalidQueryParam('harness');
-            }
-            query.harness = harness;
-          }
-          const model = params.get('model');
-          if (model !== null) {
-            if (model.trim() === '') return invalidQueryParam('model');
-            query.model = model;
-          }
-          const q = params.get('q');
-          if (q !== null) {
-            // Non-empty after trim, but passed verbatim (the leading/trailing
-            // whitespace may be intentional in the user's query text; core
-            // matches it as-is).
-            if (q.trim() === '') return invalidQueryParam('q');
-            query.q = q;
-          }
-          const durationMinRaw = params.get('durationMin');
-          if (durationMinRaw !== null) {
-            // Integer >= 1 minute; 0, negatives, decimals and non-digits reject.
-            const durationMin = parseIntegerParam(durationMinRaw, 1, Number.MAX_SAFE_INTEGER);
-            if (durationMin === null) return invalidQueryParam('durationMin');
-            query.durationMin = durationMin;
-          }
-          const costOnlyRaw = params.get('costOnly');
-          if (costOnlyRaw !== null) {
-            // Exactly `true` or `false`; `false` means no cost filter.
-            if (costOnlyRaw !== 'true' && costOnlyRaw !== 'false') {
-              return invalidQueryParam('costOnly');
-            }
-            if (costOnlyRaw === 'true') query.costOnly = true;
-          }
           const sortRaw = params.get('sort');
           if (sortRaw !== null) {
             // Whitelisted field, optional `-` DESC prefix, case-sensitive.
             if (!SORT_PATTERN.test(sortRaw)) return invalidQueryParam('sort');
             query.sort = sortRaw;
           }
-          const startedAfter = params.get('startedAfter');
-          if (startedAfter !== null) {
-            // GUARD before normalizing (D-4): `new Date(value).toISOString()`
-            // throws a RangeError on an invalid date, which the outer catch
-            // would surface as a 500. Validate the date first, then normalize
-            // to canonical `.sssZ` UTC.
-            if (Number.isNaN(new Date(startedAfter).getTime())) {
-              return invalidQueryParam('startedAfter');
-            }
-            query.startedAfter = new Date(startedAfter).toISOString();
-          }
 
           return json(listSessions(db, query), 200);
+        }
+        if (path === SESSIONS_STATS_PREFIX) {
+          if (method !== 'GET') return methodNotAllowed();
+          const params = new URL(req.url).searchParams;
+          // Filters only: `limit`/`offset`/`sort` are rejected as unknown here —
+          // aggregates cover the whole filtered set and have no page or order.
+          const names = checkParamNames(params, VALID_STATS_QUERY_PARAMS);
+          if (!names.ok) return invalidQueryParam(names.parameter);
+          const filters = parseFilterParams(params);
+          if (!filters.ok) return invalidQueryParam(filters.parameter);
+          return json(getSessionsStats(db, filters.query), 200);
         }
         const scopedProfile = profileEndpoint(path);
         if (scopedProfile !== null) {

@@ -40,15 +40,12 @@ export const EMPTY_FILTERS: SessionsFilters = {
 };
 
 /**
- * Pure mapping from the controlled table state to the server's
- * `ListSessionsQuery` contract. Unset filters are omitted entirely (the server
- * rejects empty values); pagination is always sent.
+ * Pure mapping from the committed toolbar filters to the filters-only server
+ * query (no sort, no pagination). Shared by `buildSessionsQuery` for the list
+ * and used directly for the `/api/sessions/stats` query so the two can never
+ * drift; the stats endpoint rejects `limit`/`offset`/`sort`.
  */
-export function buildSessionsQuery(
-  filters: SessionsFilters,
-  sort: SessionsSortState,
-  pagination: { pageIndex: number; pageSize: number },
-): ListSessionsQuery {
+export function buildSessionsStatsQuery(filters: SessionsFilters): ListSessionsQuery {
   const query: ListSessionsQuery = {};
 
   const q = filters.q.trim();
@@ -59,6 +56,21 @@ export function buildSessionsQuery(
   if (filters.cost === 'gt0') query.costOnly = true;
 
   if (filters.harnessIds.length > 0) query.harness = filters.harnessIds.join(',');
+
+  return query;
+}
+
+/**
+ * Pure mapping from the controlled table state to the server's
+ * `ListSessionsQuery` contract. Unset filters are omitted entirely (the server
+ * rejects empty values); pagination is always sent.
+ */
+export function buildSessionsQuery(
+  filters: SessionsFilters,
+  sort: SessionsSortState,
+  pagination: { pageIndex: number; pageSize: number },
+): ListSessionsQuery {
+  const query = buildSessionsStatsQuery(filters);
 
   if (sort) query.sort = `${sort.desc ? '-' : ''}${sort.id}`;
 

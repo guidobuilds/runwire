@@ -1,6 +1,6 @@
 import type { ListSessionsQuery } from '@scout/core';
 import { keepPreviousData, queryOptions, useQuery } from '@tanstack/react-query';
-import { fetchSession, fetchSessions } from '@/lib/api/sessions';
+import { fetchSession, fetchSessions, fetchSessionsStats } from '@/lib/api/sessions';
 
 export function sessionsQueryOptions(query: ListSessionsQuery = {}) {
   return queryOptions({
@@ -23,6 +23,25 @@ export function sessionQueryOptions(id: string) {
 /** `GET /api/sessions` as a TanStack Query hook. */
 export function useSessions(query: ListSessionsQuery = {}) {
   return useQuery(sessionsQueryOptions(query));
+}
+
+/**
+ * Full-filtered-set aggregates from `GET /api/sessions/stats`, keyed by the
+ * filters-only query. Kept on the previous aggregates while the next key loads
+ * (same anti-flash contract as the list) so the cards/chart do not blink on a
+ * filter change.
+ */
+export function sessionsStatsQueryOptions(query: ListSessionsQuery = {}) {
+  return queryOptions({
+    queryKey: ['sessions', 'stats', query] as const,
+    queryFn: () => fetchSessionsStats(query),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** `GET /api/sessions/stats` as a TanStack Query hook. */
+export function useSessionsStats(query: ListSessionsQuery = {}) {
+  return useQuery(sessionsStatsQueryOptions(query));
 }
 
 /** `GET /api/sessions/{id}` as a TanStack Query hook. */

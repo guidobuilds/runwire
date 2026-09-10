@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildSessionsQuery,
+  buildSessionsStatsQuery,
   DEFAULT_PAGE_SIZE,
   DURATION_MINUTES,
   EMPTY_FILTERS,
@@ -91,5 +92,30 @@ describe('buildSessionsQuery pagination', () => {
       limit: 50,
       offset: 100,
     });
+  });
+});
+
+describe('buildSessionsStatsQuery', () => {
+  it('maps only committed filters and never sort/pagination', () => {
+    expect(
+      buildSessionsStatsQuery(
+        filters({ q: '  auth  ', duration: '30m', cost: 'gt0', harnessIds: ['a', 'b'] }),
+      ),
+    ).toEqual({ q: 'auth', durationMin: 30, costOnly: true, harness: 'a,b' });
+  });
+
+  it('an empty filter set yields an empty query (no limit/offset/sort keys)', () => {
+    expect(buildSessionsStatsQuery(EMPTY_FILTERS)).toEqual({});
+  });
+
+  it('agrees with buildSessionsQuery on every filter field', () => {
+    const f = filters({ q: 'refactor', duration: '5m', cost: 'gt0', harnessIds: ['claude-code'] });
+    const {
+      limit: _limit,
+      offset: _offset,
+      sort: _sort,
+      ...listFilters
+    } = buildSessionsQuery(f, { id: 'name', desc: true }, pagination);
+    expect(buildSessionsStatsQuery(f)).toEqual(listFilters);
   });
 });

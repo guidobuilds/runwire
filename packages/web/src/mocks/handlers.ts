@@ -2,6 +2,7 @@ import type {
   ApiHarnessOption,
   ApiSessionDetail,
   ApiSessionSummary,
+  ApiSessionsStats,
   PagedSessions,
 } from '@scout/core';
 import { HttpResponse, http } from 'msw';
@@ -88,6 +89,29 @@ export const mockPagedSessionsMulti: PagedSessions = {
   offset: 0,
 };
 
+/** Full-filtered-set aggregates matching `mockPagedSessions` (1 root). The
+ * dashboard cards/chart read this instead of computing from the page. */
+export const mockSessionsStats: ApiSessionsStats = {
+  totalSessions: 1,
+  totalCostUsd: 0.42,
+  totalTokens: 2450,
+  avgDurationMs: 1_800_000,
+  series: [{ date: '2026-09-01', sessions: 1 }],
+};
+
+/** Aggregates matching `mockPagedSessionsMulti` (2 roots) — the fixture the
+ * dashboard-composition tests assert exact card values against. */
+export const mockSessionsStatsMulti: ApiSessionsStats = {
+  totalSessions: 2,
+  totalCostUsd: 0.6,
+  totalTokens: 4900,
+  avgDurationMs: 1_350_000,
+  series: [
+    { date: '2026-09-01', sessions: 1 },
+    { date: '2026-09-02', sessions: 1 },
+  ],
+};
+
 export const mockSessionDetail: ApiSessionDetail = {
   ...mockSessionSummary,
   parent: null,
@@ -100,6 +124,9 @@ export const mockHarnessOptions: ApiHarnessOption[] = [
 
 export const handlers = [
   http.get('/api/sessions', () => HttpResponse.json(mockPagedSessions)),
+  // Registered before `/api/sessions/:id` so the literal `stats` path is not
+  // swallowed as an `id` by the param route.
+  http.get('/api/sessions/stats', () => HttpResponse.json(mockSessionsStats)),
   http.get('/api/harnesses', () => HttpResponse.json(mockHarnessOptions)),
   http.get('/api/sessions/:id', ({ params }) => {
     if (params.id !== mockSessionDetail.id) {

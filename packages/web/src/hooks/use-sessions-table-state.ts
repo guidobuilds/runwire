@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {
   buildSessionsQuery,
+  buildSessionsStatsQuery,
   DEFAULT_PAGE_SIZE,
   EMPTY_FILTERS,
   SEARCH_DEBOUNCE_MS,
@@ -25,6 +26,9 @@ export type UseSessionsTableStateResult = {
   pagination: SessionsTablePagination;
   /** The server query built from the committed filters/sort/pagination. */
   query: ReturnType<typeof buildSessionsQuery>;
+  /** The stats query built from the committed filters ONLY (no sort/pagination),
+   * so page changes never refetch the cards/chart. */
+  statsQuery: ReturnType<typeof buildSessionsStatsQuery>;
   setFilters: (next: SessionsFilters, options?: SetSessionsFiltersOptions) => void;
   setSort: (next: SessionsSortState) => void;
   setPage: (pageIndex: number) => void;
@@ -122,5 +126,20 @@ export function useSessionsTableState(): UseSessionsTableStateResult {
     [committedFilters, sort, pagination],
   );
 
-  return { filters, sort, pagination, query, setFilters, setSort, setPage, setPageSize };
+  const statsQuery = React.useMemo(
+    () => buildSessionsStatsQuery(committedFilters),
+    [committedFilters],
+  );
+
+  return {
+    filters,
+    sort,
+    pagination,
+    query,
+    statsQuery,
+    setFilters,
+    setSort,
+    setPage,
+    setPageSize,
+  };
 }

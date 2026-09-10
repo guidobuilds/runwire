@@ -1,4 +1,9 @@
-import type { ApiSessionDetail, ListSessionsQuery, PagedSessions } from '@scout/core';
+import type {
+  ApiSessionDetail,
+  ApiSessionsStats,
+  ListSessionsQuery,
+  PagedSessions,
+} from '@scout/core';
 import { apiFetch } from './client';
 
 /** Builds `/sessions?...` from only the defined fields of `query` — omits
@@ -24,6 +29,16 @@ function toSearchParams(query: ListSessionsQuery): string {
 /** `GET /api/sessions` — returns the paged root-session list. */
 export function fetchSessions(query: ListSessionsQuery = {}): Promise<PagedSessions> {
   return apiFetch<PagedSessions>(`/api/sessions${toSearchParams(query)}`);
+}
+
+/**
+ * `GET /api/sessions/stats` — full-filtered-set aggregates for the dashboard
+ * cards + chart. Accepts the same filter params as `fetchSessions` but the
+ * server rejects `limit`/`offset`/`sort`, so callers should only ever pass a
+ * filters-only query (see `buildSessionsStatsQuery`).
+ */
+export function fetchSessionsStats(query: ListSessionsQuery = {}): Promise<ApiSessionsStats> {
+  return apiFetch<ApiSessionsStats>(`/api/sessions/stats${toSearchParams(query)}`);
 }
 
 /**

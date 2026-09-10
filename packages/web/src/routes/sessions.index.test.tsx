@@ -11,6 +11,8 @@ import {
   mockPagedSessionsMulti,
   mockSessionSummary,
   mockSessionSummary2,
+  mockSessionsStats,
+  mockSessionsStatsMulti,
 } from '@/mocks/handlers';
 import { server } from '@/mocks/node';
 import { routeTree } from '@/routeTree.gen';
@@ -50,31 +52,33 @@ function toolbarMenuTrigger(name: RegExp): HTMLElement {
 }
 
 describe('/sessions route (sessions dashboard)', () => {
-  it('renders real session content and computed totals from useSessions()', async () => {
-    server.use(http.get('/api/sessions', () => HttpResponse.json(mockPagedSessionsMulti)));
+  it('renders real session content and full-set totals from useSessionsStats()', async () => {
+    server.use(
+      http.get('/api/sessions', () => HttpResponse.json(mockPagedSessionsMulti)),
+      http.get('/api/sessions/stats', () => HttpResponse.json(mockSessionsStatsMulti)),
+    );
 
     renderDashboard();
 
     // A real mocked session's name appears (from the DataTable's name column).
     expect(await screen.findByText(mockSessionSummary2.name)).toBeInTheDocument();
 
-    // "Total Sessions" card reflects the mocked fixture's item count (2). Scoped
+    // "Total Sessions" card reflects the mocked stats fixture's total (2). Scoped
     // to the card itself so the assertion cannot accidentally match the same
     // figure elsewhere on the page (e.g. the table's "0 of 2 row(s) selected").
     const totalSessionsLabel = await screen.findByText('Total Sessions');
     const card = totalSessionsLabel.closest('[data-slot="card"]') as HTMLElement | null;
     expect(card).not.toBeNull();
     expect(
-      within(card as HTMLElement).getByText(String(mockPagedSessionsMulti.items.length)),
+      within(card as HTMLElement).getByText(String(mockSessionsStatsMulti.totalSessions)),
     ).toBeInTheDocument();
 
-    // The other three cards' computed values, against the known fixture
-    // (mockSessionSummary.costUsd = 0.42, mockSessionSummary2.costUsd = 0.18,
-    // both sessions share the same tokenTotals object -- sumTokens() = 2450
-    // each -- and durationMs = 1_800_000 / 900_000). A regression in any of
-    // these formulas would previously ship silently green (see f4 verify
-    // finding #3/#6): total_cost mutated to only the first session's value
-    // still passed all tests, since nothing asserted an exact figure here.
+    // The other three cards' values, against the known stats fixture
+    // (totalCostUsd = 0.60, totalTokens = 4900 -> "4.9K",
+    // avgDurationMs = 1_350_000 -> "22m 30s"). A regression in any of these
+    // formulas would previously ship silently green (see f4 verify finding
+    // #3/#6): total_cost mutated to only the first session's value still passed
+    // all tests, since nothing asserted an exact figure here.
     const totalCostLabel = await screen.findByText('Total Cost');
     const totalCostCard = totalCostLabel.closest('[data-slot="card"]') as HTMLElement | null;
     expect(totalCostCard).not.toBeNull();
@@ -309,5 +313,89 @@ describe('/sessions table state (URL-free)', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/sessions'));
     expect(router.state.location.href).toBe(hrefBefore);
     expect(router.state.location.search).toEqual({});
+  });
+});
+
+// The cards/chart are driven by GET /api/sessions/stats over the FULL filtered
+// set: page size/page number must not change them, filter changes must.
+describe('/sessions cards+chart stats wiring', () => {
+  it('renders full-set stats and does not refetch them on a page change', async () => {
+    const user = userEvent.setup();
+    let sessionsRequests = 0;
+    const statsSearches: string[] = [];
+    const bigPage: PagedSessions = {
+      items: Array.from({ length: 10 }, (_, index) => ({
+        ...mockSessionSummary,
+        id: `sess-${index}`,
+        name: `Session ${index}`,
+        title: `Session ${index}`,
+      })),
+      total: 50,
+      limit: 10,
+      offset: 0,
+    };
+    server.use(
+      http.get('/api/sessions', () => {
+        sessionsRequests += 1;
+        return HttpResponse.json(bigPage);
+      }),
+      http.get('/api/sessions/stats', ({ request }) => {
+        statsSearches.push(new URL(request.url).search);
+        return HttpResponse.json({ ...mockSessionsStatsMulti, totalSessions: 50 });
+      }),
+    );
+
+    renderDashboard();
+    await screen.findByText('Session 0');
+
+    // The Total Sessions card shows the full filtered set (50), not the 10 rows
+    // on the current page.
+    const label = await screen.findByText('Total Sessions');
+    const card = label.closest('[data-slot="card"]') as HTMLElement | null;
+    expect(card).not.toBeNull();
+    expect(within(card as HTMLElement).getByText('50')).toBeInTheDocument();
+
+    expect(statsSearches).toHaveLength(1);
+
+    // Page 2 changes only the list query; the stats query has no pagination and
+    // must stay untouched.
+    await user.click(screen.getByRole('button', { name: /go to next page/i }));
+    await waitFor(() => expect(sessionsRequests).toBe(2));
+    expect(statsSearches).toHaveLength(1);
+  });
+
+  it('refetches stats when a committed filter changes', async () => {
+    const user = userEvent.setup();
+    const statsSearches: string[] = [];
+    server.use(
+      http.get('/api/sessions', () => HttpResponse.json(mockPagedSessionsMulti)),
+      http.get('/api/sessions/stats', ({ request }) => {
+        const search = new URL(request.url).search;
+        statsSearches.push(search);
+        return HttpResponse.json(
+          new URL(request.url).searchParams.get('durationMin')
+            ? { ...mockSessionsStats, totalSessions: 1 }
+            : mockSessionsStatsMulti,
+        );
+      }),
+    );
+
+    renderDashboard();
+    await screen.findByText(mockSessionSummary2.name);
+    expect(statsSearches).toHaveLength(1);
+
+    await user.click(toolbarMenuTrigger(/Duration/));
+    await user.click(await screen.findByRole('menuitemradio', { name: '≥ 30m' }));
+
+    await waitFor(() => expect(statsSearches.length).toBeGreaterThan(1));
+    expect(statsSearches.at(-1)).toContain('durationMin=30');
+
+    // The card reflects the newly-returned full-set total (1), proving the UI
+    // consumed the refetched stats rather than only issuing a request.
+    await waitFor(() => {
+      const label = screen.getByText('Total Sessions');
+      const card = label.closest('[data-slot="card"]') as HTMLElement;
+      expect(within(card).getByText('1')).toBeInTheDocument();
+    });
   });
 });
