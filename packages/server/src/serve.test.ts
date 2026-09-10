@@ -3,6 +3,12 @@ import { describe, expect, test } from 'bun:test';
 import { openStore } from '@scout/core';
 import { createServer } from './createServer';
 
+/** Idempotently upserts a raw model string and returns its `models.id`. */
+function modelId(db: Database, name: string): number {
+  db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT(name) DO NOTHING', [name]);
+  return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
+}
+
 function seed(db: Database) {
   db.run(
     'INSERT INTO harnesses (id, display_name, adapter_version, capabilities) VALUES (?, ?, ?, ?)',
@@ -15,18 +21,33 @@ function seed(db: Database) {
   ]);
   db.run(
     `INSERT INTO sessions (
-       id, harness_id, project_key, parent_id, depth, title, model_primary, started_at,
+       id, harness_id, project_key, parent_id, depth, title, model_primary_id, started_at,
        uncached_input, api_calls, source_path, source_size, source_mtime
      ) VALUES (?, 'fake', 'p1', ?, 0, NULL, ?, ?, ?, ?, ?, 1, 1)`,
-    ['fake:root1', null, 'root-model', '2024-01-02T00:00:00Z', 100, 3, '/fake/root1.jsonl'],
+    [
+      'fake:root1',
+      null,
+      modelId(db, 'root-model'),
+      '2024-01-02T00:00:00Z',
+      100,
+      3,
+      '/fake/root1.jsonl',
+    ],
   );
   // A subagent whose id contains a literal '/'.
   db.run(
     `INSERT INTO sessions (
-       id, harness_id, project_key, parent_id, depth, title, model_primary,
+       id, harness_id, project_key, parent_id, depth, title, model_primary_id,
        uncached_input, api_calls, source_path, source_size, source_mtime
      ) VALUES (?, 'fake', 'p1', ?, 0, NULL, ?, ?, ?, ?, 1, 1)`,
-    ['fake:root1/child', 'fake:root1', 'child-model', 20, 2, '/fake/root1-child.jsonl'],
+    [
+      'fake:root1/child',
+      'fake:root1',
+      modelId(db, 'child-model'),
+      20,
+      2,
+      '/fake/root1-child.jsonl',
+    ],
   );
 }
 

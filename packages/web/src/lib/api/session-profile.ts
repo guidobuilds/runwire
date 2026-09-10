@@ -3,6 +3,9 @@ import type {
   EventFilter,
   MergedEventsQuery,
   MergedEventsResponse,
+  ModelsResponse,
+  ModelUsageEntry,
+  ModelUsageGroup,
   ProfileSpawnsQuery,
   ProfileSpawnsResponse,
   Scope,
@@ -20,13 +23,17 @@ export type SessionProfileSpawns = ProfileSpawnsResponse & { view: 'spawns' };
 export type SessionProfileSignals = SignalsResponse & { view: 'signals' };
 export type SessionProfileTimeline = TimelineResponse & { view: 'timeline' };
 export type SessionProfileMergedEvents = MergedEventsResponse & { view: 'merged' };
+export type SessionProfileModels = ModelsResponse & { view: 'models' };
 
 export type SpawnsRequest = ProfileSpawnsQuery;
 export type SignalsRequest = SignalsQuery;
 export type TimelineRequest = TimelineQuery;
 export type MergedEventsRequest = MergedEventsQuery;
 
-function path(id: string, endpoint: 'spawns' | 'signals' | 'timeline' | 'events'): string {
+function path(
+  id: string,
+  endpoint: 'spawns' | 'signals' | 'timeline' | 'events' | 'models',
+): string {
   return `/api/sessions/${encodeURIComponent(id)}/profile/${endpoint}`;
 }
 
@@ -320,6 +327,45 @@ function normalizeMergedEvents(value: unknown): SessionProfileMergedEvents {
   };
 }
 
+function normalizeModelUsageEntry(value: unknown): ModelUsageEntry {
+  if (
+    !isRecord(value) ||
+    typeof value.model !== 'string' ||
+    typeof value.outputTokens !== 'number' ||
+    typeof value.share !== 'number'
+  ) {
+    throw new TypeError('invalid session profile model usage entry');
+  }
+  return { model: value.model, outputTokens: value.outputTokens, share: value.share };
+}
+
+function normalizeModelUsageGroup(value: unknown): ModelUsageGroup {
+  if (!isRecord(value) || typeof value.outputTokens !== 'number' || !Array.isArray(value.models)) {
+    throw new TypeError('invalid session profile model usage group');
+  }
+  return {
+    outputTokens: value.outputTokens,
+    models: value.models.map(normalizeModelUsageEntry),
+  };
+}
+
+function normalizeModelsResponse(value: unknown): SessionProfileModels {
+  if (
+    !isRecord(value) ||
+    typeof value.sessionId !== 'string' ||
+    !isRecord(value.session) ||
+    !isRecord(value.descendants)
+  ) {
+    throw new TypeError('invalid session profile models response');
+  }
+  return {
+    view: 'models',
+    sessionId: value.sessionId,
+    session: normalizeModelUsageGroup(value.session),
+    descendants: normalizeModelUsageGroup(value.descendants),
+  };
+}
+
 export function fetchSessionProfileSpawns(
   id: string,
   request: SpawnsRequest = {},
@@ -370,4 +416,14 @@ export async function fetchSessionProfileMergedEvents(
     { signal },
   );
   return normalizeMergedEvents(response);
+}
+
+// `/profile/models` takes no query parameters at all: the path must carry no
+// `?` (the server 400s on any parameter, see f2-t2).
+export async function fetchSessionProfileModels(
+  id: string,
+  signal?: AbortSignal,
+): Promise<SessionProfileModels> {
+  const response = await apiFetch<unknown>(path(id, 'models'), { signal });
+  return normalizeModelsResponse(response);
 }

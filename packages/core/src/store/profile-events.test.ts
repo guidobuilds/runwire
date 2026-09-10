@@ -18,6 +18,11 @@ function seed(db: Database): void {
       [id, parent, `source:${id}`],
     );
 }
+/** Idempotently upserts a raw model string and returns its `models.id`. */
+function modelId(db: Database, name: string): number {
+  db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT(name) DO NOTHING', [name]);
+  return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
+}
 function step(
   db: Database,
   session: string,
@@ -36,7 +41,7 @@ function step(
   } = {},
 ): void {
   db.run(
-    'INSERT INTO steps (session_id, seq, kind, tool_category, at, error, model, tool_name, duration_ms, compaction_trigger, from_value, to_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO steps (session_id, seq, kind, tool_category, at, error, model_id, tool_name, duration_ms, compaction_trigger, from_value, to_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       session,
       seq,
@@ -44,7 +49,7 @@ function step(
       opts.category ?? null,
       opts.at ?? null,
       opts.error ?? null,
-      opts.model ?? null,
+      opts.model == null ? null : modelId(db, opts.model),
       opts.name ?? null,
       opts.duration ?? null,
       opts.trigger ?? null,

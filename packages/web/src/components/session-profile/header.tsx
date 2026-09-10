@@ -13,9 +13,11 @@ import {
   formatDuration,
   TOKEN_FIELDS,
 } from './format';
+import { ModelUsage } from './model-usage';
 
 export type HeaderProps = {
   session: ApiSessionDetail;
+  refresh?: number;
 };
 
 const DEFINITION_SKELETON_KEYS = [
@@ -108,7 +110,7 @@ function TokenFieldStack({ session }: { session: ApiSessionDetail }) {
 /** Header: name/title, harness, project, timing, cost, own+inclusive totals.
  * No tool-call/turn/API-call counts here — those live in the signals accordion
  * or the agent graph (G9). */
-export function Header({ session }: HeaderProps) {
+export function Header({ session, refresh = 0 }: HeaderProps) {
   const showTitle = session.title !== null && session.title !== session.name;
 
   return (
@@ -137,6 +139,8 @@ export function Header({ session }: HeaderProps) {
         </dl>
 
         <TokenFieldStack session={session} />
+
+        <ModelUsage refresh={refresh} sessionId={session.id} />
 
         {session.parent ? (
           <div className="flex flex-col gap-1">

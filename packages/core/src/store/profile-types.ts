@@ -232,3 +232,33 @@ export type TimelineResponse = {
   excludedNullAtCount: number;
   timeDomain: TimeDomain;
 };
+
+/**
+ * One model's share of a group's output tokens. `other` is the overflow
+ * bucket: literal `unknown`/`other` model names plus every named model outside
+ * the top 7 by output tokens. Share is `outputTokens / group.outputTokens`
+ * (0 when the group total is 0).
+ */
+export type ModelUsageEntry = {
+  model: string | 'other';
+  outputTokens: number;
+  share: number;
+};
+
+/** A group's total output tokens and its top-7 + `other` model breakdown. */
+export type ModelUsageGroup = {
+  outputTokens: number;
+  models: readonly ModelUsageEntry[];
+};
+
+/**
+ * Metadata-only per-model OUTPUT-token shares for a session's own `kind='call'`
+ * steps and for the same rows across every subagent descendant (the session
+ * itself excluded). `null` models contribute to neither numerator nor
+ * denominator. Empty groups are `{ outputTokens: 0, models: [] }`.
+ */
+export type ModelsResponse = {
+  sessionId: string;
+  session: ModelUsageGroup;
+  descendants: ModelUsageGroup;
+};

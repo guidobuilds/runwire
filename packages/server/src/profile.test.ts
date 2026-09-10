@@ -3,6 +3,12 @@ import { describe, expect, test } from 'bun:test';
 import { openStore } from '@scout/core';
 import { createServer } from './createServer';
 
+/** Idempotently upserts a raw model string and returns its `models.id`. */
+function modelId(db: Database, name: string): number {
+  db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT(name) DO NOTHING', [name]);
+  return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
+}
+
 function seed(db: Database): void {
   db.run(
     'INSERT INTO harnesses (id, display_name, adapter_version, capabilities) VALUES (?, ?, ?, ?)',
@@ -29,22 +35,14 @@ function seed(db: Database): void {
   session('A', null, 50, 'SECRET LETTER TITLE');
   session('outside', null, 60, 'SECRET OUTSIDE TITLE');
 
-  db.run('INSERT INTO steps (session_id, seq, kind, model, at, output) VALUES (?, ?, ?, ?, ?, ?)', [
-    'root',
-    1,
-    'call',
-    'root-model',
-    '2024-01-01T00:00:00Z',
-    10,
-  ]);
-  db.run('INSERT INTO steps (session_id, seq, kind, model, at, output) VALUES (?, ?, ?, ?, ?, ?)', [
-    'root/child',
-    1,
-    'call',
-    'child-model',
-    '2024-01-01T00:00:01Z',
-    20,
-  ]);
+  db.run(
+    'INSERT INTO steps (session_id, seq, kind, model_id, at, output) VALUES (?, ?, ?, ?, ?, ?)',
+    ['root', 1, 'call', modelId(db, 'root-model'), '2024-01-01T00:00:00Z', 10],
+  );
+  db.run(
+    'INSERT INTO steps (session_id, seq, kind, model_id, at, output) VALUES (?, ?, ?, ?, ?, ?)',
+    ['root/child', 1, 'call', modelId(db, 'child-model'), '2024-01-01T00:00:01Z', 20],
+  );
   db.run(
     "INSERT INTO steps (session_id, seq, kind, tool_category, tool_name, call_id, child_id, at) VALUES (?, ?, 'tool', 'agent', ?, ?, ?, ?)",
     ['root', 2, 'Task', 'spawn-1', 'root/child', '2024-01-01T00:00:02Z'],
@@ -53,14 +51,10 @@ function seed(db: Database): void {
     "INSERT INTO steps (session_id, seq, kind, tool_category, tool_name, at) VALUES (?, ?, 'tool', 'read', ?, ?)",
     ['root/child', 2, 'Read', '2024-01-01T00:00:03Z'],
   );
-  db.run('INSERT INTO steps (session_id, seq, kind, model, at, output) VALUES (?, ?, ?, ?, ?, ?)', [
-    'outside',
-    1,
-    'call',
-    'outside-model',
-    '2024-01-01T00:00:00Z',
-    60,
-  ]);
+  db.run(
+    'INSERT INTO steps (session_id, seq, kind, model_id, at, output) VALUES (?, ?, ?, ?, ?, ?)',
+    ['outside', 1, 'call', modelId(db, 'outside-model'), '2024-01-01T00:00:00Z', 60],
+  );
 }
 
 async function withServer(run: (base: string, db: Database) => Promise<void>): Promise<void> {

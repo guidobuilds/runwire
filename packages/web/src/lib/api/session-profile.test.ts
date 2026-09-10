@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from './client';
 import {
   fetchSessionProfileMergedEvents,
+  fetchSessionProfileModels,
   fetchSessionProfileSignals,
   fetchSessionProfileSpawns,
   fetchSessionProfileTimeline,
@@ -96,6 +97,21 @@ const mergedEventsResponse = {
   limit: 50,
   offset: 0,
   excludedNullAtCount: 3,
+};
+
+const modelsResponse = {
+  sessionId: 'root',
+  session: {
+    outputTokens: 700,
+    models: [
+      { model: 'claude-sonnet-5', outputTokens: 700, share: 1 },
+      { model: 'claude-haiku-4', outputTokens: 0, share: 0 },
+    ],
+  },
+  descendants: {
+    outputTokens: 300,
+    models: [{ model: 'claude-opus-4', outputTokens: 300, share: 1 }],
+  },
 };
 
 afterEach(() => vi.unstubAllGlobals());
@@ -234,5 +250,85 @@ describe('session profile API', () => {
       '/api/sessions/root%2Fa%2525/profile/signals',
       expect.any(Object),
     );
+  });
+
+  it('fetches model usage with no query string and encodes the opaque id once', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(modelsResponse), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    await fetchSessionProfileModels('root/a%25');
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/sessions/root%2Fa%2525/profile/models',
+      expect.any(Object),
+    );
+    // The endpoint accepts no query parameters: the path must not gain a `?`.
+    expect(fetch.mock.calls[0]?.[0]).not.toContain('?');
+  });
+
+  it('normalizes the models response into the view shape', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(modelsResponse), { status: 200 })),
+    );
+    const result = await fetchSessionProfileModels('root');
+    expect(result).toEqual({
+      view: 'models',
+      sessionId: 'root',
+      session: {
+        outputTokens: 700,
+        models: [
+          { model: 'claude-sonnet-5', outputTokens: 700, share: 1 },
+          { model: 'claude-haiku-4', outputTokens: 0, share: 0 },
+        ],
+      },
+      descendants: {
+        outputTokens: 300,
+        models: [{ model: 'claude-opus-4', outputTokens: 300, share: 1 }],
+      },
+    });
+  });
+
+  it('rejects a models entry missing a numeric share', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ...modelsResponse,
+            session: {
+              outputTokens: 700,
+              models: [{ model: 'claude-sonnet-5', outputTokens: 700 }],
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    await expect(fetchSessionProfileModels('root')).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it('rejects a models response without a string sessionId', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ ...modelsResponse, sessionId: 42 }), { status: 200 }),
+        ),
+    );
+    await expect(fetchSessionProfileModels('root')).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it('rejects a models group without numeric outputTokens', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ ...modelsResponse, descendants: { models: [] } }), {
+          status: 200,
+        }),
+      ),
+    );
+    await expect(fetchSessionProfileModels('root')).rejects.toBeInstanceOf(TypeError);
   });
 });

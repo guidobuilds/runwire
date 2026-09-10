@@ -34,7 +34,8 @@ export type ParsedProfileQuery =
   | { view: 'spawns'; query: ProfileSpawnsQuery }
   | { view: 'signals'; query: SignalsQuery }
   | { view: 'timeline'; field: TokenField; query: TimelineQuery }
-  | { view: 'merged'; filter: EventFilter; query: MergedEventsQuery };
+  | { view: 'merged'; filter: EventFilter; query: MergedEventsQuery }
+  | { view: 'models' };
 
 export type ProfileQueryParseResult =
   | { ok: true; value: ParsedProfileQuery }
@@ -45,6 +46,7 @@ const VIEW_KEYS = {
   signals: new Set(['scope']),
   timeline: new Set(['scope', 'field']),
   merged: new Set(['scope', 'filter', 'limit', 'offset']),
+  models: new Set<string>(),
 } as const;
 
 function integer(value: string, min: number, max: number): number | null {
@@ -71,6 +73,11 @@ export function parseProfileQuery(
   for (const key of params.keys()) {
     if (!VIEW_KEYS[viewRaw].has(key)) return invalid(key);
   }
+
+  // `models` accepts no query parameters: the empty key set above already
+  // rejects every param (including `scope`), so resolve it before the shared
+  // scope default would otherwise supply a value.
+  if (viewRaw === 'models') return { ok: true, value: { view: 'models' } };
 
   const scopeRaw = params.get('scope') ?? 'tree';
   if (!SCOPES.has(scopeRaw as Scope)) return invalid('scope');

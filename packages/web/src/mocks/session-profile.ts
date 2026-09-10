@@ -11,6 +11,7 @@ import type {
 import { HttpResponse, http } from 'msw';
 import type {
   SessionProfileMergedEvents,
+  SessionProfileModels,
   SessionProfileSignals,
   SessionProfileSpawns,
   SessionProfileTimeline,
@@ -257,6 +258,29 @@ function mergedEventsResponse(
   };
 }
 
+/** Own group = the root session's own call steps (dominant model + one
+ * share-0 entry); descendants group = the child session's different mix. */
+function modelsResponse(): SessionProfileModels {
+  return {
+    view: 'models',
+    sessionId: PROFILE_ROOT_ID,
+    session: {
+      outputTokens: 1000,
+      models: [
+        { model: 'claude-sonnet-5', outputTokens: 900, share: 0.9 },
+        { model: 'claude-haiku-4', outputTokens: 0, share: 0 },
+      ],
+    },
+    descendants: {
+      outputTokens: 400,
+      models: [
+        { model: 'claude-opus-4', outputTokens: 300, share: 0.75 },
+        { model: 'claude-haiku-4', outputTokens: 100, share: 0.25 },
+      ],
+    },
+  };
+}
+
 function isTokenField(value: string | null): value is TokenField {
   return (
     value === 'uncachedInput' ||
@@ -315,6 +339,13 @@ export const sessionProfileHandlers = [
       return HttpResponse.json({ error: 'invalid request' }, { status: 400 });
     }
   }),
+  http.get('/api/sessions/:id/profile/models', () => {
+    try {
+      return HttpResponse.json(modelsResponse());
+    } catch {
+      return HttpResponse.json({ error: 'invalid request' }, { status: 400 });
+    }
+  }),
 ];
 
 /** Convenience accessors used by the route and the leaf components in tests. */
@@ -323,3 +354,4 @@ export const mockProfileSpawnsOwn = spawnsResponse('own');
 export const mockProfileSignalsTree = signalsResponse('tree');
 export const mockProfileTimelineTree = timelineResponse('tree', 'output');
 export const mockProfileMergedEventsTree = mergedEventsResponse('tree', 'signals', 50, 0);
+export const mockProfileModelsTree = modelsResponse();

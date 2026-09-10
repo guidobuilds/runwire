@@ -128,7 +128,7 @@ type SessionRow = {
 const ITEM_SQL = `
   SELECT
     s.id, s.title, s.parent_id, s.depth, s.relation, s.agent_type,
-    s.started_at, s.ended_at, s.duration_ms, s.model_primary,
+    s.started_at, s.ended_at, s.duration_ms, mp.name AS model_primary,
     s.uncached_input, s.cached_input, s.cache_write, s.output, s.reasoning_output,
     s.turns, s.api_calls, s.tool_calls, s.compactions, s.cost_usd,
     h.id AS harness_id, h.display_name AS harness_display_name, h.adapter_version AS harness_adapter_version,
@@ -141,6 +141,7 @@ const ITEM_SQL = `
   JOIN harnesses h ON h.id = s.harness_id
   LEFT JOIN projects p ON p.key = s.project_key
   LEFT JOIN rollups r ON r.session_id = s.id
+  LEFT JOIN models mp ON mp.id = s.model_primary_id
 `;
 
 function itemRows(
@@ -218,9 +219,10 @@ function collectModelsOwn(db: Database, sessionIds: string[]): Map<string, Set<s
   const placeholders = sessionIds.map(() => '?').join(',');
   const stepRows = db
     .query(
-      `SELECT session_id, model FROM steps
-       WHERE kind='call' AND model IS NOT NULL AND session_id IN (${placeholders})
-       GROUP BY session_id, model`,
+      `SELECT st.session_id AS session_id, m.name AS model FROM steps st
+       JOIN models m ON m.id = st.model_id
+       WHERE st.kind='call' AND st.model_id IS NOT NULL AND st.session_id IN (${placeholders})
+       GROUP BY st.session_id, m.name`,
     )
     .all(...sessionIds) as { session_id: string; model: string }[];
   for (const r of stepRows) {
@@ -233,8 +235,9 @@ function collectModelsOwn(db: Database, sessionIds: string[]): Map<string, Set<s
   }
   const primaryRows = db
     .query(
-      `SELECT id, model_primary FROM sessions
-       WHERE model_primary IS NOT NULL AND id IN (${placeholders})`,
+      `SELECT s.id AS id, m.name AS model_primary FROM sessions s
+       JOIN models m ON m.id = s.model_primary_id
+       WHERE s.model_primary_id IS NOT NULL AND s.id IN (${placeholders})`,
     )
     .all(...sessionIds) as { id: string; model_primary: string }[];
   for (const r of primaryRows) {
@@ -268,13 +271,13 @@ function collectModelsDescendants(
       FROM tree t JOIN sessions s ON s.parent_id = t.id
       WHERE instr(t.path, ',' || s.id || ',') = 0
     )
-    SELECT DISTINCT t.ancestor_id AS ancestor_id, st.model AS model
-    FROM tree t JOIN steps st ON st.session_id = t.id
-    WHERE st.kind='call' AND st.model IS NOT NULL AND t.id <> t.ancestor_id
+    SELECT DISTINCT t.ancestor_id AS ancestor_id, m.name AS model
+    FROM tree t JOIN steps st ON st.session_id = t.id JOIN models m ON m.id = st.model_id
+    WHERE st.kind='call' AND st.model_id IS NOT NULL AND t.id <> t.ancestor_id
     UNION
-    SELECT DISTINCT t.ancestor_id AS ancestor_id, s.model_primary AS model
-    FROM tree t JOIN sessions s ON s.id = t.id
-    WHERE s.model_primary IS NOT NULL AND t.id <> t.ancestor_id
+    SELECT DISTINCT t.ancestor_id AS ancestor_id, m.name AS model
+    FROM tree t JOIN sessions s ON s.id = t.id JOIN models m ON m.id = s.model_primary_id
+    WHERE s.model_primary_id IS NOT NULL AND t.id <> t.ancestor_id
   `;
   const rows = db.query(sql).all(...seedParams) as { ancestor_id: string; model: string }[];
   const map = new Map<string, Set<string>>();
@@ -338,11 +341,13 @@ WITH RECURSIVE tree(ancestor_id, id, path) AS (
 const MODEL_MATCH = `(
   EXISTS (
     SELECT 1 FROM steps st
-    WHERE st.session_id = t.id AND st.kind = 'call' AND st.model = ?
+    WHERE st.session_id = t.id AND st.kind = 'call'
+      AND st.model_id IN (SELECT id FROM models WHERE name = ?)
   )
   OR EXISTS (
     SELECT 1 FROM sessions s2
-    WHERE s2.id = t.id AND s2.model_primary = ?
+    WHERE s2.id = t.id
+      AND s2.model_primary_id IN (SELECT id FROM models WHERE name = ?)
   )
 )`;
 

@@ -64,12 +64,43 @@ export function upsertProject(db: Database, project: Project): void {
   );
 }
 
-function upsertSessionRow(db: Database, s: Session): void {
+/**
+ * Upserts every distinct raw model string the bundle mentions (union of
+ * `steps[].model` and `session.modelPrimary`) into `models` by its UNIQUE
+ * `name` (idempotent, `upsertHarness` style), then resolves name -> id in one
+ * SELECT. Runs inside persistBundle's transaction before the session/step
+ * writes so the hard FKs (`sessions.model_primary_id`, `steps.model_id`) can
+ * never observe a missing `models` row. The contract stays raw-string
+ * (`Session.modelPrimary` / `Step.model`); which model is "primary" is chosen
+ * by the adapter and persist only stores what it is given.
+ */
+function upsertModels(db: Database, b: SessionBundle): Map<string, number> {
+  const names = new Set<string>();
+  if (b.session.modelPrimary !== undefined) names.add(b.session.modelPrimary);
+  for (const step of b.steps) {
+    if (step.model !== undefined) names.add(step.model);
+  }
+  if (names.size === 0) return new Map();
+
+  for (const name of names) {
+    db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT(name) DO NOTHING', [name]);
+  }
+
+  const placeholders = [...names].map(() => '?').join(', ');
+  const rows = db
+    .query(`SELECT id, name FROM models WHERE name IN (${placeholders})`)
+    .all(...names) as { id: number; name: string }[];
+  const ids = new Map<string, number>();
+  for (const row of rows) ids.set(row.name, row.id);
+  return ids;
+}
+
+function upsertSessionRow(db: Database, s: Session, modelIds: Map<string, number>): void {
   db.run(
     `INSERT INTO sessions (
        id, harness_id, project_key, parent_id, relation, depth, agent_type, spawn_call_id,
        title, cwd, git_branch, git_commit, started_at, ended_at, duration_ms,
-       model_primary, model_changes, mode_primary, mode_changes, effort,
+       model_primary_id, model_changes, mode_primary, mode_changes, effort,
        uncached_input, cached_input, cache_write, output, reasoning_output,
        turns, api_calls, tool_calls, compactions, cost_usd,
        initiator_kind, initiator_surface, initiator_automation, resumed, forked_from,
@@ -81,7 +112,7 @@ function upsertSessionRow(db: Database, s: Session): void {
        relation = excluded.relation, depth = excluded.depth, agent_type = excluded.agent_type,
        spawn_call_id = excluded.spawn_call_id, title = excluded.title, cwd = excluded.cwd,
        git_branch = excluded.git_branch, git_commit = excluded.git_commit, started_at = excluded.started_at,
-       ended_at = excluded.ended_at, duration_ms = excluded.duration_ms, model_primary = excluded.model_primary,
+       ended_at = excluded.ended_at, duration_ms = excluded.duration_ms, model_primary_id = excluded.model_primary_id,
        model_changes = excluded.model_changes, mode_primary = excluded.mode_primary,
        mode_changes = excluded.mode_changes, effort = excluded.effort, uncached_input = excluded.uncached_input,
        cached_input = excluded.cached_input, cache_write = excluded.cache_write, output = excluded.output,
@@ -109,7 +140,7 @@ function upsertSessionRow(db: Database, s: Session): void {
       s.startedAt ?? null,
       s.endedAt ?? null,
       s.durationMs ?? null,
-      s.modelPrimary ?? null,
+      s.modelPrimary === undefined ? null : (modelIds.get(s.modelPrimary) ?? null),
       s.modelChanges ?? null,
       s.modePrimary ?? null,
       s.modeChanges ?? null,
@@ -140,12 +171,17 @@ function upsertSessionRow(db: Database, s: Session): void {
   );
 }
 
-function replaceSteps(db: Database, sessionId: string, steps: Step[]): void {
+function replaceSteps(
+  db: Database,
+  sessionId: string,
+  steps: Step[],
+  modelIds: Map<string, number>,
+): void {
   db.run('DELETE FROM steps WHERE session_id = ?', [sessionId]);
   for (const step of steps) {
     db.run(
       `INSERT INTO steps (
-         session_id, seq, at, kind, model, tool_category, tool_name, skill_name, call_id, child_id,
+         session_id, seq, at, kind, model_id, tool_category, tool_name, skill_name, call_id, child_id,
          duration_ms, error, uncached_input, cached_input, cache_write, output, reasoning_output,
          compaction_trigger, pre_tokens, post_tokens, from_value, to_value
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -154,7 +190,7 @@ function replaceSteps(db: Database, sessionId: string, steps: Step[]): void {
         step.seq,
         step.at ?? null,
         step.kind,
-        step.model ?? null,
+        step.model === undefined ? null : (modelIds.get(step.model) ?? null),
         step.toolCategory ?? null,
         step.toolName ?? null,
         step.skillName ?? null,
@@ -225,8 +261,9 @@ export function persistBundle(db: Database, bundle: SessionBundle): void {
       effectiveSourceId(b.session),
       b.session.id,
     ]);
-    upsertSessionRow(db, b.session);
-    replaceSteps(db, b.session.id, b.steps);
+    const modelIds = upsertModels(db, b);
+    upsertSessionRow(db, b.session, modelIds);
+    replaceSteps(db, b.session.id, b.steps, modelIds);
     replaceToolCounts(db, b.session.id, b.steps);
     replaceDiagnostics(db, b.session.id, b.diagnostics);
   });

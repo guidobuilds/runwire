@@ -217,7 +217,7 @@ export function readProfileTimeline(
   const params = profileScopeParams(sessionId);
   const calls = db
     .query(
-      `${prefix} SELECT st.session_id, st.seq, st.at, st.model, st.uncached_input, st.cached_input, st.cache_write, st.output, st.reasoning_output FROM steps st JOIN profile_scope ps ON ps.id = st.session_id WHERE st.kind = 'call'`,
+      `${prefix} SELECT st.session_id, st.seq, st.at, mn.name AS model, st.uncached_input, st.cached_input, st.cache_write, st.output, st.reasoning_output FROM steps st JOIN profile_scope ps ON ps.id = st.session_id LEFT JOIN models mn ON mn.id = st.model_id WHERE st.kind = 'call'`,
     )
     .all(...params) as CallRow[];
 

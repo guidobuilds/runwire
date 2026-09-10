@@ -16,6 +16,12 @@ function seed(db: Database) {
   ]);
 }
 
+/** Idempotently upserts a raw model string and returns its `models.id`. */
+function modelId(db: Database, name: string): number {
+  db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT(name) DO NOTHING', [name]);
+  return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
+}
+
 type SessionSeed = {
   parentId?: string;
   projectKey?: string | null;
@@ -38,7 +44,7 @@ type SessionSeed = {
 function insertSession(db: Database, id: string, opts: SessionSeed = {}) {
   db.run(
     `INSERT INTO sessions (
-       id, harness_id, project_key, parent_id, depth, title, model_primary,
+       id, harness_id, project_key, parent_id, depth, title, model_primary_id,
        started_at, turns, api_calls, tool_calls, compactions, cost_usd,
        uncached_input, cached_input, cache_write, output, reasoning_output,
        source_path, source_size, source_mtime
@@ -49,7 +55,7 @@ function insertSession(db: Database, id: string, opts: SessionSeed = {}) {
       opts.projectKey === undefined ? 'p1' : opts.projectKey,
       opts.parentId ?? null,
       opts.title ?? null,
-      opts.modelPrimary ?? null,
+      opts.modelPrimary == null ? null : modelId(db, opts.modelPrimary),
       opts.startedAt ?? null,
       opts.turns ?? null,
       opts.apiCalls ?? null,
@@ -67,11 +73,11 @@ function insertSession(db: Database, id: string, opts: SessionSeed = {}) {
 }
 
 function insertCallStep(db: Database, sessionId: string, seq: number, model: string) {
-  db.run('INSERT INTO steps (session_id, seq, kind, model) VALUES (?, ?, ?, ?)', [
+  db.run('INSERT INTO steps (session_id, seq, kind, model_id) VALUES (?, ?, ?, ?)', [
     sessionId,
     seq,
     'call',
-    model,
+    modelId(db, model),
   ]);
 }
 

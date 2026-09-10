@@ -1,4 +1,5 @@
 import type { ApiSessionDetail, ApiSessionSummary, ApiTokenTotals } from '@scout/core';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   createMemoryHistory,
   createRootRoute,
@@ -9,8 +10,15 @@ import {
 } from '@tanstack/react-router';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
+import { server } from '@/mocks/node';
+import { mockProfileModelsTree } from '@/mocks/session-profile';
 import { Header } from './header';
+
+function queryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
 
 /** Header renders the parent link via the typed router `Link` (to
  * `/sessions/$id`), which needs a real router context to resolve a href.
@@ -36,7 +44,11 @@ async function renderHeader(session: ApiSessionDetail) {
   // history; awaiting `load()` before rendering avoids every call site
   // needing a `findBy*` just to observe Header's own synchronous output.
   await router.load();
-  return render(<RouterProvider router={router} />);
+  return render(
+    <QueryClientProvider client={queryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
 }
 
 function tokens(output: number): ApiTokenTotals {
@@ -189,5 +201,53 @@ describe('Header — session navigation', () => {
     await renderHeader(detail({ children: [childSummary] }));
     expect(screen.queryByText('Child sessions')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: childSummary.name })).not.toBeInTheDocument();
+  });
+});
+
+describe('Header — model usage block', () => {
+  /** No parent link is rendered here, so the typed router is not needed. */
+  function renderDirect(refresh: number, client = queryClient()) {
+    return {
+      client,
+      ...render(
+        <QueryClientProvider client={client}>
+          <Header refresh={refresh} session={detail()} />
+        </QueryClientProvider>,
+      ),
+    };
+  }
+
+  it('mounts the model usage block below the token stats row', async () => {
+    renderDirect(0);
+
+    await screen.findByText('Models in this session');
+    expect(screen.getByText('Models in subagent sessions')).toBeInTheDocument();
+
+    const text = document.body.textContent ?? '';
+    const tokenStatsIndex = text.indexOf('Output');
+    const modelUsageIndex = text.indexOf('Models in this session');
+    expect(tokenStatsIndex).toBeGreaterThanOrEqual(0);
+    expect(modelUsageIndex).toBeGreaterThan(tokenStatsIndex);
+  });
+
+  it('threads the refresh prop into the model usage query', async () => {
+    let calls = 0;
+    server.use(
+      http.get('/api/sessions/:id/profile/models', () => {
+        calls += 1;
+        return HttpResponse.json(mockProfileModelsTree);
+      }),
+    );
+
+    const client = queryClient();
+    const { rerender } = renderDirect(0, client);
+    await waitFor(() => expect(calls).toBe(1));
+
+    rerender(
+      <QueryClientProvider client={client}>
+        <Header refresh={1} session={detail()} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(calls).toBe(2));
   });
 });

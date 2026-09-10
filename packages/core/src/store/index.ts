@@ -1,6 +1,7 @@
 export * from './link';
 export * from './persist';
 export * from './profile-events';
+export * from './profile-models';
 export * from './profile-scope';
 export * from './profile-signals';
 export * from './profile-spawns';

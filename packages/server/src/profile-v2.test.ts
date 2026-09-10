@@ -3,6 +3,12 @@ import { describe, expect, test } from 'bun:test';
 import { openStore } from '@scout/core';
 import { createServer } from './createServer';
 
+/** Idempotently upserts a raw model string and returns its `models.id`. */
+function modelId(db: Database, name: string): number {
+  db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT(name) DO NOTHING', [name]);
+  return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
+}
+
 /**
  * A richer fixture than profile.test.ts's: a root + child tree with
  * compactions (auto/manual/unknown trigger), a model-change, an mcp call, a
@@ -27,12 +33,12 @@ function seed(db: Database): void {
 
   const step = (sessionId: string, seq: number, fields: Record<string, string | number | null>) => {
     db.run(
-      'INSERT INTO steps (session_id, seq, kind, model, at, output, tool_category, tool_name, call_id, child_id, compaction_trigger, from_value, to_value, skill_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO steps (session_id, seq, kind, model_id, at, output, tool_category, tool_name, call_id, child_id, compaction_trigger, from_value, to_value, skill_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         sessionId,
         seq,
         fields.kind ?? null,
-        fields.model ?? null,
+        typeof fields.model === 'string' ? modelId(db, fields.model) : null,
         fields.at ?? null,
         fields.output ?? null,
         fields.tool_category ?? null,
@@ -433,6 +439,82 @@ describe('GET /api/sessions/{id}/profile/events', () => {
         const { response } = await body(base, `/api/sessions/root/profile/events?filter=${filter}`);
         expect(response.status, filter).toBe(200);
       }
+    });
+  });
+});
+
+describe('GET /api/sessions/{id}/profile/models', () => {
+  test('happy path: own vs descendant output-token shares', async () => {
+    await withServer(async (base) => {
+      const { response, json } = await body(base, '/api/sessions/root/profile/models');
+      expect(response.status).toBe(200);
+      expect(json.view).toBe('models');
+      expect(json.sessionId).toBe('root');
+      // Own group: only root's kind='call' step (model-a, output 10).
+      expect(json.session).toEqual({
+        outputTokens: 10,
+        models: [{ model: 'model-a', outputTokens: 10, share: 1 }],
+      });
+      // Descendants: root/child's two call steps only (model-b 20, model-a 5);
+      // the tool step's model is ignored and the unrelated `outside` session
+      // never leaks into the tree.
+      expect(json.descendants).toEqual({
+        outputTokens: 25,
+        models: [
+          { model: 'model-b', outputTokens: 20, share: 0.8 },
+          { model: 'model-a', outputTokens: 5, share: 0.2 },
+        ],
+      });
+      assertMetadataOnly(json);
+    });
+  });
+
+  test('a leaf session has an empty descendants group', async () => {
+    await withServer(async (base) => {
+      const { response, json } = await body(base, '/api/sessions/root%2Fchild/profile/models');
+      expect(response.status).toBe(200);
+      expect(json.sessionId).toBe('root/child');
+      expect(json.session).toEqual({
+        outputTokens: 25,
+        models: [
+          { model: 'model-b', outputTokens: 20, share: 0.8 },
+          { model: 'model-a', outputTokens: 5, share: 0.2 },
+        ],
+      });
+      expect(json.descendants).toEqual({ outputTokens: 0, models: [] });
+    });
+  });
+
+  test('404 on missing root', async () => {
+    await withServer(async (base) => {
+      const { response, json } = await body(base, '/api/sessions/missing/profile/models');
+      expect(response.status).toBe(404);
+      expect(json).toEqual({ error: 'session not found' });
+    });
+  });
+
+  test('strict empty param set: every query parameter is rejected', async () => {
+    await withServer(async (base) => {
+      const cases: Array<[string, string]> = [
+        ['?scope=own', 'scope'],
+        ['?scope=tree', 'scope'],
+        ['?wat=1', 'wat'],
+        ['?scope=own&scope=tree', 'scope'],
+      ];
+      for (const [query, parameter] of cases) {
+        const { response, json } = await body(base, `/api/sessions/root/profile/models${query}`);
+        expect(response.status, query).toBe(400);
+        expect(json).toEqual({ error: 'invalid query parameter', parameter });
+      }
+    });
+  });
+
+  test('405 for a non-GET request with Allow: GET', async () => {
+    await withServer(async (base) => {
+      const response = await fetch(`${base}/api/sessions/root/profile/models`, { method: 'POST' });
+      expect(response.status).toBe(405);
+      expect(response.headers.get('allow')).toBe('GET');
+      expect(await response.json()).toEqual({ error: 'method not allowed' });
     });
   });
 });

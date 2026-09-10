@@ -40,13 +40,17 @@ const SIGNALS_SQL = `(
  * the profile by accident, and UNION ALL is safe because source kinds differ. */
 const EVENTS_CTE = `,
 profile_events(stream_id, seq, at, kind, error, model, category, tool_name, duration_ms, trigger, from_value, to_value) AS (
-  SELECT st.session_id, st.seq, st.at, 'call', st.error, st.model,
+  SELECT st.session_id, st.seq, st.at, 'call', st.error, mn.name,
          NULL, NULL, NULL, NULL, NULL, NULL
-  FROM steps st JOIN profile_scope ps ON ps.id = st.session_id WHERE st.kind = 'call'
+  FROM steps st JOIN profile_scope ps ON ps.id = st.session_id
+  LEFT JOIN models mn ON mn.id = st.model_id
+  WHERE st.kind = 'call'
   UNION ALL
-  SELECT st.session_id, st.seq, st.at, 'tool', st.error, st.model,
+  SELECT st.session_id, st.seq, st.at, 'tool', st.error, mn.name,
          st.tool_category, st.tool_name, NULL, NULL, NULL, NULL
-  FROM steps st JOIN profile_scope ps ON ps.id = st.session_id WHERE st.kind = 'tool'
+  FROM steps st JOIN profile_scope ps ON ps.id = st.session_id
+  LEFT JOIN models mn ON mn.id = st.model_id
+  WHERE st.kind = 'tool'
   UNION ALL
   SELECT st.session_id, st.seq, st.at, 'turn', st.error, NULL,
          NULL, NULL, st.duration_ms, NULL, NULL, NULL

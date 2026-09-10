@@ -34,6 +34,13 @@ function bundle(
   };
 }
 
+/** The id of a `models` row by its UNIQUE name; throws when absent so a bug is loud, not `undefined`. */
+function modelIdByName(models: { id: number; name: string }[], name: string): number {
+  const found = models.find((m) => m.name === name);
+  if (found === undefined) throw new Error(`models row for '${name}' not found`);
+  return found.id;
+}
+
 /** Every session references a harnesses row via a real FK; the orchestrator upserts it once per adapter run. */
 function storeWithFakeHarness() {
   const store = openStore(':memory:');
@@ -139,6 +146,86 @@ describe('persistBundle', () => {
       { seq: 0, skill_name: 'my-skill' },
       { seq: 1, skill_name: null },
     ]);
+  });
+});
+
+describe('persistBundle: model identity (models table + FK ids)', () => {
+  test('upserts distinct raw model strings and writes model_primary_id/model_id', () => {
+    const { db } = storeWithFakeHarness();
+    persistBundle(
+      db,
+      bundle({ modelPrimary: 'claude-sonnet-4' }, [
+        { sessionId: 'fake:s1', seq: 0, kind: 'call', model: 'claude-sonnet-4' },
+        { sessionId: 'fake:s1', seq: 1, kind: 'tool', toolCategory: 'read', model: 'claude-haiku' },
+      ]),
+    );
+
+    const models = db.query('SELECT id, name FROM models ORDER BY name').all() as {
+      id: number;
+      name: string;
+    }[];
+    expect(models.map((m) => m.name)).toEqual(['claude-haiku', 'claude-sonnet-4']);
+
+    const session = db
+      .query('SELECT model_primary_id FROM sessions WHERE id = ?')
+      .get('fake:s1') as { model_primary_id: number | null };
+    expect(session.model_primary_id).toBe(modelIdByName(models, 'claude-sonnet-4'));
+
+    const steps = db
+      .query('SELECT seq, model_id FROM steps WHERE session_id = ? ORDER BY seq')
+      .all('fake:s1') as { seq: number; model_id: number | null }[];
+    expect(steps).toEqual([
+      { seq: 0, model_id: modelIdByName(models, 'claude-sonnet-4') },
+      { seq: 1, model_id: modelIdByName(models, 'claude-haiku') },
+    ]);
+  });
+
+  test('a step with no model keeps model_id NULL and adds no models row', () => {
+    const { db } = storeWithFakeHarness();
+    persistBundle(db, bundle({}, [{ sessionId: 'fake:s1', seq: 0, kind: 'turn' }]));
+
+    const step = db.query('SELECT model_id FROM steps WHERE session_id = ?').get('fake:s1') as {
+      model_id: number | null;
+    };
+    expect(step.model_id).toBeNull();
+    expect((db.query('SELECT name FROM models').all() as { name: string }[]).length).toBe(0);
+  });
+
+  test('re-persisting the same bundle adds no duplicate models rows', () => {
+    const { db } = storeWithFakeHarness();
+    const b = bundle({ modelPrimary: 'claude-sonnet-4' }, [
+      { sessionId: 'fake:s1', seq: 0, kind: 'call', model: 'claude-sonnet-4' },
+      { sessionId: 'fake:s1', seq: 1, kind: 'call', model: 'claude-haiku' },
+    ]);
+    persistBundle(db, b);
+    persistBundle(db, b);
+
+    const models = db.query('SELECT name FROM models ORDER BY name').all() as { name: string }[];
+    expect(models).toEqual([{ name: 'claude-haiku' }, { name: 'claude-sonnet-4' }]);
+  });
+
+  test('two sessions sharing a model string share one models row', () => {
+    const { db } = storeWithFakeHarness();
+    persistBundle(
+      db,
+      bundle({ id: 'fake:s1', sourcePath: '/fake/s1.jsonl', modelPrimary: 'shared-model' }),
+    );
+    persistBundle(
+      db,
+      bundle({ id: 'fake:s2', sourcePath: '/fake/s2.jsonl', modelPrimary: 'shared-model' }),
+    );
+
+    const models = db.query('SELECT id, name FROM models').all() as {
+      id: number;
+      name: string;
+    }[];
+    expect(models.length).toBe(1);
+    const only = models[0];
+    if (only === undefined) throw new Error('expected exactly one models row');
+    const sessionIds = db.query('SELECT model_primary_id FROM sessions ORDER BY id').all() as {
+      model_primary_id: number | null;
+    }[];
+    expect(sessionIds).toEqual([{ model_primary_id: only.id }, { model_primary_id: only.id }]);
   });
 });
 

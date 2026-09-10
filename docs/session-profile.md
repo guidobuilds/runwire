@@ -26,6 +26,8 @@ profile.
   - `/profile/signals` → tree-wide compaction/model-change/mcp/skill aggregates
   - `/profile/timeline` → tree-wide chronological token series
   - `/profile/events` → events merged by true chronology across the whole scope
+  - `/profile/models` → per-model output-token shares for the session and its
+    subagent descendants
 - `scope` (`tree` default | `own`) is validated strictly. `tree` covers the
   root and every descendant; `own` covers only the root.
 - Every parameter is validated by the transport before any core reader runs:
@@ -116,6 +118,29 @@ profile.
   (`model`, `category · toolName`, `durationMs`, `trigger`, `from → to`). Tool
   rows carry `model` like call rows (em-dash / NULL before a `scout import --force`
   backfill). They never render args, paths, or tool output.
+
+---
+
+## Models (`/profile/models`)
+
+- **No query parameters.** This projection accepts **none** — every parameter
+  (`scope` included) is rejected `400` naming it.
+- **Two groups.** `session` aggregates the requested session's own
+  `kind='call'` steps; `descendants` aggregates the same rows across the
+  recursive subtree with the session itself excluded, so its own calls are
+  never double-counted.
+- **Output-token share.** Each entry's `share` is `outputTokens /
+  group.outputTokens`; steps with no model (or an unknown model id) are
+  excluded from both the numerator and the denominator, so they never shift a
+  share.
+- **Top-7 + `other`.** `models` lists the top seven named models by output
+  tokens (name ASC tie-break) plus a single `other` entry folding every
+  remaining named model and the reserved literal `unknown`/`other` names;
+  `other` appears only when something actually folds.
+- **Empty groups are `{outputTokens: 0, models: []}`.** A session with no
+  known-model call steps still returns `200`, not `404`.
+- **Metadata only.** Model names and output-token shares only — no prompts,
+  paths, args, or tool output.
 
 ---
 

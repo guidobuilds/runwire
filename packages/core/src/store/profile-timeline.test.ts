@@ -9,6 +9,11 @@ function seed(db: Database): void {
     ['h', 'Harness', '1', '[]'],
   );
 }
+/** Idempotently upserts a raw model string and returns its `models.id`. */
+function modelId(db: Database, name: string): number {
+  db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT(name) DO NOTHING', [name]);
+  return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
+}
 function session(
   db: Database,
   id: string,
@@ -28,14 +33,10 @@ function call(
   model: string | null = 'm',
   at: string | null = null,
 ): void {
-  db.run('INSERT INTO steps (session_id, seq, kind, model, at, output) VALUES (?, ?, ?, ?, ?, ?)', [
-    id,
-    seq,
-    'call',
-    model,
-    at,
-    output,
-  ]);
+  db.run(
+    'INSERT INTO steps (session_id, seq, kind, model_id, at, output) VALUES (?, ?, ?, ?, ?, ?)',
+    [id, seq, 'call', model == null ? null : modelId(db, model), at, output],
+  );
 }
 function action(
   db: Database,

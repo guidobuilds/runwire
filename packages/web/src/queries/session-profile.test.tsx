@@ -1,10 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
+import { HttpResponse, http } from 'msw';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { server } from '@/mocks/node';
+import { mockProfileModelsTree } from '@/mocks/session-profile';
 import {
   sessionProfileKeys,
   useSessionProfileMergedEvents,
+  useSessionProfileModels,
   useSessionProfileSignals,
   useSessionProfileTimeline,
 } from './session-profile';
@@ -66,6 +70,22 @@ describe('session profile query keys', () => {
     expect(
       sessionProfileKeys.mergedEvents('a', { scope: 'tree', filter: 'signals', refresh: 1 }),
     ).not.toEqual(sessionProfileKeys.mergedEvents('a', { scope: 'tree', filter: 'signals' }));
+  });
+
+  it('keys model usage by refresh and separately from the other views', () => {
+    expect(sessionProfileKeys.models('a', {})).toEqual(['session-profile', 'a', 'models', 0]);
+    expect(sessionProfileKeys.models('a', { refresh: 1 })).not.toEqual(
+      sessionProfileKeys.models('a', { refresh: 0 }),
+    );
+    expect(sessionProfileKeys.models('a', {})).not.toEqual(
+      sessionProfileKeys.signals('a', { scope: 'tree' }),
+    );
+    expect(sessionProfileKeys.models('a', {})).not.toEqual(
+      sessionProfileKeys.timeline('a', { scope: 'tree', field: 'output' }),
+    );
+    expect(sessionProfileKeys.models('a', {})).not.toEqual(
+      sessionProfileKeys.mergedEvents('a', { scope: 'tree', filter: 'signals' }),
+    );
   });
 
   it('fetches signals and surfaces errors', async () => {
@@ -134,5 +154,45 @@ describe('session profile query keys', () => {
     expect(hook.result.current.data?.items[0]?.seq).toBe(1);
     await waitFor(() => expect(hook.result.current.data?.items[0]?.seq).toBe(2));
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('fetches model usage through the MSW mock', async () => {
+    const hook = renderHook(() => useSessionProfileModels('sess-1', {}), { wrapper });
+    await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
+    expect(hook.result.current.data).toMatchObject({
+      view: 'models',
+      sessionId: 'sess-1',
+      session: {
+        outputTokens: 1000,
+        models: [
+          { model: 'claude-sonnet-5', outputTokens: 900, share: 0.9 },
+          { model: 'claude-haiku-4', outputTokens: 0, share: 0 },
+        ],
+      },
+      descendants: {
+        outputTokens: 400,
+        models: [
+          { model: 'claude-opus-4', outputTokens: 300, share: 0.75 },
+          { model: 'claude-haiku-4', outputTokens: 100, share: 0.25 },
+        ],
+      },
+    });
+  });
+
+  it('refetches model usage when refresh changes', async () => {
+    let calls = 0;
+    server.use(
+      http.get('/api/sessions/:id/profile/models', () => {
+        calls += 1;
+        return HttpResponse.json(mockProfileModelsTree);
+      }),
+    );
+    const hook = renderHook(({ refresh }) => useSessionProfileModels('sess-1', { refresh }), {
+      initialProps: { refresh: 0 },
+      wrapper,
+    });
+    await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
+    hook.rerender({ refresh: 1 });
+    await waitFor(() => expect(calls).toBe(2));
   });
 });

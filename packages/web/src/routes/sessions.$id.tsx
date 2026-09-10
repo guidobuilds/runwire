@@ -129,7 +129,7 @@ function SessionProfileRoute() {
     <div className="flex flex-col gap-8 p-4 lg:p-6">
       <TopBar id={id} onRefresh={() => setRefresh((value) => value + 1)} />
 
-      <Header session={session.data} />
+      <Header refresh={refresh} session={session.data} />
 
       <AgentGraph
         onNodeCount={setSubagentCount}

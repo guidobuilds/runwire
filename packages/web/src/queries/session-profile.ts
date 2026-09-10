@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-query';
 import {
   fetchSessionProfileMergedEvents,
+  fetchSessionProfileModels,
   fetchSessionProfileSignals,
   fetchSessionProfileSpawns,
   fetchSessionProfileTimeline,
@@ -36,6 +37,10 @@ export type ProfileMergedEventsSelection = {
   filter: EventFilter;
   limit?: number;
   offset?: number;
+  refresh?: number;
+};
+
+export type ProfileModelsSelection = {
   refresh?: number;
 };
 
@@ -75,6 +80,8 @@ export const sessionProfileKeys = {
       selection.offset ?? null,
       selection.refresh ?? 0,
     ] as const,
+  models: (id: string, selection: ProfileModelsSelection) =>
+    ['session-profile', id, 'models', selection.refresh ?? 0] as const,
 };
 
 export function sessionProfileSpawnsOptions(id: string, selection: ProfileSpawnsSelection) {
@@ -136,4 +143,16 @@ export function sessionProfileMergedEventsOptions(
 
 export function useSessionProfileMergedEvents(id: string, selection: ProfileMergedEventsSelection) {
   return useQuery(sessionProfileMergedEventsOptions(id, selection));
+}
+
+export function sessionProfileModelsOptions(id: string, selection: ProfileModelsSelection) {
+  return queryOptions({
+    queryKey: sessionProfileKeys.models(id, selection),
+    queryFn: ({ signal }) => fetchSessionProfileModels(id, signal),
+    ...noRefetch,
+  });
+}
+
+export function useSessionProfileModels(id: string, selection: ProfileModelsSelection) {
+  return useQuery(sessionProfileModelsOptions(id, selection));
 }
