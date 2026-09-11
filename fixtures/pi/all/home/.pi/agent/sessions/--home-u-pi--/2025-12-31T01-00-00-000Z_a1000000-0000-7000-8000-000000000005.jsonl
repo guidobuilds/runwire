@@ -1,0 +1,1 @@
+{"type":"message","timestamp":"2025-12-31T01:00:00.000Z","message":{"role":"hookMessage","timestamp":1000,"content":[{"type":"text","text":"synthetic hook context"}]}}

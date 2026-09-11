@@ -1,0 +1,85 @@
+{
+  "sessions": [
+    {
+      "id": "pi:a1000000-0000-7000-8000-000000000004",
+      "harnessId": "pi",
+      "projectKey": "/home/u/pi",
+      "depth": 0,
+      "cwd": "/home/u/pi",
+      "startedAt": "2025-12-31T00:00:00.000Z",
+      "endedAt": "2025-12-31T00:00:03.000Z",
+      "durationMs": 3000,
+      "modelPrimary": "m-a",
+      "modelChanges": 1,
+      "uncachedInput": 1,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 2,
+      "turns": 1,
+      "apiCalls": 1,
+      "costUsd": 0.01,
+      "sourceSize": 582,
+      "sourcePath": ".pi/agent/sessions/--home-u-pi--/2025-12-31T00-00-00-000Z_a1000000-0000-7000-8000-000000000004.jsonl"
+    },
+    {
+      "id": "pi:a1000000-0000-7000-8000-000000000005",
+      "harnessId": "pi",
+      "projectKey": "/home/u/pi",
+      "depth": 0,
+      "cwd": "/home/u/pi",
+      "startedAt": "2025-12-31T01:00:00.000Z",
+      "endedAt": "2025-12-31T01:00:00.000Z",
+      "durationMs": 0,
+      "sourceSize": 168,
+      "sourcePath": ".pi/agent/sessions/--home-u-pi--/2025-12-31T01-00-00-000Z_a1000000-0000-7000-8000-000000000005.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "pi:a1000000-0000-7000-8000-000000000004": {
+      "turn": 1,
+      "model-change": 1,
+      "call": 1
+    },
+    "pi:a1000000-0000-7000-8000-000000000005": {}
+  },
+  "toolCounts": {
+    "pi:a1000000-0000-7000-8000-000000000004": {},
+    "pi:a1000000-0000-7000-8000-000000000005": {}
+  },
+  "diagnostics": {
+    "pi:a1000000-0000-7000-8000-000000000004": [
+      {
+        "level": "info",
+        "code": "legacy-format"
+      },
+      {
+        "level": "info",
+        "code": "cwd-from-dirname"
+      },
+      {
+        "level": "info",
+        "code": "unused-model-change",
+        "count": 1
+      }
+    ],
+    "pi:a1000000-0000-7000-8000-000000000005": [
+      {
+        "level": "info",
+        "code": "unknown-message-role",
+        "count": 1
+      },
+      {
+        "level": "warn",
+        "code": "missing-session-header"
+      },
+      {
+        "level": "info",
+        "code": "legacy-format"
+      },
+      {
+        "level": "info",
+        "code": "cwd-from-dirname"
+      }
+    ]
+  }
+}

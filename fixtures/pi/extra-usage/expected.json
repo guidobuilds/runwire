@@ -1,0 +1,58 @@
+{
+  "sessions": [
+    {
+      "id": "pi:a1000000-0000-7000-8000-000000000007",
+      "harnessId": "pi",
+      "projectKey": "/home/u/pi",
+      "depth": 0,
+      "cwd": "/home/u/pi",
+      "startedAt": "2026-01-05T00:00:00.000Z",
+      "endedAt": "2026-01-05T00:00:04.000Z",
+      "durationMs": 4000,
+      "modelPrimary": "m-a",
+      "modelChanges": 0,
+      "uncachedInput": 113,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 213,
+      "apiCalls": 4,
+      "toolCalls": 1,
+      "compactions": 1,
+      "costUsd": 0.42000000000000004,
+      "sourceSize": 1507,
+      "sourcePath": ".pi/agent/sessions/--home-u-pi--/2026-01-05T00-00-00-000Z_a1000000-0000-7000-8000-000000000007.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "pi:a1000000-0000-7000-8000-000000000007": {
+      "call": 4,
+      "tool": 1,
+      "compaction": 1,
+      "harness": 1
+    }
+  },
+  "toolCounts": {
+    "pi:a1000000-0000-7000-8000-000000000007": {
+      "read": 1
+    }
+  },
+  "diagnostics": {
+    "pi:a1000000-0000-7000-8000-000000000007": [
+      {
+        "level": "info",
+        "code": "usage-on-non-assistant",
+        "count": 3
+      },
+      {
+        "level": "info",
+        "code": "token-arithmetic-drift",
+        "count": 1
+      },
+      {
+        "level": "info",
+        "code": "unpriced-model",
+        "count": 1
+      }
+    ]
+  }
+}

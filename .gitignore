@@ -7,3 +7,5 @@ coverage/
 fixtures/*/canary/output/
 .scout/
 .forge/
+# Local Pi runtime state
+.atl/

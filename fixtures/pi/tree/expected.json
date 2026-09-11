@@ -1,0 +1,56 @@
+{
+  "sessions": [
+    {
+      "id": "pi:a1000000-0000-7000-8000-000000000002",
+      "harnessId": "pi",
+      "projectKey": "/home/u/pi",
+      "depth": 0,
+      "cwd": "/home/u/pi",
+      "startedAt": "2026-01-02T00:00:00.000Z",
+      "endedAt": "2026-01-02T00:00:07.000Z",
+      "durationMs": 7000,
+      "modelPrimary": "m-a",
+      "modelChanges": 1,
+      "uncachedInput": 12,
+      "cachedInput": 5,
+      "cacheWrite": 2,
+      "output": 103,
+      "reasoningOutput": 3,
+      "turns": 2,
+      "apiCalls": 3,
+      "toolCalls": 2,
+      "costUsd": 0.53,
+      "sourceSize": 2121,
+      "sourcePath": ".pi/agent/sessions/--home-u-pi--/2026-01-02T00-00-00-000Z_a1000000-0000-7000-8000-000000000002.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "pi:a1000000-0000-7000-8000-000000000002": {
+      "turn": 2,
+      "call": 3,
+      "tool": 2,
+      "model-change": 1,
+      "harness": 1
+    }
+  },
+  "toolCounts": {
+    "pi:a1000000-0000-7000-8000-000000000002": {
+      "read": 1,
+      "search": 1
+    }
+  },
+  "diagnostics": {
+    "pi:a1000000-0000-7000-8000-000000000002": [
+      {
+        "level": "info",
+        "code": "branched-tree",
+        "count": 1
+      },
+      {
+        "level": "info",
+        "code": "unanswered-tool-call",
+        "count": 1
+      }
+    ]
+  }
+}

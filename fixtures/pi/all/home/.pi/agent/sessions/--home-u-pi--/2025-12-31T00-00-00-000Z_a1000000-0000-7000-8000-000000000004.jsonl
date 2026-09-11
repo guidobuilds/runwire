@@ -1,0 +1,4 @@
+{"type":"session","timestamp":"2025-12-31T00:00:00.000Z","cwd":""}
+{"type":"model_change","timestamp":"2025-12-31T00:00:01.000Z","provider":"p","modelId":"m-never"}
+{"type":"message","timestamp":"2025-12-31T00:00:02.000Z","message":{"role":"user","timestamp":2000,"content":[{"type":"text","text":"synthetic legacy prompt"}]}}
+{"type":"message","timestamp":"2025-12-31T00:00:03.000Z","firstKeptEntryIndex":0,"message":{"role":"assistant","model":"m-a","timestamp":3000,"usage":{"input":1,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":3,"cost":{"total":0.01}},"content":[]}}

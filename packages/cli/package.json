@@ -9,6 +9,7 @@
     "@scout/core": "workspace:*",
     "@scout/adapter-claude-code": "workspace:*",
     "@scout/adapter-opencode": "workspace:*",
+    "@scout/adapter-pi": "workspace:*",
     "@scout/server": "workspace:*"
   },
   "scripts": {

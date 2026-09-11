@@ -10,7 +10,7 @@ Structure-only inspection (keys, record types, counts) of the harness data prese
 | Codex | JSONL rollouts under `~/.codex/sessions/YYYY/MM/DD/` | 167 files, 160 MB | cumulative `token_count` events | separate rollouts with `parent_thread_id` | M5 |
 | Grok Build | per-session directory under `~/.grok/sessions/<url-encoded cwd>/<uuid>/` | 14 | per turn in `updates.jsonl` | `subagents/<id>/meta.json` | later |
 | OpenCode | SQLite `~/.local/share/opencode/{opencode.db, opencode-tui-v2.db}` (WAL) | 73 (59 current + 14 legacy) | per API call (from `session_message.data.tokens`) | `session_v2.parent_id` / `session.parent_id` | **M?** (adapter built 2026-09-05) |
-| Pi | `~/.pi/agent/` (no sessions on this machine) | 0 | unknown | unknown | later |
+| Pi | `~/.pi/agent/sessions/<encoded cwd>/<timestamp>_<uuidv7>.jsonl` (one append-only JSONL tree per session) | 1 file / 371 records on the reference machine (2026-09-08) | per API call (one message per call; extra usage on compaction/branch_summary/toolResult) | extension-dispatched only; unlinkable (gentle-agents/) | adapter built 2026-09-10 (D78–D81) |
 | Antigravity | no local trajectory store found | — | — | — | dropped (D11) |
 
 ## Claude Code
@@ -62,7 +62,20 @@ See [adapters/claude-code.md](adapters/claude-code.md) for the full mapping. Key
 
 ## Pi
 
-Installed (`~/.pi/agent/{extensions, skills}`) but no session directory present. Expected layout (to verify): `~/.pi/agent/sessions/<encoded cwd>/<timestamp>_<id>.jsonl` with per-message `usage`. Survey pending.
+See [adapters/pi.md](adapters/pi.md) for the full mapping. Key facts:
+
+- **Scope boundary:** only `<agentDir>/sessions` (`~/.pi/agent/sessions`, overridable by
+  `PI_CODING_AGENT_DIR`/`PI_CODING_AGENT_SESSION_DIR`) is scanned. A recursive walk of
+  `~/.pi/agent` would pick up extension-run child sessions (`gentle-agents/sessions/`) and
+  attribute them to Pi (D81).
+- **Record model:** one append-only JSONL file per session; the header is followed by a typed
+  **tree** (`parentId` branching in place; `/tree` and `/fork` differ only in whether a new file is
+  written). Entry ids are randomized by `migrateV1ToV2`, so the filename uuidv7 is the only stable
+  identifier.
+- **Tools:** a closed 8-name built-in set (`read|ls|grep|find|edit|write|bash|powershell`) with an
+  open extension vocabulary; unknown names degrade to `other` (D31).
+- **Capabilities:** 14 of 20 declarable; nothing is persisted for `version`, `initiator`, `git`,
+  `mode` or `title`, and there are no built-in subagents (D78/D79/D81).
 
 ## Antigravity
 

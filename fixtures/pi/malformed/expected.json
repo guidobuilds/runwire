@@ -1,0 +1,41 @@
+{
+  "sessions": [
+    {
+      "id": "pi:a1000000-0000-7000-8000-000000000008",
+      "harnessId": "pi",
+      "projectKey": "/home/u/pi",
+      "depth": 0,
+      "cwd": "/home/u/pi",
+      "startedAt": "2026-01-06T00:00:00.000Z",
+      "endedAt": "2026-01-06T00:00:03.000Z",
+      "durationMs": 3000,
+      "turns": 1,
+      "sourceSize": 521,
+      "sourcePath": ".pi/agent/sessions/--home-u-pi--/2026-01-06T00-00-00-000Z_a1000000-0000-7000-8000-000000000008.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "pi:a1000000-0000-7000-8000-000000000008": {
+      "turn": 1
+    }
+  },
+  "toolCounts": {
+    "pi:a1000000-0000-7000-8000-000000000008": {}
+  },
+  "diagnostics": {
+    "pi:a1000000-0000-7000-8000-000000000008": [
+      {
+        "level": "warn",
+        "code": "malformed-json-line"
+      },
+      {
+        "level": "warn",
+        "code": "invalid-record"
+      },
+      {
+        "level": "info",
+        "code": "source-truncated"
+      }
+    ]
+  }
+}

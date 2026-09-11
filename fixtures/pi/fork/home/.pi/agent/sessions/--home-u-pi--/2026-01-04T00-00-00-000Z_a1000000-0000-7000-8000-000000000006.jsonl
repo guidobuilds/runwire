@@ -1,0 +1,3 @@
+{"type":"session","version":3,"id":"a1000000-0000-7000-8000-000000000006","timestamp":"2026-01-04T00:00:00.000Z","cwd":"/home/u/pi","parentSession":"/home/u/pi/.pi/agent/sessions/--home-u-pi--/2026-01-01T00-00-00-000Z_99000000-0000-7000-8000-0000000000aa.jsonl"}
+{"type":"message","id":"f0000001","parentId":null,"timestamp":"2026-01-04T00:00:01.000Z","message":{"role":"user","timestamp":1000,"content":[{"type":"text","text":"synthetic fork prompt"}]}}
+{"type":"message","id":"f0000002","parentId":"f0000001","timestamp":"2026-01-04T00:00:02.000Z","message":{"role":"assistant","model":"m-a","responseModel":"m-a","stopReason":"stop","timestamp":2000,"usage":{"input":2,"output":3,"cacheRead":0,"cacheWrite":0,"totalTokens":5,"cost":{"total":0.02}},"content":[]}}

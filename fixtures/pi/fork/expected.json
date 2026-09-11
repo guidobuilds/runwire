@@ -1,0 +1,39 @@
+{
+  "sessions": [
+    {
+      "id": "pi:a1000000-0000-7000-8000-000000000006",
+      "harnessId": "pi",
+      "projectKey": "/home/u/pi",
+      "relation": "fork",
+      "forkedFrom": "pi:99000000-0000-7000-8000-0000000000aa",
+      "depth": 0,
+      "cwd": "/home/u/pi",
+      "startedAt": "2026-01-04T00:00:00.000Z",
+      "endedAt": "2026-01-04T00:00:02.000Z",
+      "durationMs": 2000,
+      "modelPrimary": "m-a",
+      "modelChanges": 0,
+      "uncachedInput": 2,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 3,
+      "turns": 1,
+      "apiCalls": 1,
+      "costUsd": 0.02,
+      "sourceSize": 766,
+      "sourcePath": ".pi/agent/sessions/--home-u-pi--/2026-01-04T00-00-00-000Z_a1000000-0000-7000-8000-000000000006.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "pi:a1000000-0000-7000-8000-000000000006": {
+      "turn": 1,
+      "call": 1
+    }
+  },
+  "toolCounts": {
+    "pi:a1000000-0000-7000-8000-000000000006": {}
+  },
+  "diagnostics": {
+    "pi:a1000000-0000-7000-8000-000000000006": []
+  }
+}

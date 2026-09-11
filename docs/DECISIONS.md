@@ -18,7 +18,7 @@ Numbered `D<n>`; numbers are stable. Only decisions still in force are listed; t
 | 17 | Fixtures | Redacted real sessions committed under `fixtures/<harness>/`. |
 | 19 | Refresh | Manual rescan only. No file watching. |
 | 21 | Schema strictness | Loose Zod schemas (optional fields, passthrough). Version-gated field maps inside one adapter. Unknown record types are counted, not errors. |
-| 25 | Harness order | Claude Code → Codex → Grok Build → OpenCode → Pi. |
+| 25 | Harness order | Claude Code → Codex → Grok Build → OpenCode → Pi. (OpenCode shipped 2026-09-05; Pi ships 2026-09-10 with D78–D81) |
 | 26 | Docs | Under `docs/`. |
 | 27 | Name / license | Scout, MIT. |
 | 31 | Tool categories | Each adapter maps tool names to `read`, `write`, `exec`, `search`, `plan`, `agent`, `web`, `mcp`, `skill`, `other`. Tool inputs/outputs never leave the adapter. |
@@ -53,6 +53,17 @@ Numbered `D<n>`; numbers are stable. Only decisions still in force are listed; t
 | 75 | Docs reset | Obsolete docs deleted; remaining docs rewritten concisely around the new contract. |
 | 76 | Composition root | A minimal `packages/cli` (`@scout/cli`) is the only package that imports adapters: it holds the adapter registry (`adapters: HarnessAdapter[]`) and the `scout` command(s), and core's import orchestrator takes `adapters` as a parameter. Boundaries: `cli` may import `core` and `adapter-*`; `core` still imports nothing from the repo; adapters still import only `core`. |
 | 77 | `/api/sessions` query + pagination | `GET /api/sessions` supports `harness`/`startedAfter`/`model` filters (AND) and offset pagination (`limit` default 50, max 200; `offset` default 0). Unknown, duplicate, or invalid query params ⇒ `400` `{ error: 'invalid query parameter', parameter }`. Returns `{ items, total, limit, offset }` where `total` is the pre-pagination COUNT of the filtered root set; `model` matches the root OR any descendant; `startedAfter` is exclusive (`started_at > value`) and a `NULL` `started_at` never matches; `limit`/`offset` echo the effective values. `GET /api/sessions/{id}` unchanged. All API routes are served exclusively under `/api`; legacy un-prefixed `/sessions*`, `/session-profiles*` and `/` are not exposed. |
+| 78 | Titles/Pi | `session_info.name` is **user-authored** (`/name`, `--name`, `pi.setSessionName()`); D7's exception covers **harness-generated** titles only, so Pi does not declare `title` and never reads the name — consistent with Claude Code excluding the user-authored `agentName`. |
+| 79 | Skills/Pi | `skill` is **not declarable**: a skill is not a tool (the model loads `SKILL.md` via `read`/`bash`, or `/skill:<name>` expands into a user message). Attribution is unreachable without reading tool arguments (D7/D31). The §6.3(b) path (match `read`-argument paths against skill dirs; precedent: Claude's `input.skill`) remains a future option requiring its own explicit D7-extending decision. |
+| 80 | modelPrimary/Pi | Bare `responseModel ?? model` (Pi's own precedence), no provider prefix, for cross-harness comparability with the Claude/OpenCode rows. Revisit only if a `provider` column is ever added. |
+| 81 | Extension state/Pi | Scan **only** `<agentDir>/sessions` (`PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR` honored); `gentle-agents/` and every other extension dir stay out of scope. `subagent_run`/`subagent_list_agents` are counted as `agent`-category tool steps (delegation counted, not linked; `subagents` undeclared). Documented seam: a future `PiLinkSource` interface (`taskId` → `{ parentId, sourcePath, agentType }`) that would not touch `compute.ts`. |
+
+## Proposed (not implemented)
+
+- **Widen `Step.error` to `call` steps** so a failed API call can carry `error` directly instead of a
+  harness-step workaround. Until that contract change lands, Pi v1 emits `harness` steps
+  `call-error`/`call-aborted` for assistant `stopReason` `error`/`aborted`
+  ([adapters/pi.md](adapters/pi.md) §3.3/§6.5).
 
 ## Removed or superseded
 
