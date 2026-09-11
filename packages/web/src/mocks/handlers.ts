@@ -3,6 +3,7 @@ import type {
   ApiSessionDetail,
   ApiSessionSummary,
   ApiSessionsStats,
+  ImportReport,
   PagedSessions,
 } from '@scout/core';
 import { HttpResponse, http } from 'msw';
@@ -122,12 +123,23 @@ export const mockHarnessOptions: ApiHarnessOption[] = [
   { id: 'claude-code', displayName: 'Claude Code' },
 ];
 
+/** A shaped `ImportReport` for `POST /api/scan`, with per-adapter entries so
+ * consumers can rely on the map being present. */
+export const mockImportReport: ImportReport = {
+  perAdapter: {
+    'claude-code': { discovered: 3, imported: 2, skipped: 1, removed: 0, failed: 0 },
+    opencode: { discovered: 1, imported: 1, skipped: 0, removed: 0, failed: 0 },
+  },
+  durationMs: 42,
+};
+
 export const handlers = [
   http.get('/api/sessions', () => HttpResponse.json(mockPagedSessions)),
   // Registered before `/api/sessions/:id` so the literal `stats` path is not
   // swallowed as an `id` by the param route.
   http.get('/api/sessions/stats', () => HttpResponse.json(mockSessionsStats)),
   http.get('/api/harnesses', () => HttpResponse.json(mockHarnessOptions)),
+  http.post('/api/scan', () => HttpResponse.json(mockImportReport)),
   http.get('/api/sessions/:id', ({ params }) => {
     if (params.id !== mockSessionDetail.id) {
       return HttpResponse.json({ error: 'session not found' }, { status: 404 });

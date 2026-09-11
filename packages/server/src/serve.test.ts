@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import type { ImportReport } from '@scout/core';
 import { openStore, recomputeRollups } from '@scout/core';
 import { createServer } from './createServer';
 
@@ -53,10 +54,10 @@ function seed(db: Database) {
   );
 }
 
-async function startServer() {
+async function startServer(opts: { scan?: () => Promise<ImportReport> } = {}) {
   const store = openStore(':memory:');
   seed(store.db);
-  const server = createServer({ db: store.db, host: '127.0.0.1', port: 0 });
+  const server = createServer({ db: store.db, host: '127.0.0.1', port: 0, ...opts });
   // fetch needs a concrete origin; use the server's bound port.
   const base = `http://127.0.0.1:${server.port}`;
   return { store, server, base };
@@ -71,7 +72,13 @@ describe('createServer', () => {
       const body = await res.json();
       expect(body).toEqual({
         service: 'scout',
-        endpoints: ['/api/sessions', '/api/sessions/stats', '/api/sessions/{id}', '/api/harnesses'],
+        endpoints: [
+          '/api/sessions',
+          '/api/sessions/stats',
+          '/api/sessions/{id}',
+          '/api/harnesses',
+          '/api/scan',
+        ],
       });
     } finally {
       server.stop();
@@ -442,6 +449,124 @@ describe('createServer /api/harnesses', () => {
       expect(res.status).toBe(405);
       expect(res.headers.get('allow')).toBe('GET');
       expect(await res.json()).toEqual({ error: 'method not allowed' });
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+});
+
+describe('createServer /api/scan', () => {
+  const report: ImportReport = {
+    perAdapter: {
+      fake: { discovered: 2, imported: 1, skipped: 1, removed: 0, failed: 0 },
+    },
+    durationMs: 7,
+  };
+
+  test('POST /api/scan runs the injected scan callback and returns its ImportReport', async () => {
+    let calls = 0;
+    const scan = async (): Promise<ImportReport> => {
+      calls += 1;
+      return report;
+    };
+    const { store, server, base } = await startServer({ scan });
+    try {
+      const res = await fetch(`${base}/api/scan`, { method: 'POST' });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('application/json');
+      expect(await res.json()).toEqual(report);
+      expect(calls).toBe(1);
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('a report with an adapter error returns 500 with the report, not a false 200', async () => {
+    const failedReport: ImportReport = {
+      perAdapter: {
+        fake: {
+          discovered: 1,
+          imported: 0,
+          skipped: 0,
+          removed: 0,
+          failed: 0,
+          error: 'probe failed',
+        },
+      },
+      durationMs: 4,
+    };
+    const { store, server, base } = await startServer({ scan: async () => failedReport });
+    try {
+      const res = await fetch(`${base}/api/scan`, { method: 'POST' });
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({
+        error: 'one or more imports failed',
+        report: failedReport,
+      });
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('a report with failed bundles (failed > 0) returns 500, not a false 200', async () => {
+    const failedReport: ImportReport = {
+      perAdapter: {
+        fake: { discovered: 2, imported: 1, skipped: 0, removed: 0, failed: 1 },
+      },
+      durationMs: 5,
+    };
+    const { store, server, base } = await startServer({ scan: async () => failedReport });
+    try {
+      const res = await fetch(`${base}/api/scan`, { method: 'POST' });
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({
+        error: 'one or more imports failed',
+        report: failedReport,
+      });
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('returns 503 { error: scan unavailable } when no scan callback was injected', async () => {
+    const { store, server, base } = await startServer();
+    try {
+      const res = await fetch(`${base}/api/scan`, { method: 'POST' });
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({ error: 'scan unavailable' });
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('a non-POST on /api/scan returns 405 with an Allow: POST header', async () => {
+    const scan = async (): Promise<ImportReport> => report;
+    const { store, server, base } = await startServer({ scan });
+    try {
+      const res = await fetch(`${base}/api/scan`);
+      expect(res.status).toBe(405);
+      expect(res.headers.get('allow')).toBe('POST');
+      expect(await res.json()).toEqual({ error: 'method not allowed' });
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('a throwing scan callback returns 500, not a crashed server', async () => {
+    const scan = async (): Promise<ImportReport> => {
+      throw new Error('boom');
+    };
+    const { store, server, base } = await startServer({ scan });
+    try {
+      const res = await fetch(`${base}/api/scan`, { method: 'POST' });
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: 'internal error' });
     } finally {
       server.stop();
       store.close();

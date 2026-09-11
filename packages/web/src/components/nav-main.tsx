@@ -10,17 +10,17 @@ import {
 // f6: "Quick Create" + the mail-icon button (fictional CLI-scaffolded chrome
 // with no Scout equivalent) were dropped. Items with a `url` render as real
 // TanStack Router links and pick up active-route styling via `isActive`; items
-// without one ("Projects"/"Harnesses" -- no views built yet) render as inert,
+// with an `onClick` (actions such as Scan) render an enabled button; items with
+// neither ("Projects"/"Harnesses" -- no views built yet) render as inert,
 // disabled buttons rather than linking to a route that doesn't exist.
-export function NavMain({
-  items,
-}: {
-  items: {
-    title: string;
-    url?: string;
-    icon?: React.ReactNode;
-  }[];
-}) {
+export type NavMainItem = {
+  title: string;
+  url?: string;
+  icon?: React.ReactNode;
+  onClick?: () => void;
+};
+
+export function NavMain({ items }: { items: NavMainItem[] }) {
   const matchRoute = useMatchRoute();
 
   return (
@@ -35,6 +35,13 @@ export function NavMain({
                   isActive={matchRoute({ to: item.url, fuzzy: true }) !== false}
                   render={<Link to={item.url} />}
                 >
+                  {item.icon}
+                  <span>{item.title}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ) : item.onClick ? (
+              <SidebarMenuItem key={item.title}>
+                <SidebarMenuButton tooltip={item.title} onClick={item.onClick}>
                   {item.icon}
                   <span>{item.title}</span>
                 </SidebarMenuButton>

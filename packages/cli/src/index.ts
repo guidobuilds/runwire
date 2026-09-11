@@ -7,7 +7,7 @@ import { runServe } from './commands/serve';
 const USAGE = `Usage:
   scout import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles] [--force]
   scout discover --adapter <id> [--home <dir>] [--json] [--no-titles]
-  scout serve [--db <path>] [--host <host>] [--port <n>]
+  scout serve [--db <path>] [--host <host>] [--port <n>] [--no-titles]
 
 Known adapters: ${adapters.map((a) => a.id).join(', ')}`;
 
@@ -86,7 +86,7 @@ async function main(argv: string[]): Promise<number> {
   }
 
   if (subcommand === 'serve') {
-    let values: { db?: string; host?: string; port?: string };
+    let values: { db?: string; host?: string; port?: string; titles: boolean };
     try {
       const parsed = parseArgs({
         args: rest,
@@ -94,6 +94,7 @@ async function main(argv: string[]): Promise<number> {
           db: { type: 'string' },
           host: { type: 'string' },
           port: { type: 'string' },
+          'no-titles': { type: 'boolean', default: false },
         },
         strict: true,
         allowPositionals: false,
@@ -102,6 +103,7 @@ async function main(argv: string[]): Promise<number> {
         db: parsed.values.db,
         host: parsed.values.host,
         port: parsed.values.port,
+        titles: !parsed.values['no-titles'],
       };
       if (values.port !== undefined) {
         const n = Number(values.port);

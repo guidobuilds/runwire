@@ -11,7 +11,7 @@ scout import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles] [--forc
 Runs adapters and stores their sessions. Reads harness data; writes only to the Scout database.
 
 | Flag | Default | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `--adapter <id>` | all registered adapters | Restrict to one adapter. Valid ids: `claude-code`, `opencode`. Unknown ids fail with exit `1`. |
 | `--home <dir>` | real OS home | Where adapters look for harness data. |
 | `--db <path>` | `~/.scout/scout.db` | Database location. `--db :memory:` imports into RAM. |
@@ -39,7 +39,7 @@ scout discover --adapter <id> [--home <dir>] [--json] [--no-titles]
 Streams one bundle per session, read-only, without touching any store. Requires an adapter — there is no "all adapters" mode.
 
 | Flag | Default | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `--adapter <id>` | required | The adapter to stream. |
 | `--home <dir>` | real OS home | Where adapters look for harness data. |
 | `--json` | off | NDJSON mode (below). |
@@ -53,17 +53,19 @@ Output:
 ## `scout serve`
 
 ```text
-scout serve [--db <path>] [--host <host>] [--port <n>]
+scout serve [--db <path>] [--host <host>] [--port <n>] [--no-titles]
 ```
 
-Starts the local, read-only HTTP API. This is the first long-running process in the repo — it does **not**
+Starts the local HTTP API. This is the first long-running process in the repo — it does **not**
 watch the database; it reads SQLite live per request, so an `import` and a `serve` can coexist under WAL.
+`POST /api/scan` is the one write endpoint: it runs the same import as `scout import`.
 
 | Flag | Default | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `--db <path>` | `~/.scout/scout.db` | Database location. `--db :memory:` serves from RAM. |
 | `--host <host>` | `127.0.0.1` | Bind address (loopback-only default). |
 | `--port <n>` | `8787` | TCP port. |
+| `--no-titles` | off | Do not store harness-generated session titles during a web-triggered scan. Same privacy switch as `scout import` (D7). |
 
 Output:
 
@@ -79,7 +81,7 @@ GET /api/sessions?limit=<n>&offset=<n>&harness=<id>&startedAfter=<ISO-8601>&mode
 ```
 
 | Param | Type / default | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `limit` | integer, default `50`, max `200` | Page size. Must be an integer in `[1, 200]`; out-of-range or non-integer ⇒ `400`. |
 | `offset` | integer, default `0` | Page offset. Must be a non-negative integer. |
 | `harness` | harness id, exact | Keep roots whose `harness_id` equals the value, case-sensitive. Empty ⇒ `400`. |
@@ -104,11 +106,31 @@ Response:
 All scout API routes are served under `/api`; the legacy un-prefixed `/sessions*`
 and `/` paths are not exposed by the server.
 
+### `POST /api/scan`
+
+Runs a full import synchronously and returns the resulting `ImportReport`:
+
+```text
+POST /api/scan
+```
+
+- No request body and no query parameters are read; the scan always covers every registered adapter
+  (the same work as `scout import`).
+- The response is `200` with the `ImportReport` (`{ perAdapter, durationMs }`) once every adapter has
+  finished — the client waits for the whole scan.
+- An `ImportReport` with any adapter `error` or any `failed > 0` is a **failed scan**: the response is
+  `500` with `{ "error": "one or more imports failed", "report": { ... } }` so a client can tell a
+  partial import from a clean one (the same failure rule as `scout import`'s exit `1`).
+- A `GET` (or any non-`POST`) on `/api/scan` returns `405` with `Allow: POST`.
+- When the server was started without a scan callback, `POST /api/scan` returns `503`
+  `{ "error": "scan unavailable" }`.
+- The scan persists to the same database the server is reading; it never touches harness files.
+
 ## Shared guarantees
 
 | Guarantee | Detail |
-|---|---|
-| Read-only | Scout never modifies harness files, databases or configuration. |
+| --- | --- |
+| Harness files read-only | Scout never modifies harness files or harness configuration. `scout import` and `POST /api/scan` write only to the Scout database. |
 | Stdout/stderr split | Piping or redirecting stdout is always clean; every log and the import report go to stderr. |
 | No daemon | Every run is a one-shot scan; nothing runs in the background (D19). |
 | Local-only | No account, API key, network access or telemetry. |

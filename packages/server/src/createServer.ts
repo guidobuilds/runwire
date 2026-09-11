@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite';
 import {
   getSession,
   getSessionsStats,
+  type ImportReport,
   type ListSessionsQuery,
   listHarnesses,
   listSessions,
@@ -20,6 +21,13 @@ export type CreateServerOptions = {
   db: Database;
   host: string;
   port: number;
+  /**
+   * Runs a full import (the `scout import` orchestrator) when the web UI POSTs
+   * `/api/scan`. The CLI composition root injects it because the adapter
+   * registry lives there; the transport layer stays adapter-agnostic. Omitted
+   * when the server is embedded without a scan source, which returns 503.
+   */
+  scan?: () => Promise<ImportReport>;
 };
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -31,9 +39,10 @@ function json(body: unknown, status: number, extraHeaders?: Record<string, strin
   });
 }
 
-/** Every 405 carries an `Allow: GET` header (design D-L, RFC 9110). */
-function methodNotAllowed(): Response {
-  return json({ error: 'method not allowed' }, 405, { allow: 'GET' });
+/** Every 405 carries an `Allow` header naming the only accepted method
+ * (design D-L, RFC 9110). Defaults to `GET`; `/api/scan` allows `POST` only. */
+function methodNotAllowed(allow = 'GET'): Response {
+  return json({ error: 'method not allowed' }, 405, { allow });
 }
 
 /** The only query params accepted on `GET /api/sessions` (design D-3). */
@@ -182,6 +191,7 @@ const API_PREFIX = '/api';
 const SESSIONS_PREFIX = `${API_PREFIX}/sessions`;
 const SESSIONS_STATS_PREFIX = `${SESSIONS_PREFIX}/stats`;
 const HARNESSES_PREFIX = `${API_PREFIX}/harnesses`;
+const SCAN_PREFIX = `${API_PREFIX}/scan`;
 const PROFILE_ENDPOINTS = ['spawns', 'signals', 'timeline', 'events', 'models'] as const;
 
 type ProfileEndpoint = (typeof PROFILE_ENDPOINTS)[number];
@@ -201,7 +211,7 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
   return Bun.serve({
     hostname: host,
     port,
-    fetch(req) {
+    async fetch(req) {
       // Derive path from the URL, never `req.url` (the full absolute URL with
       // origin + query), so `/api/sessions?x=1` does not brute-match `/api/sessions`.
       let path: string;
@@ -222,10 +232,32 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
                 '/api/sessions/stats',
                 '/api/sessions/{id}',
                 '/api/harnesses',
+                '/api/scan',
               ],
             },
             200,
           );
+        }
+        if (path === SCAN_PREFIX) {
+          // `POST` is the only accepted method (it has an effect: it writes
+          // imported sessions); the check comes first so a wrong method is
+          // a 405 even when no scan callback was injected.
+          if (method !== 'POST') return methodNotAllowed('POST');
+          if (opts.scan === undefined) {
+            return json({ error: 'scan unavailable' }, 503);
+          }
+          const report = await opts.scan();
+          // Mirror the CLI's failure rule: an adapter `error` or any failed
+          // bundle in the `ImportReport` is a failed scan. Returning 2xx here
+          // would let the web UI treat a partial import as success and
+          // navigate away from the dialog that reports what failed.
+          const failed = Object.values(report.perAdapter).some(
+            (entry) => entry.error !== undefined || entry.failed > 0,
+          );
+          if (failed) {
+            return json({ error: 'one or more imports failed', report }, 500);
+          }
+          return json(report, 200);
         }
         if (path === SESSIONS_PREFIX) {
           if (method !== 'GET') return methodNotAllowed();

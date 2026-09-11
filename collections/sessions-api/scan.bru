@@ -1,0 +1,23 @@
+meta {
+  name: Scan (full import)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/scan
+  body: none
+  auth: none
+}
+
+docs {
+  Runs a full import synchronously and returns the resulting `ImportReport`
+  (`{ perAdapter, durationMs }`) with `200` when every adapter finished cleanly.
+
+  The scan shares `scout serve`'s privacy mode: start the server with
+  `--no-titles` to keep harness-generated session titles out of the database.
+
+  An `ImportReport` with any adapter `error` or any `failed > 0` is a failed
+  scan; the response is `500` with
+  `{ "error": "one or more imports failed", "report": { ... } }`.
+}
