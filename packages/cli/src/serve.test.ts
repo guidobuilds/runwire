@@ -16,6 +16,7 @@ type CapturedServerOpts = {
   db: unknown;
   host: string;
   port: number;
+  allowNonLocal?: boolean;
   scan: () => Promise<ImportReport>;
 };
 
@@ -140,6 +141,96 @@ describe('runServe', () => {
     expect(code).toBe(0);
     expect(stopMock).toHaveBeenCalled();
   });
+
+  test('refuses a non-loopback --host without --expose and never calls createServer', async () => {
+    const captured: CapturedServerOpts[] = [];
+    const { stopMock, createServerMock } = makeServerMock(captured);
+    const { runServe } = await import('./commands/serve');
+    const code = await runServe(
+      { db: ':memory:', host: '0.0.0.0', titles: true },
+      { createServer: createServerMock },
+    );
+
+    expect(code).toBe(2);
+    expect(captured).toHaveLength(0);
+    expect(stopMock).not.toHaveBeenCalled();
+  });
+
+  test('an empty --host is refused (no bind-all fallback), even with --expose', async () => {
+    const captured: CapturedServerOpts[] = [];
+    const { createServerMock } = makeServerMock(captured);
+    const { runServe } = await import('./commands/serve');
+
+    const refused = await runServe(
+      { db: ':memory:', host: '', titles: true },
+      { createServer: createServerMock },
+    );
+    const refusedExpose = await runServe(
+      { db: ':memory:', host: '', titles: true, expose: true },
+      { createServer: createServerMock },
+    );
+
+    expect(refused).toBe(2);
+    expect(refusedExpose).toBe(2);
+    expect(captured).toHaveLength(0);
+  });
+
+  test('--expose lets a non-loopback host through, warns, and forwards allowNonLocal', async () => {
+    const captured: CapturedServerOpts[] = [];
+    const { stopMock, createServerMock } = makeServerMock(captured);
+    const errors: string[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => {
+      errors.push(args.join(' '));
+    };
+    let code: number;
+    try {
+      const { runServe } = await import('./commands/serve');
+      const p = runServe(
+        { db: ':memory:', host: '0.0.0.0', port: '0', titles: true, expose: true },
+        { createServer: createServerMock },
+      );
+      await tick();
+      process.emit('SIGINT');
+      code = await p;
+    } finally {
+      console.error = original;
+    }
+
+    expect(code).toBe(0);
+    expect(captured[0]?.host).toBe('0.0.0.0');
+    expect(captured[0]?.allowNonLocal).toBe(true);
+    expect(errors.some((line) => line.includes('warn:'))).toBe(true);
+    expect(stopMock).toHaveBeenCalled();
+  });
+
+  test('::1 is loopback (no --expose needed) and the listening URL brackets IPv6', async () => {
+    const captured: CapturedServerOpts[] = [];
+    const { createServerMock } = makeServerMock(captured);
+    const errors: string[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => {
+      errors.push(args.join(' '));
+    };
+    let code: number;
+    try {
+      const { runServe } = await import('./commands/serve');
+      const p = runServe(
+        { db: ':memory:', host: '::1', port: '0', titles: true },
+        { createServer: createServerMock },
+      );
+      await tick();
+      process.emit('SIGINT');
+      code = await p;
+    } finally {
+      console.error = original;
+    }
+
+    expect(code).toBe(0);
+    expect(captured[0]?.host).toBe('::1');
+    expect(captured[0]?.allowNonLocal).toBe(false);
+    expect(errors.some((line) => line.includes('http://[::1]:'))).toBe(true);
+  });
 });
 
 describe('scout serve (cli entry)', () => {
@@ -175,5 +266,55 @@ describe('scout serve (cli entry)', () => {
     // `--no-titles`; an unknown flag would have failed with a usage error first.
     expect(stderr).toContain('--port must be an integer between 0 and 65535');
     expect(stderr).not.toContain('Unknown option');
+  });
+
+  test('--host 0.0.0.0 without --expose exits 2, empty stdout, no listening line', async () => {
+    const proc = Bun.spawn(
+      [process.execPath, CLI_SCRIPT, 'serve', '--host', '0.0.0.0', '--port', '0'],
+      { cwd: REPO_ROOT, stdout: 'pipe', stderr: 'pipe' },
+    );
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    expect(stdout).toBe('');
+    expect(code).toBe(2);
+    expect(stderr).toContain('refusing to bind non-loopback host "0.0.0.0"');
+    expect(stderr).not.toContain('listening');
+  });
+
+  test('an empty --host exits 2 rather than binding all interfaces', async () => {
+    const proc = Bun.spawn([process.execPath, CLI_SCRIPT, 'serve', '--host', '', '--port', '0'], {
+      cwd: REPO_ROOT,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    expect(stdout).toBe('');
+    expect(code).toBe(2);
+    expect(stderr).toContain('--host must be a non-empty bind address');
+    expect(stderr).not.toContain('listening');
+  });
+
+  test('--host 0.0.0.0 --port 99999 fails on the port first (chosen order)', async () => {
+    const proc = Bun.spawn(
+      [process.execPath, CLI_SCRIPT, 'serve', '--host', '0.0.0.0', '--port', '99999'],
+      { cwd: REPO_ROOT, stdout: 'pipe', stderr: 'pipe' },
+    );
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    expect(stdout).toBe('');
+    expect(code).toBe(2);
+    // `--port` is validated before `--host`; document + pin that order.
+    expect(stderr).toContain('--port must be an integer between 0 and 65535');
+    expect(stderr).not.toContain('refusing to bind');
   });
 });

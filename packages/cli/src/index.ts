@@ -2,12 +2,12 @@ import { parseArgs } from 'node:util';
 import { adapters } from './adapters';
 import { runDiscover } from './commands/discover';
 import { runImport } from './commands/import';
-import { runServe } from './commands/serve';
+import { assertBindHost, runServe } from './commands/serve';
 
 const USAGE = `Usage:
   scout import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles] [--force]
   scout discover --adapter <id> [--home <dir>] [--json] [--no-titles]
-  scout serve [--db <path>] [--host <host>] [--port <n>] [--no-titles]
+  scout serve [--db <path>] [--host <host>] [--port <n>] [--no-titles] [--expose]
 
 Known adapters: ${adapters.map((a) => a.id).join(', ')}`;
 
@@ -86,7 +86,7 @@ async function main(argv: string[]): Promise<number> {
   }
 
   if (subcommand === 'serve') {
-    let values: { db?: string; host?: string; port?: string; titles: boolean };
+    let values: { db?: string; host?: string; port?: string; titles: boolean; expose: boolean };
     try {
       const parsed = parseArgs({
         args: rest,
@@ -95,6 +95,7 @@ async function main(argv: string[]): Promise<number> {
           host: { type: 'string' },
           port: { type: 'string' },
           'no-titles': { type: 'boolean', default: false },
+          expose: { type: 'boolean', default: false },
         },
         strict: true,
         allowPositionals: false,
@@ -104,11 +105,20 @@ async function main(argv: string[]): Promise<number> {
         host: parsed.values.host,
         port: parsed.values.port,
         titles: !parsed.values['no-titles'],
+        expose: parsed.values.expose ?? false,
       };
       if (values.port !== undefined) {
         const n = Number(values.port);
         if (!Number.isInteger(n) || n < 0 || n > 65535) {
           console.error('error: --port must be an integer between 0 and 65535');
+          console.error(USAGE);
+          return 2;
+        }
+      }
+      if (values.host !== undefined) {
+        const hostError = assertBindHost(values.host);
+        if (hostError !== undefined && (values.host.trim() === '' || !values.expose)) {
+          console.error(hostError);
           console.error(USAGE);
           return 2;
         }

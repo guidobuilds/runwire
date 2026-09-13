@@ -25,4 +25,7 @@ bun run typecheck
 - A session id is the whole path remainder (a literal `/` or `%2F` stays in the id).
 - Parse integers/booleans strictly (`parseIntegerParam`); validate dates before
   `toISOString()`.
+- `createServer` refuses a non-loopback `host` (and an empty one) unless
+  `allowNonLocal: true` is passed (F3). The CLI maps that to the explicit
+  `--expose` flag; empty is always refused, never treated as bind-all.
 - Update the Bruno collection in `collections/sessions-api/` when an endpoint changes.

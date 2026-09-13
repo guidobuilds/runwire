@@ -317,6 +317,63 @@ describe('createServer', () => {
   });
 });
 
+describe('createServer bind guard (F3)', () => {
+  test('refuses a non-loopback host by default', () => {
+    const store = openStore(':memory:');
+    try {
+      expect(() => createServer({ db: store.db, host: '0.0.0.0', port: 0 })).toThrow(
+        /refusing to bind 0\.0\.0\.0/,
+      );
+      expect(() => createServer({ db: store.db, host: '192.168.1.20', port: 0 })).toThrow(
+        /refusing to bind/,
+      );
+    } finally {
+      store.close();
+    }
+  });
+
+  test('refuses an empty host even with allowNonLocal (empty is never bind-all)', () => {
+    const store = openStore(':memory:');
+    try {
+      expect(() => createServer({ db: store.db, host: '', port: 0 })).toThrow(
+        /refusing to bind an empty host/,
+      );
+      expect(() => createServer({ db: store.db, host: '', port: 0, allowNonLocal: true })).toThrow(
+        /refusing to bind an empty host/,
+      );
+    } finally {
+      store.close();
+    }
+  });
+
+  test('allowNonLocal: true binds a non-loopback host', () => {
+    const store = openStore(':memory:');
+    const server = createServer({
+      db: store.db,
+      host: '0.0.0.0',
+      port: 0,
+      allowNonLocal: true,
+    });
+    try {
+      expect(server.port).toBeGreaterThan(0);
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('the loopback default is unchanged', async () => {
+    const { store, server, base } = await startServer();
+    try {
+      const res = await fetch(`${base}/api/sessions`);
+      expect(res.status).toBe(200);
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+});
+
 describe('createServer /api/sessions query-param strictness', () => {
   async function expect400(query: string, parameter: string) {
     const { store, server, base } = await startServer();

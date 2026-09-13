@@ -9,6 +9,7 @@ export type ServeOptions = {
   db?: string;
   host?: string;
   port?: string;
+  expose?: boolean;
   /** Stored harness titles opt-out (`--no-titles`). The web-triggered scan
    * shares the same privacy switch as `scout import` (D7). */
   titles: boolean;
@@ -22,8 +23,25 @@ type ServeServerOptions = {
   db: Database;
   host: string;
   port: number;
+  allowNonLocal?: boolean;
   scan: () => Promise<ImportReport>;
 };
+
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1']);
+
+export function assertBindHost(host: string): string | undefined {
+  const h = host.trim();
+  if (h === '') return 'error: --host must be a non-empty bind address';
+  if (h === '0.0.0.0' || h === '::' || h === '*' || !LOOPBACK.has(h)) {
+    return `error: refusing to bind non-loopback host "${h}" (session metadata and POST /api/scan would be reachable on the network). Pass --expose to override.`;
+  }
+  return undefined;
+}
+
+/** Brackets an IPv6 literal so the listening URL is usable (`http://[::1]:8787`). */
+function formatHost(host: string): string {
+  return host.includes(':') ? `[${host}]` : host;
+}
 
 /**
  * Injectable seams (for tests). When omitted, the real implementations are used.
@@ -52,8 +70,17 @@ export type ServeDeps = {
  */
 export async function runServe(opts: ServeOptions, deps: ServeDeps = {}): Promise<number> {
   const dbPath = opts.db ?? (deps.defaultDbPath ?? defaultDbPath)();
-  await (deps.ensureDbDir ?? ensureDbDir)(dbPath);
   const host = opts.host ?? DEFAULT_HOST;
+  const expose = opts.expose === true;
+  const hostError = assertBindHost(host);
+  if (hostError !== undefined && (host.trim() === '' || !expose)) {
+    console.error(hostError);
+    return 2;
+  }
+  if (hostError !== undefined) {
+    console.error(`warn: binding ${host} — this process is reachable off loopback`);
+  }
+  await (deps.ensureDbDir ?? ensureDbDir)(dbPath);
   const port = opts.port === undefined ? DEFAULT_PORT : Number(opts.port);
   const { db, close } = (deps.openStore ?? openStore)(dbPath);
   // The scan callback is built here because the adapter registry and the
@@ -65,9 +92,10 @@ export async function runServe(opts: ServeOptions, deps: ServeDeps = {}): Promis
     db,
     host,
     port,
+    allowNonLocal: expose,
     scan: () => importAll({ adapters: deps.adapters ?? defaultAdapters, db, ctx }),
   });
-  console.error(`scout serve listening on http://${host}:${server.port}`);
+  console.error(`scout serve listening on http://${formatHost(host)}:${server.port}`);
 
   return await new Promise<number>((resolve) => {
     const shutdown = (): void => {

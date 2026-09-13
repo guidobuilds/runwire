@@ -28,9 +28,35 @@ export type CreateServerOptions = {
    * when the server is embedded without a scan source, which returns 503.
    */
   scan?: () => Promise<ImportReport>;
+  /**
+   * When false (default), `host` must be a loopback address. The API has no
+   * authentication, so bind is the only access control (F3); a non-loopback
+   * host is a deliberate opt-in the composition root maps from `--expose`.
+   */
+  allowNonLocal?: boolean;
 };
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
+
+/**
+ * Refuses to bind a host the unauthenticated API must never be reachable on
+ * (F3). An empty host is always refused: Bun would fall back to `0.0.0.0`
+ * (bind-all), which is never a valid `--host`. `allowNonLocal` only unlocks a
+ * deliberately named non-loopback address.
+ */
+function assertBindHost(host: string, allowNonLocal: boolean): void {
+  if (host === '') {
+    throw new Error('refusing to bind an empty host');
+  }
+  if (allowNonLocal) return;
+  const loopback =
+    host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
+  if (!loopback) {
+    throw new Error(
+      `refusing to bind ${host}: pass allowNonLocal to expose the unauthenticated API`,
+    );
+  }
+}
 
 function json(body: unknown, status: number, extraHeaders?: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
@@ -180,6 +206,10 @@ function parseFilterParams(
  * breaking the loopback-only default (design D-G). Routes API paths first so a
  * future static/SPA fallback (design D-N / ADR-8) is a contained addition.
  *
+ * **Loopback by default.** `createServer` refuses a non-loopback `host` (and
+ * an empty one) unless `allowNonLocal: true` is passed, because the API is
+ * unauthenticated (F3). `scout serve` maps that to the explicit `--expose` flag.
+ *
  * **API-only under `/api`.** Every endpoint is served exclusively under
  * `/api/*`; the root `/` and the legacy `/sessions*` / `/session-profiles*`
  * paths are intentionally NOT routed (they fall through to a 404) and there is
@@ -208,11 +238,17 @@ function profileEndpoint(path: string): { encodedId: string; endpoint: ProfileEn
 
 export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
   const { db, host, port } = opts;
+  // Bind is the control (no auth): refuse a non-loopback host unless the
+  // composition root opted in with an explicit flag (F3).
+  assertBindHost(host, opts.allowNonLocal === true);
   let scanInFlight: Promise<ImportReport> | undefined;
   return Bun.serve({
     hostname: host,
     port,
     idleTimeout: 0,
+    // No route reads a request body: cap it so a remote (opt-in) client cannot
+    // push arbitrary payloads into the local process (m3).
+    maxRequestBodySize: 1024,
     async fetch(req, server) {
       // Derive path from the URL, never `req.url` (the full absolute URL with
       // origin + query), so `/api/sessions?x=1` does not brute-match `/api/sessions`.
