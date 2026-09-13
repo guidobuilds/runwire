@@ -15,7 +15,7 @@ export const Route = createFileRoute('/sessions/$id')({
   component: SessionProfileRoute,
 });
 
-const DEFAULT_PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = 10;
 
 function PageSkeleton() {
   return (

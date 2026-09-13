@@ -30,7 +30,7 @@ import { useSessionProfileMergedEvents } from '@/queries/session-profile';
 import { formatNumber, formatTime, readableAgent, readableModel } from './format';
 
 const EM_DASH = '—';
-const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200] as const;
 
 export type EventsTableProps = {
   sessionId: string;
@@ -141,7 +141,7 @@ export function EventsTable({
   sessionId,
   initialFilter = 'signals',
   initialPage = 1,
-  pageSize: initialPageSize = 50,
+  pageSize: initialPageSize = 10,
   refresh = 0,
 }: EventsTableProps) {
   const [filter, setFilter] = useState<EventFilter>(initialFilter);

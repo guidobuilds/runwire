@@ -76,7 +76,7 @@ describe('/sessions/$id route (session profile)', () => {
     expect(timelineReq?.searchParams.get('field')).toBe('output');
 
     const mergedReqs = requests.filter((url) => url.pathname.endsWith('/profile/events'));
-    const tableReq = mergedReqs.find((url) => url.searchParams.get('limit') === '50');
+    const tableReq = mergedReqs.find((url) => url.searchParams.get('limit') === '10');
     expect(tableReq?.searchParams.get('filter')).toBe('signals');
     expect(tableReq?.searchParams.get('offset')).toBe('0');
   });
@@ -109,7 +109,7 @@ describe('/sessions/$id route (session profile)', () => {
     ).toEqual([]);
   });
 
-  it('paginates the events table to offset=50', async () => {
+  it('paginates the events table to offset=10', async () => {
     server.use(
       http.get('/api/sessions/:id/profile/events', ({ request }) => {
         const url = new URL(request.url);
@@ -136,7 +136,7 @@ describe('/sessions/$id route (session profile)', () => {
 
     await waitFor(() => {
       const mergedReqs = requests.filter((url) => url.pathname.endsWith('/profile/events'));
-      expect(mergedReqs.some((url) => url.searchParams.get('offset') === '50')).toBe(true);
+      expect(mergedReqs.some((url) => url.searchParams.get('offset') === '10')).toBe(true);
     });
   });
 

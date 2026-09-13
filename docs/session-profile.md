@@ -151,8 +151,9 @@ profile.
   per-field own/inclusive token totals are shown from `ApiSessionDetail`. No
   tool-call, turn, or API-call fields, and no summed token KPI.
 - Route search params do not control profile panel state. Token field defaults to
-  `output`; events filter defaults to `signals` and page to `1`. Each panel owns
-  its state and re-fetches only its own TanStack query when it changes.
+  `output`; events filter defaults to `signals` and page to `1`. The merged-events
+  table renders 10 rows per page by default; the API's own `limit` default stays 50.
+  Each panel owns its state and re-fetches only its own TanStack query when it changes.
 - An explicit **Refresh** bumps a refresh token that re-fetches every panel
   (spawns, signals, timeline, merged).
 - A failed profile section never hides the header; each panel surfaces its own

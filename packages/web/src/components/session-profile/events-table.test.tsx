@@ -23,7 +23,7 @@ function renderTable(props: Partial<React.ComponentProps<typeof EventsTable>> = 
 }
 
 describe('EventsTable — request shape', () => {
-  it('requests scope=tree, filter=signals, limit=50, offset=0 by default, via the real handlers', async () => {
+  it('requests scope=tree, filter=signals, limit=10, offset=0 by default, via the real handlers', async () => {
     let capturedUrl: URL | undefined;
     server.use(
       http.get('/api/sessions/:id/profile/events', ({ request }) => {
@@ -35,7 +35,7 @@ describe('EventsTable — request shape', () => {
           filter: 'signals',
           items: [],
           total: 0,
-          limit: 50,
+          limit: 10,
           offset: 0,
           excludedNullAtCount: 0,
         });
@@ -51,7 +51,7 @@ describe('EventsTable — request shape', () => {
     expect(capturedUrl?.searchParams.get('view')).toBeNull();
     expect(capturedUrl?.searchParams.get('scope')).toBe('tree');
     expect(capturedUrl?.searchParams.get('filter')).toBe('signals');
-    expect(capturedUrl?.searchParams.get('limit')).toBe('50');
+    expect(capturedUrl?.searchParams.get('limit')).toBe('10');
     expect(capturedUrl?.searchParams.get('offset')).toBe('0');
   });
 });
