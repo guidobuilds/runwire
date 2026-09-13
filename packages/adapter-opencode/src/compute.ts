@@ -271,11 +271,20 @@ export async function computeBundle(input: ComputeSessionInput): Promise<Session
   }
 
   if (unknownTypes.size > 0) {
-    const label = [...unknownTypes.entries()].map(([t, c]) => `${t}(${c})`).join(', ');
+    // Count-only: never interpolate the raw `session_message.type` (TEXT) into
+    // the diagnostic message. A long or multiline type would make
+    // `makeDiagnostic` throw and abort the whole origin; a short prompt-like
+    // value would leak record content (M3, ARCHITECTURE §7).
+    const count = [...unknownTypes.values()].reduce((a, b) => a + b, 0);
     diagnostics.push(
-      makeDiagnostic('info', 'unknown-record-type', `Saw unrecognized message type(s): ${label}`, {
-        count: [...unknownTypes.values()].reduce((a, b) => a + b, 0),
-      }),
+      makeDiagnostic(
+        'info',
+        'unknown-record-type',
+        `Saw ${count} record(s) of an unrecognized type`,
+        {
+          count,
+        },
+      ),
     );
   }
 

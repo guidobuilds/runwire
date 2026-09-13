@@ -190,6 +190,41 @@ describe('computeBundle', () => {
     expect(bundle.session.depth).toBe(1);
   });
 
+  test('an unknown type with a long or multiline name yields a count-only diagnostic (no throw)', async () => {
+    const ctx = ctxFor('small');
+    const session: OpenCodeSession = {
+      id: 'current-unknown',
+      projectId: 'p',
+      directory: '/home/u/proj',
+    };
+    const longType = 'x'.repeat(300);
+    const messages: OpenCodeMessage[] = [
+      { type: longType, seq: 1, data: {} },
+      { type: 'a\nb', seq: 2, data: {} },
+      { type: longType, seq: 3, data: {} },
+    ];
+    const bundle = await computeBundle({
+      harnessId: 'opencode',
+      origin: 'current',
+      session,
+      messages,
+      sessionsById: new Map([[session.id, session]]),
+      projects: new Map(),
+      recordDiagnostics: [],
+      ctx,
+    });
+
+    const diagnostic = bundle.diagnostics.find((d) => d.code === 'unknown-record-type');
+    expect(diagnostic).toBeDefined();
+    if (!diagnostic) throw new Error('expected an unknown-record-type diagnostic');
+    expect(diagnostic.level).toBe('info');
+    expect(diagnostic.count).toBe(3);
+    expect(diagnostic.message).toBe('Saw 3 record(s) of an unrecognized type');
+    expect(diagnostic.message.length).toBeLessThanOrEqual(200);
+    expect(diagnostic.message.includes('\n')).toBe(false);
+    expect(diagnostic.message.includes(longType)).toBe(false);
+  });
+
   test('emits token-total-drift when the harness aggregate differs from the per-call sum', async () => {
     const ctx = ctxFor('small');
     const records = await readOrigin(ctx, 'current');

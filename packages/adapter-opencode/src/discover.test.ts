@@ -62,6 +62,40 @@ describe('discover', () => {
     expect(second).toHaveLength(0);
   });
 
+  test('a session whose computeBundle throws yields a source-read-failed stub and the rest still stream', async () => {
+    const base = ctxFor('all');
+    let readFileCalls = 0;
+    const ctx: AdapterContext = {
+      ...base,
+      fs: {
+        ...base.fs,
+        // `computeBundle` resolves the project via ctx.fs.readFile; making the
+        // first call throw forces exactly the first sorted session's fold to
+        // fail, so the wrapper's catch path (M3) is exercised end-to-end
+        // without mocking the compute module (which would leak across files).
+        readFile: async (path: string) => {
+          readFileCalls++;
+          if (readFileCalls === 1) throw new Error('boom: fold failed');
+          return base.fs.readFile(path);
+        },
+      },
+    };
+
+    const bundles = [];
+    for await (const b of discover(ctx, new Map())) bundles.push(b);
+
+    const failed = bundles.find((b) => b.session.id === 'opencode:current:ses_all_1');
+    expect(failed).toBeDefined();
+    expect(failed?.diagnostics.map((d) => d.code)).toContain('source-read-failed');
+    expect(failed?.diagnostics[0]?.message).toBe('boom: fold failed');
+    expect(failed?.steps).toEqual([]);
+
+    // The throw did not abort the origin: the next current session and the
+    // legacy origin still stream.
+    expect(bundles.some((b) => b.session.id === 'opencode:current:ses_all_child')).toBe(true);
+    expect(bundles.some((b) => b.session.id === 'opencode:legacy:ses_all_legacy')).toBe(true);
+  });
+
   test('never throws on a malformed fixture (diagnostics carried, no throw)', async () => {
     const bundles = [];
     await expect(

@@ -1,5 +1,7 @@
-import type { AdapterContext, Known, SessionBundle, SqliteReader } from '@scout/core';
-import { computeBundle } from './compute';
+import type { AdapterContext, Diagnostic, Known, SessionBundle, SqliteReader } from '@scout/core';
+import { makeDiagnostic } from '@scout/core';
+import type { ComputeSessionInput } from './compute';
+import { computeBundle, computeDepth } from './compute';
 import {
   OPENCODE_ORIGINS,
   opencodeDataDir,
@@ -7,10 +9,58 @@ import {
   parseIdFromSourceId,
   parseOriginFromSourceId,
   sourceIdFor,
+  sourceLocatorFor,
 } from './paths';
 import { readOrigin } from './records';
 
 const HARNESS_ID = 'opencode';
+
+function sanitizeErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const oneLine = raw.replace(/\s*\n\s*/g, ' ').trim();
+  return oneLine.length > 180 ? `${oneLine.slice(0, 177)}...` : oneLine;
+}
+
+/**
+ * Computes one session, converting any throw inside `computeBundle` (e.g. a
+ * project resolve failure) into a `source-read-failed` stub. Matches the JSONL
+ * adapters' `computeSourceBundle` (M3): `discover` must not abort the whole
+ * origin because one session's fold threw.
+ */
+async function computeSessionBundle(input: ComputeSessionInput): Promise<SessionBundle> {
+  try {
+    return await computeBundle(input);
+  } catch (err) {
+    const { harnessId, origin, session, messages, sessionsById, ctx } = input;
+    const sourceId = sourceIdFor(origin, session.id);
+    const projectKey = session.directory ?? session.id;
+    const diagnostic: Diagnostic = makeDiagnostic(
+      'error',
+      'source-read-failed',
+      sanitizeErrorMessage(err),
+    );
+    return {
+      project: { key: projectKey, name: projectKey, identity: 'cwd' },
+      session: {
+        id: sourceId,
+        harnessId,
+        projectKey,
+        parentId: session.parentId ? sourceIdFor(origin, session.parentId) : undefined,
+        relation: session.parentId ? 'subagent' : session.forkSessionId ? 'fork' : undefined,
+        depth: computeDepth(session, sessionsById),
+        agentType: session.agent,
+        spawnCallId: session.spawnCallId,
+        sourceId,
+        sourceLocator: sourceLocatorFor(ctx, origin),
+        sourcePath: sourceId,
+        sourceSize: messages.length,
+        sourceMtime: session.timeUpdated ?? session.timeCreated ?? 0,
+      },
+      steps: [],
+      diagnostics: [diagnostic],
+    };
+  }
+}
 
 export async function probe(
   ctx: AdapterContext,
@@ -60,8 +110,10 @@ async function countSessions(ctx: AdapterContext, path: string): Promise<number>
  * Streams one metadata-only `SessionBundle` per session across BOTH origins
  * (current then legacy), sorted by id within each origin, skipping a source
  * whose `sourceId` matches `known` at `{size,mtime}`. Never throws: a bad row
- * is carried as a content-free diagnostic; a DB-level read failure yields
- * nothing for that origin (the `sourceExists` path retains its known sessions).
+ * is carried as a content-free diagnostic; a session whose fold throws yields
+ * a `source-read-failed` stub so the rest of the origin still streams; a
+ * DB-level read failure yields nothing for that origin (the `sourceExists`
+ * path retains its known sessions).
  */
 export async function* discover(ctx: AdapterContext, known: Known): AsyncIterable<SessionBundle> {
   for (const origin of OPENCODE_ORIGINS) {
@@ -77,7 +129,7 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
       const k = known.get(sourceId);
       if (k !== undefined && k.size === sourceSize && k.mtime === sourceMtime) continue;
 
-      yield await computeBundle({
+      yield await computeSessionBundle({
         harnessId: HARNESS_ID,
         origin,
         session,
