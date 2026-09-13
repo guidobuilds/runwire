@@ -208,6 +208,7 @@ function profileEndpoint(path: string): { encodedId: string; endpoint: ProfileEn
 
 export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
   const { db, host, port } = opts;
+  let scanInFlight: Promise<ImportReport> | undefined;
   return Bun.serve({
     hostname: host,
     port,
@@ -247,22 +248,31 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
           if (opts.scan === undefined) {
             return json({ error: 'scan unavailable' }, 503);
           }
+          if (scanInFlight !== undefined) {
+            return json({ error: 'scan in progress' }, 409);
+          }
           // A full import can await far longer than Bun's idle timeout before
           // any response bytes are written; opt this request out explicitly as
           // well as the server-wide `idleTimeout: 0` above.
           server.timeout(req, 0);
-          const report = await opts.scan();
-          // Mirror the CLI's failure rule: an adapter `error` or any failed
-          // bundle in the `ImportReport` is a failed scan. Returning 2xx here
-          // would let the web UI treat a partial import as success and
-          // navigate away from the dialog that reports what failed.
-          const failed = Object.values(report.perAdapter).some(
-            (entry) => entry.error !== undefined || entry.failed > 0,
-          );
-          if (failed) {
-            return json({ error: 'one or more imports failed', report }, 500);
+          const inflight = opts.scan();
+          scanInFlight = inflight;
+          try {
+            const report = await inflight;
+            // Mirror the CLI's failure rule: an adapter `error` or any failed
+            // bundle in the `ImportReport` is a failed scan. Returning 2xx here
+            // would let the web UI treat a partial import as success and
+            // navigate away from the dialog that reports what failed.
+            const failed = Object.values(report.perAdapter).some(
+              (entry) => entry.error !== undefined || entry.failed > 0,
+            );
+            if (failed) {
+              return json({ error: 'one or more imports failed', report }, 500);
+            }
+            return json(report, 200);
+          } finally {
+            scanInFlight = undefined;
           }
-          return json(report, 200);
         }
         if (path === SESSIONS_PREFIX) {
           if (method !== 'GET') return methodNotAllowed();

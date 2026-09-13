@@ -21,6 +21,7 @@ bun run typecheck
 - Unknown/duplicate/invalid query params → 400. Each endpoint has its own whitelist;
   `/api/sessions/stats` accepts filters only (no `limit`/`offset`/`sort`).
 - Non-GET on a known path → 405 with `Allow: GET`.
+- `POST /api/scan` is single-flight: a concurrent POST while a scan is running → 409 `{ error: 'scan in progress' }`.
 - A session id is the whole path remainder (a literal `/` or `%2F` stays in the id).
 - Parse integers/booleans strictly (`parseIntegerParam`); validate dates before
   `toISOString()`.

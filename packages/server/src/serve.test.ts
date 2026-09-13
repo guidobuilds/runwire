@@ -561,6 +561,49 @@ describe('createServer /api/scan', () => {
     }
   });
 
+  test('F2: a concurrent POST while a scan is in flight returns 409 { error: scan in progress }', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let calls = 0;
+    const scan = async (): Promise<ImportReport> => {
+      calls += 1;
+      entered();
+      await gate;
+      return report;
+    };
+    const { store, server, base } = await startServer({ scan });
+    try {
+      const first = fetch(`${base}/api/scan`, { method: 'POST' });
+      // Wait until the first handler owns the lock before firing the second.
+      await started;
+      const second = await fetch(`${base}/api/scan`, { method: 'POST' });
+      expect(second.status).toBe(409);
+      expect(await second.json()).toEqual({ error: 'scan in progress' });
+      // The rejected POST never reached the scan callback.
+      expect(calls).toBe(1);
+
+      release();
+      const firstRes = await first;
+      expect(firstRes.status).toBe(200);
+      expect(await firstRes.json()).toEqual(report);
+
+      // The lock was released in `finally`: a fresh POST runs again.
+      const third = await fetch(`${base}/api/scan`, { method: 'POST' });
+      expect(third.status).toBe(200);
+      expect(calls).toBe(2);
+    } finally {
+      release();
+      server.stop();
+      store.close();
+    }
+  });
+
   test('a report with an adapter error returns 500 with the report, not a false 200', async () => {
     const failedReport: ImportReport = {
       perAdapter: {
@@ -636,15 +679,24 @@ describe('createServer /api/scan', () => {
     }
   });
 
-  test('a throwing scan callback returns 500, not a crashed server', async () => {
+  test('F2: a throwing scan callback returns 500 and releases the lock for the next POST', async () => {
+    let calls = 0;
     const scan = async (): Promise<ImportReport> => {
-      throw new Error('boom');
+      calls += 1;
+      if (calls === 1) throw new Error('boom');
+      return report;
     };
     const { store, server, base } = await startServer({ scan });
     try {
       const res = await fetch(`${base}/api/scan`, { method: 'POST' });
       expect(res.status).toBe(500);
       expect(await res.json()).toEqual({ error: 'internal error' });
+
+      // The throw path clears the lock too, so the next scan is not a 409.
+      const retry = await fetch(`${base}/api/scan`, { method: 'POST' });
+      expect(retry.status).toBe(200);
+      expect(await retry.json()).toEqual(report);
+      expect(calls).toBe(2);
     } finally {
       server.stop();
       store.close();
