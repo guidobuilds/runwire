@@ -2,6 +2,7 @@ import { CodeXmlIcon } from 'lucide-react';
 import type { ComponentPropsWithoutRef } from 'react';
 import claudeCodeIcon from '@/assets/harnesses/claude-code.svg';
 import opencodeIcon from '@/assets/harnesses/opencode.svg';
+import piIcon from '@/assets/harnesses/pi.svg';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -13,6 +14,7 @@ type Harness = {
 const HARNESS_ICONS: Record<string, { src: string; invertInDark?: boolean }> = {
   'claude-code': { src: claudeCodeIcon },
   opencode: { src: opencodeIcon, invertInDark: true },
+  pi: { src: piIcon, invertInDark: true },
 };
 
 /** Just the brand mark for a harness id (no tooltip/label chrome). Exposed so
@@ -44,9 +46,10 @@ type HarnessIdentityProps = ComponentPropsWithoutRef<'span'> & {
   showId?: boolean;
 };
 
-/** Brand assets sourced from https://thesvg.org/icon/claude-code and
- * https://thesvg.org/icon/opencode. Unknown adapters retain a neutral fallback
- * so imported third-party harnesses never render a broken image. */
+/** Brand assets sourced from https://thesvg.org/icon/claude-code,
+ * https://thesvg.org/icon/opencode, and
+ * https://dashboardicons.com/icons/pi-coding-agent. Unknown adapters retain a
+ * neutral fallback so imported third-party harnesses never render a broken image. */
 export function HarnessIdentity({
   harness,
   showId = false,
