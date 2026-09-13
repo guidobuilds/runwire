@@ -25,10 +25,12 @@ describe('useScanMutation', () => {
     expect(result.current.data).toEqual(mockImportReport);
   });
 
-  it('invalidates every sessions query on success', async () => {
+  it('invalidates sessions, harnesses and session-profile queries on success', async () => {
     const { queryClient, wrapper } = setup();
     queryClient.setQueryData(['sessions', {}], { items: [], total: 0, limit: 50, offset: 0 });
     queryClient.setQueryData(['sessions', 'sess-1'], { id: 'sess-1' });
+    queryClient.setQueryData(['harnesses'], []);
+    queryClient.setQueryData(['session-profile', 'sess-1', 'signals', 'tree', 0], {});
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
 
     const { result } = renderHook(() => useScanMutation(), { wrapper });
@@ -36,10 +38,16 @@ describe('useScanMutation', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['sessions'] });
-    // `invalidateQueries({ queryKey: ['sessions'] })` is prefix-matched, so both
-    // the list and the detail entry are marked stale.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['harnesses'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['session-profile'] });
+    // Prefix-matched, so the list/detail entries and every profile view are
+    // marked stale even though the harnesses query lives at `staleTime: Infinity`.
     expect(queryClient.getQueryState(['sessions', {}])?.isInvalidated).toBe(true);
     expect(queryClient.getQueryState(['sessions', 'sess-1'])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(['harnesses'])?.isInvalidated).toBe(true);
+    expect(
+      queryClient.getQueryState(['session-profile', 'sess-1', 'signals', 'tree', 0])?.isInvalidated,
+    ).toBe(true);
   });
 
   it('does not invalidate sessions when the scan fails', async () => {
