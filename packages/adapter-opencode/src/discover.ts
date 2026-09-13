@@ -1,4 +1,4 @@
-import type { AdapterContext, FsStat, Known, SessionBundle, SqliteReader } from '@scout/core';
+import type { AdapterContext, Known, SessionBundle, SqliteReader } from '@scout/core';
 import { computeBundle } from './compute';
 import {
   OPENCODE_ORIGINS,
@@ -93,12 +93,17 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
 
 /**
  * Explicit per-source existence check (design §2.6). Returns `false` (delete)
- * ONLY when the origin DB file is confirmed absent (`fs.stat(sourceLocator)`
- * is undefined) or when the session id is confirmed absent in a successfully
- * read DB; returns `true` (retain) on any DB open/read/stat error so a
- * transient error or an unreadable store never mass-deletes. This delete path
- * is only ever reached after a full successful discovery (importAll skips
- * removal on a mid-stream `discover` throw).
+ * only when the session id is confirmed absent in a successfully-read DB;
+ * returns `true` (retain) otherwise.
+ *
+ * Adapter-only hardening for M1: `fs.stat` collapses "missing" and "I/O error"
+ * (EACCES/EIO) into `undefined`, so it is never consulted here. Opening a
+ * missing/unreadable/corrupt/locked DB throws, and any open/read error retains
+ * — a transient error never mass-deletes. Consequence: a truly deleted
+ * `opencode.db` retains its rows until core `stat` can distinguish ENOENT
+ * (ARCHITECTURE §6 priority). This delete path is only ever reached after a
+ * full successful discovery (importAll skips removal on a mid-stream
+ * `discover` throw).
  */
 export async function sourceExists(
   ctx: AdapterContext,
@@ -106,14 +111,6 @@ export async function sourceExists(
 ): Promise<boolean> {
   const locator = source.sourceLocator;
   if (!locator) return true;
-
-  let stat: FsStat | undefined;
-  try {
-    stat = await ctx.fs.stat(locator);
-  } catch {
-    return true; // stat error -> retain (transient/permission)
-  }
-  if (stat === undefined) return false; // origin DB file confirmed absent -> delete that origin's sessions
 
   const origin = parseOriginFromSourceId(source.sourceId);
   const id = parseIdFromSourceId(source.sourceId);
@@ -135,7 +132,9 @@ export async function sourceExists(
     const rows = reader.all(`SELECT id FROM ${table} WHERE id = ?`, [id]);
     return rows.length > 0; // present -> keep; confirmed absent -> delete
   } catch {
-    return true; // DB open/read error -> retain (never mass-delete)
+    // Missing file, permission, corrupt, lock: retain. Vanished-origin
+    // deletion requires a positive ENOENT signal (core `stat`, follow-up).
+    return true;
   } finally {
     reader?.close();
   }

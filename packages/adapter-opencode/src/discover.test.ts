@@ -74,16 +74,6 @@ describe('discover', () => {
 });
 
 describe('sourceExists', () => {
-  test('returns false when the origin DB file is confirmed absent (delete)', async () => {
-    const ctx = ctxFor('small');
-    // A locator that does not exist on disk.
-    const absent = await sourceExists(ctx, {
-      sourceId: 'opencode:current:ses_small',
-      sourceLocator: '/does/not/exist/opencode.db',
-    });
-    expect(absent).toBe(false);
-  });
-
   test('returns true when the id is present in a successfully-read DB (keep)', async () => {
     const ctx = ctxFor('small');
     const present = await sourceExists(ctx, {
@@ -118,7 +108,7 @@ describe('sourceExists', () => {
     expect(absent).toBe(false);
   });
 
-  test('a present-but-unreadable locator (open throws) retains (returns true)', async () => {
+  test('a present-but-unreadable directory locator (open throws) retains (returns true)', async () => {
     const ctx = ctxFor('small');
     // The data dir exists (stat succeeds) but is not a SQLite DB, so opening it
     // throws; sourceExists must return true so a transient error never deletes.
@@ -126,6 +116,69 @@ describe('sourceExists', () => {
     const result = await sourceExists(ctx, {
       sourceId: 'opencode:current:ses_small',
       sourceLocator: locator,
+    });
+    expect(result).toBe(true);
+  });
+
+  test('a present-but-unreadable file locator (open throws) retains (returns true)', async () => {
+    const ctx = ctxFor('small');
+    // A real file that exists but is not a SQLite DB (the fixture snapshot).
+    const locator = join(FIXTURES_ROOT, 'small', 'expected.json');
+    const result = await sourceExists(ctx, {
+      sourceId: 'opencode:current:ses_small',
+      sourceLocator: locator,
+    });
+    expect(result).toBe(true);
+  });
+
+  test('a missing locator retains (returns true) until core can signal ENOENT', async () => {
+    const ctx = ctxFor('small');
+    // Adapter-only trade-off (M1): a deleted DB is retained, not deleted,
+    // because `fs.stat === undefined` cannot distinguish "missing" from
+    // "I/O error" under `createBunFs` (ARCHITECTURE §6 priority).
+    const absent = await sourceExists(ctx, {
+      sourceId: 'opencode:current:ses_small',
+      sourceLocator: '/does/not/exist/opencode.db',
+    });
+    expect(absent).toBe(true);
+  });
+
+  test('opaque stat (undefined) does not delete even when open throws non-ENOENT (returns true)', async () => {
+    const base = ctxFor('small');
+    const ctx: AdapterContext = {
+      ...base,
+      fs: {
+        ...base.fs,
+        // The exact M1 shape: stat is opaque AND the read fails for another
+        // reason. `undefined` must never be read as "confirmed absent".
+        stat: async () => undefined,
+        openSqliteReadonly: () => {
+          throw new Error('EACCES: permission denied, open opencode.db');
+        },
+      },
+    };
+    const result = await sourceExists(ctx, {
+      sourceId: 'opencode:current:ses_small',
+      sourceLocator: join(base.home, '.local', 'share', 'opencode', 'opencode.db'),
+    });
+    expect(result).toBe(true);
+  });
+
+  test('an explicit ENOENT open error still retains (returns true)', async () => {
+    const base = ctxFor('small');
+    const ctx: AdapterContext = {
+      ...base,
+      fs: {
+        ...base.fs,
+        stat: async () => undefined,
+        openSqliteReadonly: () => {
+          throw new Error('ENOENT: no such file or directory, open opencode.db');
+        },
+      },
+    };
+    const result = await sourceExists(ctx, {
+      sourceId: 'opencode:current:ses_small',
+      sourceLocator: join(base.home, '.local', 'share', 'opencode', 'opencode.db'),
     });
     expect(result).toBe(true);
   });

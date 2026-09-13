@@ -74,8 +74,8 @@ describe('connector is CORE-representable (no content parts)', () => {
   });
 });
 
-describe('confirmed-absent origin DB file removes that origin sessions', () => {
-  test('a full import, then the current DB file disappears (legacy remains), removes only the current-origin sessions', async () => {
+describe('confirmed-absent origin DB file retains its sessions (adapter-only M1 trade-off)', () => {
+  test('a full import, then the current DB file disappears (legacy remains), removes nothing', async () => {
     // Build a scratch home with the all-fixture layout (current + legacy DBs).
     const srcHome = join(FIXTURES_ROOT, 'all', 'home', '.local', 'share', 'opencode');
     const scratch = mkdtempSync(join(tmpdir(), 'oc-absent-'));
@@ -97,16 +97,22 @@ describe('confirmed-absent origin DB file removes that origin sessions', () => {
       const first = await importAll({ adapters: [adapter], db, ctx });
       expect(reportFor(first, 'opencode').imported).toBe(3);
 
-      // Confirm-absent the current DB file (remove opencode.db, keep the legacy
-      // store) so probe stays installed.
+      // Remove opencode.db (keep the legacy store) so probe stays installed.
       rmSync(join(scratchHome, 'opencode.db'));
 
       const second = await importAll({ adapters: [adapter], db, ctx });
-      // current-origin sessions are removed (confirmed absent), legacy retained.
-      expect(reportFor(second, 'opencode').removed).toBe(2);
+      // Adapter-only hardening (M1/F1): `sourceExists` retains on any open
+      // error, including a missing file, because `fs.stat === undefined` cannot
+      // distinguish "missing" from "I/O error" until core splits it (#24). So a
+      // vanished origin no longer removes its sessions in this round.
+      expect(reportFor(second, 'opencode').removed).toBe(0);
       const remaining = db.query('SELECT id FROM sessions ORDER BY id').all() as { id: string }[];
       const ids = remaining.map((r) => r.id);
-      expect(ids).toEqual(['opencode:legacy:ses_all_legacy']);
+      expect(ids).toEqual([
+        'opencode:current:ses_all_1',
+        'opencode:current:ses_all_child',
+        'opencode:legacy:ses_all_legacy',
+      ]);
     } finally {
       close();
       rmSync(scratch, { recursive: true, force: true });
