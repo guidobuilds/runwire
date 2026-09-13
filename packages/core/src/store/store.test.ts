@@ -1,5 +1,8 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { migrate } from './schema';
 import { openStore } from './store';
 
@@ -33,6 +36,48 @@ describe('openStore', () => {
     const store = openStore(':memory:');
     const row = store.db.query('PRAGMA foreign_keys').get() as { foreign_keys: number };
     expect(row.foreign_keys).toBe(1);
+    store.close();
+  });
+});
+
+describe('openStore file permissions (SEC-03)', () => {
+  test.skipIf(process.platform === 'win32')(
+    'restricts a new file and its WAL sidecars to owner-only (0o600)',
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'scout-store-'));
+      const path = join(dir, 'scout.db');
+      const store = openStore(path);
+      try {
+        for (const p of [path, `${path}-wal`, `${path}-shm`]) {
+          if (!existsSync(p)) continue;
+          expect(statSync(p).mode & 0o077).toBe(0);
+        }
+        expect(statSync(path).mode & 0o077).toBe(0);
+      } finally {
+        store.close();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test.skipIf(process.platform === 'win32')('tightens a pre-existing lax file on open', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'scout-store-'));
+    const path = join(dir, 'scout.db');
+    // Simulates a DB created before SEC-03 under umask 022.
+    writeFileSync(path, '');
+    chmodSync(path, 0o644);
+    const store = openStore(path);
+    try {
+      expect(statSync(path).mode & 0o077).toBe(0);
+    } finally {
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test(':memory: still opens without touching the filesystem', () => {
+    const store = openStore(':memory:');
+    expect(store.db).toBeDefined();
     store.close();
   });
 });
