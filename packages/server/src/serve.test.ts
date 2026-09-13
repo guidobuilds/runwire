@@ -514,6 +514,10 @@ describe('createServer /api/harnesses', () => {
 });
 
 describe('createServer /api/scan', () => {
+  /** The CSRF header the UI sends; every POST that must reach the handler
+   * proves it is same-origin with it (SEC-02). */
+  const scanHeaders = { 'X-Scout-Scan': '1' };
+
   const report: ImportReport = {
     perAdapter: {
       fake: { discovered: 2, imported: 1, skipped: 1, removed: 0, failed: 0 },
@@ -563,6 +567,63 @@ describe('createServer /api/scan', () => {
     };
   }
 
+  test('a bare POST is rejected with 403 and never runs the scan (SEC-02)', async () => {
+    let calls = 0;
+    const scan = async (): Promise<ImportReport> => {
+      calls += 1;
+      return report;
+    };
+    const { store, server, base } = await startServer({ scan });
+    try {
+      // A cross-site HTML form is a simple request: it cannot set
+      // `X-Scout-Scan`, so the guard rejects it before any side effect.
+      const res = await fetch(`${base}/api/scan`, { method: 'POST' });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: 'forbidden' });
+      expect(calls).toBe(0);
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('a wrong or empty X-Scout-Scan value is rejected with 403 (SEC-02)', async () => {
+    let calls = 0;
+    const scan = async (): Promise<ImportReport> => {
+      calls += 1;
+      return report;
+    };
+    const { store, server, base } = await startServer({ scan });
+    try {
+      for (const value of ['0', 'true', 'yes', '']) {
+        const res = await fetch(`${base}/api/scan`, {
+          method: 'POST',
+          headers: { 'X-Scout-Scan': value },
+        });
+        expect(res.status, value).toBe(403);
+      }
+      expect(calls).toBe(0);
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('an application/json content-type alone admits the POST (SEC-02)', async () => {
+    const { store, server, base } = await startServer({ scan: async () => report });
+    try {
+      const res = await fetch(`${base}/api/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual(report);
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
   test('F1: disables Bun idleTimeout and opts the scan request out of it', async () => {
     const capture = captureServeConfig();
     try {
@@ -570,7 +631,7 @@ describe('createServer /api/scan', () => {
       try {
         // The default 10s idle timeout would close a large scan mid-await.
         expect(capture.idleTimeout()).toBe(0);
-        const res = await fetch(`${base}/api/scan`, { method: 'POST' });
+        const res = await fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
         expect(res.status).toBe(200);
         // `server.timeout(req, 0)` runs before the import is awaited.
         expect(capture.timeoutSeconds).toEqual([0]);
@@ -590,7 +651,7 @@ describe('createServer /api/scan', () => {
     };
     const { store, server, base } = await startServer({ scan });
     try {
-      const res = await fetch(`${base}/api/scan`, { method: 'POST' });
+      const res = await fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual(report);
     } finally {
@@ -607,7 +668,7 @@ describe('createServer /api/scan', () => {
     };
     const { store, server, base } = await startServer({ scan });
     try {
-      const res = await fetch(`${base}/api/scan`, { method: 'POST' });
+      const res = await fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toContain('application/json');
       expect(await res.json()).toEqual(report);
@@ -636,10 +697,10 @@ describe('createServer /api/scan', () => {
     };
     const { store, server, base } = await startServer({ scan });
     try {
-      const first = fetch(`${base}/api/scan`, { method: 'POST' });
+      const first = fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
       // Wait until the first handler owns the lock before firing the second.
       await started;
-      const second = await fetch(`${base}/api/scan`, { method: 'POST' });
+      const second = await fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
       expect(second.status).toBe(409);
       expect(await second.json()).toEqual({ error: 'scan in progress' });
       // The rejected POST never reached the scan callback.
@@ -651,7 +712,7 @@ describe('createServer /api/scan', () => {
       expect(await firstRes.json()).toEqual(report);
 
       // The lock was released in `finally`: a fresh POST runs again.
-      const third = await fetch(`${base}/api/scan`, { method: 'POST' });
+      const third = await fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
       expect(third.status).toBe(200);
       expect(calls).toBe(2);
     } finally {
@@ -677,7 +738,7 @@ describe('createServer /api/scan', () => {
     };
     const { store, server, base } = await startServer({ scan: async () => failedReport });
     try {
-      const res = await fetch(`${base}/api/scan`, { method: 'POST' });
+      const res = await fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
       expect(res.status).toBe(500);
       expect(await res.json()).toEqual({
         error: 'one or more imports failed',
@@ -698,7 +759,7 @@ describe('createServer /api/scan', () => {
     };
     const { store, server, base } = await startServer({ scan: async () => failedReport });
     try {
-      const res = await fetch(`${base}/api/scan`, { method: 'POST' });
+      const res = await fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
       expect(res.status).toBe(500);
       expect(await res.json()).toEqual({
         error: 'one or more imports failed',
@@ -713,7 +774,7 @@ describe('createServer /api/scan', () => {
   test('returns 503 { error: scan unavailable } when no scan callback was injected', async () => {
     const { store, server, base } = await startServer();
     try {
-      const res = await fetch(`${base}/api/scan`, { method: 'POST' });
+      const res = await fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
       expect(res.status).toBe(503);
       expect(await res.json()).toEqual({ error: 'scan unavailable' });
     } finally {
@@ -722,14 +783,19 @@ describe('createServer /api/scan', () => {
     }
   });
 
-  test('a non-POST on /api/scan returns 405 with an Allow: POST header', async () => {
+  test('a non-POST on /api/scan returns 405 even without the CSRF header', async () => {
     const scan = async (): Promise<ImportReport> => report;
     const { store, server, base } = await startServer({ scan });
     try {
-      const res = await fetch(`${base}/api/scan`);
-      expect(res.status).toBe(405);
-      expect(res.headers.get('allow')).toBe('POST');
-      expect(await res.json()).toEqual({ error: 'method not allowed' });
+      // Method is checked before the CSRF guard: a GET is a 405 either way.
+      const bare = await fetch(`${base}/api/scan`);
+      expect(bare.status).toBe(405);
+      expect(bare.headers.get('allow')).toBe('POST');
+      expect(await bare.json()).toEqual({ error: 'method not allowed' });
+
+      const withHeader = await fetch(`${base}/api/scan`, { headers: scanHeaders });
+      expect(withHeader.status).toBe(405);
+      expect(withHeader.headers.get('allow')).toBe('POST');
     } finally {
       server.stop();
       store.close();
@@ -745,12 +811,12 @@ describe('createServer /api/scan', () => {
     };
     const { store, server, base } = await startServer({ scan });
     try {
-      const res = await fetch(`${base}/api/scan`, { method: 'POST' });
+      const res = await fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
       expect(res.status).toBe(500);
       expect(await res.json()).toEqual({ error: 'internal error' });
 
       // The throw path clears the lock too, so the next scan is not a 409.
-      const retry = await fetch(`${base}/api/scan`, { method: 'POST' });
+      const retry = await fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
       expect(retry.status).toBe(200);
       expect(await retry.json()).toEqual(report);
       expect(calls).toBe(2);

@@ -5,9 +5,13 @@ meta {
 }
 
 post {
-  url: {{baseUrl}}/scan
+  url: {{baseUrl}}/api/scan
   body: none
   auth: none
+}
+
+headers {
+  X-Scout-Scan: 1
 }
 
 docs {

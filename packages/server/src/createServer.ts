@@ -71,6 +71,22 @@ function methodNotAllowed(allow = 'GET'): Response {
   return json({ error: 'method not allowed' }, 405, { allow });
 }
 
+/** The custom header that proves `POST /api/scan` came from `fetch`, not a
+ * cross-site HTML form (SEC-02). */
+const SCAN_CSRF_HEADER = 'x-scout-scan';
+
+/**
+ * CSRF guard for the one mutating endpoint (SEC-02). A malicious page can POST
+ * `/api/scan` as a CORS "simple request", but it cannot set a custom header or
+ * an `application/json` content-type without triggering a preflight, which this
+ * server never answers. The same-origin UI `fetch` sets the header explicitly.
+ */
+function hasScanCsrfProof(req: Request): boolean {
+  if (req.headers.get(SCAN_CSRF_HEADER) === '1') return true;
+  const contentType = req.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
+  return contentType === 'application/json';
+}
+
 /** The only query params accepted on `GET /api/sessions` (design D-3). */
 const VALID_QUERY_PARAMS = new Set([
   'limit',
@@ -281,6 +297,13 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
           // imported sessions); the check comes first so a wrong method is
           // a 405 even when no scan callback was injected.
           if (method !== 'POST') return methodNotAllowed('POST');
+          // CSRF guard (SEC-02) runs before the unavailable/in-flight checks:
+          // a form POST that cannot prove it is same-origin is refused without
+          // learning or changing any server state. Method stays first so a
+          // wrong method is still a 405 even without the header.
+          if (!hasScanCsrfProof(req)) {
+            return json({ error: 'forbidden' }, 403);
+          }
           if (opts.scan === undefined) {
             return json({ error: 'scan unavailable' }, 503);
           }
