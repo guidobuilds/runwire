@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -122,6 +123,46 @@ describe('scout import', () => {
     expect(code).toBe(0);
     expect(stderr).toContain('imported=1');
   });
+
+  test.skipIf(process.platform === 'win32')(
+    '--db ~/.scout/scout.db writes under $HOME, never a literal cwd/~ directory',
+    async () => {
+      const fakeHome = await mkdtemp(join(tmpdir(), 'scout-cli-home-test-'));
+      try {
+        const proc = Bun.spawn(
+          [
+            process.execPath,
+            CLI_SCRIPT,
+            'import',
+            '--db',
+            '~/.scout/scout.db',
+            '--home',
+            'fixtures/claude-code/small/home',
+          ],
+          {
+            cwd: REPO_ROOT,
+            env: { ...process.env, HOME: fakeHome },
+            stdout: 'pipe',
+            stderr: 'pipe',
+          },
+        );
+        const [stdout, stderr, code] = await Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
+
+        expect(code).toBe(0);
+        expect(stdout).toBe('');
+        expect(stderr).toContain('imported=1');
+        expect(existsSync(join(fakeHome, '.scout', 'scout.db'))).toBe(true);
+        // The bug created this literal directory under cwd.
+        expect(existsSync(join(REPO_ROOT, '~'))).toBe(false);
+      } finally {
+        await rm(fakeHome, { recursive: true, force: true });
+      }
+    },
+  );
 
   test('--force reimports sources that an incremental second run skips', async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'scout-cli-force-test-'));

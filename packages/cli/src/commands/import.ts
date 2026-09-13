@@ -1,6 +1,6 @@
 import type { HarnessAdapter } from '@scout/core';
 import { importAll, openStore } from '@scout/core';
-import { createContext, defaultDbPath, ensureDbDir } from '../context';
+import { createContext, defaultDbPath, ensureDbDir, resolveUserPath } from '../context';
 import { formatReport } from '../report';
 
 export type ImportOptions = {
@@ -30,7 +30,7 @@ export async function runImport(opts: ImportOptions): Promise<number> {
     selected = [match];
   }
 
-  const dbPath = opts.db ?? defaultDbPath();
+  const dbPath = resolveUserPath(opts.db ?? defaultDbPath());
   await ensureDbDir(dbPath);
   const ctx = createContext({ home: opts.home, titles: opts.titles });
   const { db, close } = openStore(dbPath);

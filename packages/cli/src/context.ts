@@ -14,6 +14,21 @@ function createStderrLogger(): Logger {
 }
 
 /**
+ * Expands a user-supplied path before it reaches the filesystem: `:memory:`
+ * stays literal, a leading `~`/`~/` resolves against the real OS home, and
+ * everything else is made absolute against cwd. Without this,
+ * `--db ~/.scout/scout.db` would `mkdir` a literal `~` directory under cwd.
+ */
+export function resolveUserPath(p: string): string {
+  if (p === ':memory:') return p;
+  if (p === '~') return resolve(homedir());
+  if (p.startsWith('~/') || p.startsWith('~\\')) {
+    return resolve(homedir(), p.slice(2));
+  }
+  return resolve(p);
+}
+
+/**
  * Builds the `AdapterContext` every command shares. `home` is always resolved
  * to an absolute path (P3) so stored `source_path`s never depend on cwd:
  * the explicit `--home` flag when given, otherwise the real OS home
@@ -21,7 +36,7 @@ function createStderrLogger(): Logger {
  */
 export function createContext(opts: { home?: string; titles: boolean }): AdapterContext {
   return {
-    home: resolve(opts.home ?? homedir()),
+    home: resolveUserPath(opts.home ?? homedir()),
     platform: process.platform,
     env: process.env as Record<string, string | undefined>,
     fs: createBunFs(),
@@ -47,5 +62,6 @@ export function defaultDbPath(): string {
  */
 export async function ensureDbDir(path: string): Promise<void> {
   if (path === ':memory:') return;
-  await mkdir(dirname(path), { recursive: true });
+  // 0o700 keeps the DB directory private (m5); mode is ignored on Windows.
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
 }

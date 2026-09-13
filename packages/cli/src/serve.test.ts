@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { describe, expect, mock, test } from 'bun:test';
+import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import type { AdapterContext, ImportReport } from '@scout/core';
 
@@ -93,6 +94,29 @@ describe('runServe', () => {
     expect(openStore).toHaveBeenCalledWith('/fake/home/.scout/scout.db');
     expect(captured[0]?.host).toBe('127.0.0.1');
     expect(captured[0]?.port).toBe(8787);
+    expect(stopMock).toHaveBeenCalled();
+  });
+
+  test('--db ~ expands to <os.homedir()> before ensureDbDir/openStore', async () => {
+    const captured: CapturedServerOpts[] = [];
+    const { stopMock, createServerMock } = makeServerMock(captured);
+    const ensureDbDir = mock(async () => {});
+    const openStore = mock(() => ({ db: {} as unknown as Database, close: () => {} }));
+    const expected = resolve(homedir(), '.scout', 'scout.db');
+    const { runServe } = await import('./commands/serve');
+    const p = runServe(
+      { db: '~/.scout/scout.db', titles: true },
+      { ensureDbDir, openStore, createServer: createServerMock },
+    );
+    await tick();
+    process.emit('SIGINT');
+    const code = await p;
+
+    expect(code).toBe(0);
+    expect(ensureDbDir).toHaveBeenCalledWith(expected);
+    expect(openStore).toHaveBeenCalledWith(expected);
+    // Never the literal cwd-based '~' path the bug produced.
+    expect(expected).not.toBe(resolve('~/.scout/scout.db'));
     expect(stopMock).toHaveBeenCalled();
   });
 

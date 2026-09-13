@@ -3,7 +3,7 @@ import type { AdapterContext, HarnessAdapter, ImportReport } from '@scout/core';
 import { importAll, openStore } from '@scout/core';
 import { createServer, DEFAULT_HOST, DEFAULT_PORT } from '@scout/server';
 import { adapters as defaultAdapters } from '../adapters';
-import { createContext, defaultDbPath, ensureDbDir } from '../context';
+import { createContext, defaultDbPath, ensureDbDir, resolveUserPath } from '../context';
 
 export type ServeOptions = {
   db?: string;
@@ -69,7 +69,7 @@ export type ServeDeps = {
  * request (architecture §6).
  */
 export async function runServe(opts: ServeOptions, deps: ServeDeps = {}): Promise<number> {
-  const dbPath = opts.db ?? (deps.defaultDbPath ?? defaultDbPath)();
+  const dbPath = resolveUserPath(opts.db ?? (deps.defaultDbPath ?? defaultDbPath)());
   const host = opts.host ?? DEFAULT_HOST;
   const expose = opts.expose === true;
   const hostError = assertBindHost(host);
