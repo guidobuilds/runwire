@@ -211,7 +211,8 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
   return Bun.serve({
     hostname: host,
     port,
-    async fetch(req) {
+    idleTimeout: 0,
+    async fetch(req, server) {
       // Derive path from the URL, never `req.url` (the full absolute URL with
       // origin + query), so `/api/sessions?x=1` does not brute-match `/api/sessions`.
       let path: string;
@@ -246,6 +247,10 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
           if (opts.scan === undefined) {
             return json({ error: 'scan unavailable' }, 503);
           }
+          // A full import can await far longer than Bun's idle timeout before
+          // any response bytes are written; opt this request out explicitly as
+          // well as the server-wide `idleTimeout: 0` above.
+          server.timeout(req, 0);
           const report = await opts.scan();
           // Mirror the CLI's failure rule: an adapter `error` or any failed
           // bundle in the `ImportReport` is a failed scan. Returning 2xx here

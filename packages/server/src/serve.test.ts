@@ -464,6 +464,84 @@ describe('createServer /api/scan', () => {
     durationMs: 7,
   };
 
+  type ServeConfig = {
+    hostname: string;
+    port: number;
+    idleTimeout?: number;
+    fetch: (req: Request, server: Bun.Server<unknown>) => Response | Promise<Response>;
+  };
+
+  /**
+   * Wraps `Bun.serve` for one test to observe the transport config
+   * `createServer` passes (F1) while the real transport still serves requests.
+   * The handler's per-request `server` argument is replaced with a recorder so
+   * the `server.timeout(req, 0)` call is observable too.
+   */
+  function captureServeConfig() {
+    const globalBun = Bun as unknown as {
+      serve: (options: ServeConfig) => Bun.Server<unknown>;
+    };
+    const original = globalBun.serve;
+    let idleTimeout: number | undefined;
+    const timeoutSeconds: number[] = [];
+    globalBun.serve = (options) => {
+      idleTimeout = options.idleTimeout;
+      const handler = options.fetch;
+      return original({
+        ...options,
+        fetch: (req) =>
+          handler(req, {
+            timeout: (_req: Request, seconds: number) => {
+              timeoutSeconds.push(seconds);
+            },
+          } as unknown as Bun.Server<unknown>),
+      });
+    };
+    return {
+      idleTimeout: () => idleTimeout,
+      timeoutSeconds,
+      restore: () => {
+        globalBun.serve = original;
+      },
+    };
+  }
+
+  test('F1: disables Bun idleTimeout and opts the scan request out of it', async () => {
+    const capture = captureServeConfig();
+    try {
+      const { store, server, base } = await startServer({ scan: async () => report });
+      try {
+        // The default 10s idle timeout would close a large scan mid-await.
+        expect(capture.idleTimeout()).toBe(0);
+        const res = await fetch(`${base}/api/scan`, { method: 'POST' });
+        expect(res.status).toBe(200);
+        // `server.timeout(req, 0)` runs before the import is awaited.
+        expect(capture.timeoutSeconds).toEqual([0]);
+      } finally {
+        server.stop();
+        store.close();
+      }
+    } finally {
+      capture.restore();
+    }
+  });
+
+  test('F1: a slow scan that has not written bytes completes instead of being reset', async () => {
+    const scan = async (): Promise<ImportReport> => {
+      await Bun.sleep(50);
+      return report;
+    };
+    const { store, server, base } = await startServer({ scan });
+    try {
+      const res = await fetch(`${base}/api/scan`, { method: 'POST' });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual(report);
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
   test('POST /api/scan runs the injected scan callback and returns its ImportReport', async () => {
     let calls = 0;
     const scan = async (): Promise<ImportReport> => {
