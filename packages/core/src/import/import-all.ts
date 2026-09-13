@@ -28,8 +28,28 @@ export type ImportReport = {
   durationMs: number;
 };
 
-function messageOf(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
+const MAX_ERROR_LENGTH = 200;
+
+/** Collapse whitespace and strip control characters so a hostile error
+ * name/code cannot smuggle a multi-line record dump into a single log line. */
+function sanitizeErrorLabel(text: string): string {
+  return text.replace(/[\s\p{Cc}]+/gu, ' ').trim();
+}
+
+/**
+ * A short, code-like error label: the sanitized error name plus an optional
+ * Node-style string `code`. Deliberately drops `Error.message`: a throw from
+ * `adapter.discover` (e.g. a `JSON.parse`/fold failure) can quote the record it
+ * was reading, and both `report.error` and `ctx.log` are user-visible sinks
+ * (docs/ARCHITECTURE.md §7: never log prompts/responses/code).
+ */
+function errorLabel(e: unknown): string {
+  if (!(e instanceof Error)) return typeof e;
+  const name = sanitizeErrorLabel(e.name) || 'Error';
+  const code = (e as { code?: unknown }).code;
+  const sanitizedCode = typeof code === 'string' ? sanitizeErrorLabel(code) : '';
+  const suffix = sanitizedCode === '' ? '' : ` (${sanitizedCode})`;
+  return `${name}${suffix}`.slice(0, MAX_ERROR_LENGTH);
 }
 
 /**
@@ -90,8 +110,9 @@ export async function importAll(opts: {
         report.skipped = knownNotEmitted - report.removed;
       }
     } catch (e) {
-      report.error = messageOf(e).slice(0, 200);
-      opts.ctx.log.error(`importAll: adapter "${adapter.id}" failed: ${report.error}`);
+      const label = errorLabel(e);
+      report.error = `${adapter.id}: ${label}`.slice(0, MAX_ERROR_LENGTH);
+      opts.ctx.log.error(`importAll: adapter "${adapter.id}" failed (${label})`);
     }
     perAdapter[adapter.id] = report;
   }

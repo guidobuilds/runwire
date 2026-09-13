@@ -74,6 +74,17 @@ function reportFor(result: ImportReport, id: string): AdapterReport {
   return report;
 }
 
+/** An adapter `discover` that fails before emitting a record. A plain async
+ * iterator (rather than a generator) keeps the rejection in the iterator
+ * protocol without needing an unreachable `yield`. */
+function throwingDiscover(reason: unknown): AsyncIterable<never> {
+  return {
+    [Symbol.asyncIterator]() {
+      return { next: (): Promise<IteratorResult<never>> => Promise.reject(reason) };
+    },
+  };
+}
+
 const BASE_PATHS = [
   '/fake/root.jsonl',
   '/fake/child1.jsonl',
@@ -358,7 +369,7 @@ describe('importAll', () => {
     });
 
     const fakeReport = reportFor(report, 'fake');
-    expect(fakeReport.error).toBe('boom mid-stream');
+    expect(fakeReport.error).toBe('fake: Error');
     expect(fakeReport.discovered).toBe(2);
     expect(fakeReport.imported).toBe(2);
     // The pseudocode's catch skips the removed/skipped calculation entirely on a throw.
@@ -366,5 +377,75 @@ describe('importAll', () => {
     expect(fakeReport.skipped).toBe(0);
     // What was persisted before the throw stays - not rolled back.
     expect(sessionIds(db).length).toBe(2);
+  });
+
+  test('a throwing adapter never logs record text: the error is code-like, one-line and bounded', async () => {
+    const { db } = openStore(':memory:');
+    const inner = createFakeAdapter();
+    const canary = 'SCOUT_CANARY_SECRET_RECORD';
+    const recordLikeMessage = `failed to parse record {"prompt":"${canary}"}\nsecond line\r\nthird line`;
+    const throwingAdapter = {
+      ...inner,
+      discover: () => throwingDiscover(new Error(recordLikeMessage)),
+    };
+    const logged: string[] = [];
+    const ctx: AdapterContext = {
+      ...ctxWithFiles([...BASE_PATHS]),
+      log: {
+        info() {},
+        warn() {},
+        error(message: string) {
+          logged.push(message);
+        },
+      },
+    };
+
+    const report = await importAll({ adapters: [throwingAdapter], db, ctx });
+    const fakeReport = reportFor(report, 'fake');
+
+    expect(logged).toHaveLength(1);
+    const line = logged[0] as string;
+    // The raw record fragment reaches neither sink (docs/ARCHITECTURE.md §7).
+    expect(line).not.toContain(canary);
+    expect(line).not.toContain('failed to parse record');
+    expect(fakeReport.error).not.toContain(canary);
+    expect(fakeReport.error).not.toContain('failed to parse record');
+    // No newlines: a raw multi-line dump cannot be reconstructed.
+    expect(line).not.toMatch(/[\r\n]/);
+    expect(fakeReport.error).not.toMatch(/[\r\n]/);
+    // Short, code-like (adapter id + error name) and bounded.
+    expect(line.length).toBeLessThanOrEqual(200);
+    expect((fakeReport.error as string).length).toBeLessThanOrEqual(200);
+    expect(line).toContain('fake');
+    expect(line).toContain('Error');
+    expect(fakeReport.error).toBe('fake: Error');
+  });
+
+  test('a non-Error throw is reported by type, never by its stringified payload', async () => {
+    const { db } = openStore(':memory:');
+    const inner = createFakeAdapter();
+    const throwingAdapter = {
+      ...inner,
+      discover: () => throwingDiscover(`record leak\n${'x'.repeat(500)}`),
+    };
+    const logged: string[] = [];
+    const ctx: AdapterContext = {
+      ...ctxWithFiles([...BASE_PATHS]),
+      log: {
+        info() {},
+        warn() {},
+        error(message: string) {
+          logged.push(message);
+        },
+      },
+    };
+
+    const report = await importAll({ adapters: [throwingAdapter], db, ctx });
+    const fakeReport = reportFor(report, 'fake');
+
+    expect(fakeReport.error).toBe('fake: string');
+    expect(logged[0]).toContain('(string)');
+    expect(logged[0] as string).not.toMatch(/[\r\n]/);
+    expect(logged[0] as string).not.toContain('record leak');
   });
 });
