@@ -4,7 +4,9 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import type { HarnessAdapter, SessionBundle } from '@runwire/core';
 import { SessionBundleSchema } from '@runwire/core';
+import { runDiscover } from './commands/discover';
 
 // Never 'bun' from PATH (Windows lookup, PATH-dependence) and never
 // process.cwd() (depends on the caller's shell) - process.execPath is the
@@ -61,6 +63,105 @@ describe('runwire discover', () => {
     expect(code).toBe(1);
     expect(stdout).toBe('');
     expect(stderr.length).toBeGreaterThan(0);
+  });
+});
+
+// `discover --json` must not be the one dump path that skips import's strict
+// schema gate (cli-report M2): an adapter object with an unrecognized key is a
+// contract violation, so the line is dropped (never stringified raw) and the
+// run exits 1, while valid lines already emitted are kept.
+function fakeBundle(): Record<string, unknown> {
+  return {
+    project: { key: 'k', name: 'n', identity: 'cwd' },
+    session: {
+      id: 'fake:s1',
+      harnessId: 'fake',
+      projectKey: 'k',
+      depth: 0,
+      sourcePath: '/fake/s1.jsonl',
+      sourceSize: 10,
+      sourceMtime: 1,
+    },
+    steps: [],
+    diagnostics: [],
+  };
+}
+
+function fakeAdapter(bundles: unknown[]): HarnessAdapter {
+  return {
+    id: 'fake',
+    displayName: 'Fake',
+    adapterVersion: '0',
+    capabilities: [],
+    allowlist: {},
+    probe: async () => ({ installed: true, roots: [], notes: [] }),
+    discover: async function* () {
+      for (const bundle of bundles) yield bundle as SessionBundle;
+    },
+  };
+}
+
+async function runDiscoverCaptured(
+  bundles: unknown[],
+  json: boolean,
+): Promise<{ code: number; logs: string[]; errors: string[] }> {
+  const logs: string[] = [];
+  const errors: string[] = [];
+  const origLog = console.log;
+  const origError = console.error;
+  console.log = (...args: unknown[]) => {
+    logs.push(args.map(String).join(' '));
+  };
+  console.error = (...args: unknown[]) => {
+    errors.push(args.map(String).join(' '));
+  };
+  try {
+    const code = await runDiscover({
+      adapters: [fakeAdapter(bundles)],
+      adapterId: 'fake',
+      json,
+      titles: true,
+    });
+    return { code, logs, errors };
+  } finally {
+    console.log = origLog;
+    console.error = origError;
+  }
+}
+
+describe('runDiscover bundle validation', () => {
+  test('--json drops an unknown-key bundle, keeps valid lines and exits 1', async () => {
+    const valid = fakeBundle();
+    const invalid = {
+      ...fakeBundle(),
+      prompt: 'RUNWIRE_CANARY_1',
+    };
+    const { code, logs, errors } = await runDiscoverCaptured([valid, invalid], true);
+
+    expect(code).toBe(1);
+    // Only the valid bundle reaches stdout, and it is the schema's output.
+    expect(logs.length).toBe(1);
+    expect(SessionBundleSchema.safeParse(JSON.parse(logs[0] ?? '')).success).toBe(true);
+
+    const stdout = logs.join('\n');
+    expect(stdout).not.toContain('prompt');
+    expect(stdout).not.toContain('RUNWIRE_CANARY_1');
+
+    const stderr = errors.join('\n');
+    expect(stderr).toContain('invalid bundle');
+    expect(stderr).toContain('unrecognized_keys');
+    expect(stderr).toContain('prompt');
+    // Issue strings name keys only, never values.
+    expect(stderr).not.toContain('RUNWIRE_CANARY_1');
+  });
+
+  test('human mode never prints the invalid bundle and exits 1', async () => {
+    const invalid = { ...fakeBundle(), prompt: 'RUNWIRE_CANARY_1' };
+    const { code, logs, errors } = await runDiscoverCaptured([invalid], false);
+
+    expect(code).toBe(1);
+    expect(logs).toEqual([]);
+    expect(errors.join('\n')).toContain('unrecognized_keys');
   });
 });
 
