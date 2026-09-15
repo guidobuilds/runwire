@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { createMemoryFs } from '../adapter/fs.memory';
 import type { AdapterContext } from '../adapter/types';
 import type { HarnessAdapter } from '../contract/adapter';
-import type { SourceRef } from '../contract/types';
+import type { SessionBundle, SourceRef } from '../contract/types';
 import { openStore } from '../store/store';
 import { createFakeAdapter } from '../test-kit/fake-adapter';
 import type { AdapterReport, ImportReport } from './import-all';
@@ -357,6 +357,80 @@ describe('importAll', () => {
     // Nothing valid was re-imported (unchanged known sizes); only the invalid stub was re-parsed.
     expect(reportFor(second, 'fake').imported).toBe(0);
     expect(reportFor(second, 'fake').skipped).toBe(9);
+  });
+
+  test('a source that goes valid -> invalid is cleared to a stub and stops inflating its parent rollup', async () => {
+    const { db } = openStore(':memory:');
+    const ctx = ctxWithFiles([...BASE_PATHS, '/fake/invalid.jsonl']);
+
+    // Run 1: the same id/sourcePath the fake invalid scenario uses, but valid
+    // and bearing a title/parent/tokens. A distinct size/mtime keeps run 2's
+    // invalid scenario (200/1000) out of the size/mtime cache.
+    const base = createFakeAdapter();
+    const validInvalid: SessionBundle = {
+      project: { key: 'k', name: 'k', identity: 'cwd' },
+      session: {
+        id: 'fake:invalid',
+        harnessId: 'fake',
+        projectKey: 'k',
+        parentId: 'fake:root',
+        relation: 'subagent',
+        depth: 1,
+        spawnCallId: 'c1',
+        title: 'A valid invalid title',
+        apiCalls: 2,
+        output: 5,
+        sourcePath: '/fake/invalid.jsonl',
+        sourceSize: 999,
+        sourceMtime: 9999,
+      },
+      steps: [{ sessionId: 'fake:invalid', seq: 0, kind: 'call', output: 5 }],
+      diagnostics: [],
+    };
+    const withValidInvalid = {
+      ...base,
+      async *discover(ctx2: AdapterContext, known: Parameters<typeof base.discover>[1]) {
+        yield* base.discover(ctx2, known);
+        yield validInvalid;
+      },
+    };
+
+    const first = await importAll({ adapters: [withValidInvalid], db, ctx });
+    expect(reportFor(first, 'fake').imported).toBe(10);
+    const valid = db
+      .query("SELECT title, parent_id, output FROM sessions WHERE id = 'fake:invalid'")
+      .get() as { title: string | null; parent_id: string | null; output: number | null };
+    expect(valid).toEqual({ title: 'A valid invalid title', parent_id: 'fake:root', output: 5 });
+
+    const rootOutput = (): number | null =>
+      (
+        db.query('SELECT output FROM rollups WHERE session_id = ?').get('fake:root') as {
+          output: number | null;
+        }
+      ).output;
+    const beforeRoot = rootOutput();
+
+    // Run 2: only the invalid scenario; it fails validation and clears the row.
+    const second = await importAll({
+      adapters: [createFakeAdapter({ includeInvalid: true, scenarios: ['invalid'] })],
+      db,
+      ctx,
+    });
+    expect(reportFor(second, 'fake').failed).toBe(1);
+    expect(reportFor(second, 'fake').imported).toBe(0);
+
+    const stub = db
+      .query("SELECT title, parent_id, output, source_size FROM sessions WHERE id = 'fake:invalid'")
+      .get() as {
+      title: string | null;
+      parent_id: string | null;
+      output: number | null;
+      source_size: number | null;
+    };
+    expect(stub).toEqual({ title: null, parent_id: null, output: null, source_size: null });
+
+    // The stale exclusive total is gone from the parent's inclusive rollup.
+    expect(rootOutput()).toBe((beforeRoot as number) - 5);
   });
 
   test('probe.installed=false removes nothing and reports a zero report with notes', async () => {

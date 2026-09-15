@@ -284,11 +284,15 @@ export function persistBundle(db: Database, bundle: SessionBundle, titles: boole
 }
 
 /**
- * Validation failure -> a stub session row (project_key NULL, depth 0,
- * source_size/source_mtime NULL) plus an error diagnostic `bundle-invalid`,
- * never cached as if it were a good import (plan P5). Returns false and
- * writes nothing when `raw.session.id`/`raw.session.sourcePath` are not
- * usable strings.
+ * Validation failure -> a stub session row plus an error diagnostic
+ * `bundle-invalid`, never cached as if it were a good import (plan P5,
+ * ARCHITECTURE §6). A stub keeps only its identity (`id`, `harness_id`,
+ * `source_id`/`source_locator`/`source_path`), `depth = 0`, and NULL
+ * `project_key`/`source_size`/`source_mtime`; every other session column is
+ * cleared on the upsert, so a source that was valid on a previous run cannot
+ * keep its title or inflate a parent's inclusive rollup with stale exclusive
+ * totals. Returns false and writes nothing when
+ * `raw.session.id`/`raw.session.sourcePath` are not usable strings.
  */
 export function persistInvalidBundle(
   db: Database,
@@ -319,7 +323,15 @@ export function persistInvalidBundle(
       `INSERT INTO sessions (id, harness_id, project_key, depth, source_id, source_locator, source_path, source_size, source_mtime)
        VALUES (?, ?, NULL, 0, ?, ?, ?, NULL, NULL)
        ON CONFLICT(id) DO UPDATE SET
-         harness_id = excluded.harness_id, project_key = NULL, depth = 0,
+         harness_id = excluded.harness_id, project_key = NULL,
+         parent_id = NULL, relation = NULL, depth = 0, agent_type = NULL, spawn_call_id = NULL,
+         title = NULL, cwd = NULL, git_branch = NULL, git_commit = NULL,
+         started_at = NULL, ended_at = NULL, duration_ms = NULL,
+         model_primary_id = NULL, model_changes = NULL, mode_primary = NULL, mode_changes = NULL, effort = NULL,
+         uncached_input = NULL, cached_input = NULL, cache_write = NULL, output = NULL, reasoning_output = NULL,
+         turns = NULL, api_calls = NULL, tool_calls = NULL, compactions = NULL, cost_usd = NULL,
+         initiator_kind = NULL, initiator_surface = NULL, initiator_automation = NULL,
+         resumed = NULL, forked_from = NULL, harness_version_first = NULL, harness_version_last = NULL,
          source_id = excluded.source_id, source_locator = excluded.source_locator,
          source_path = excluded.source_path, source_size = NULL, source_mtime = NULL`,
       [id, harnessId, sourceId ?? null, sourceLocator ?? null, sourcePath],

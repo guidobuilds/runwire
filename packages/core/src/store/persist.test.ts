@@ -12,6 +12,7 @@ import {
   removeVanished,
   upsertHarness,
 } from './persist';
+import { recomputeRollups } from './rollups';
 import { openStore } from './store';
 
 function bundle(
@@ -312,6 +313,143 @@ describe('persistInvalidBundle', () => {
       id: string;
     }[];
     expect(rows).toEqual([{ id: 'fake:new-bad' }]);
+  });
+
+  test('clears a previously valid row to a full stub: tokens/title/parent_id and the rest go NULL', () => {
+    const { db } = storeWithFakeHarness();
+    persistWithTitles(
+      db,
+      bundle({ id: 'fake:parent', sourcePath: '/fake/parent.jsonl', uncachedInput: 1, output: 1 }),
+    );
+    persistWithTitles(
+      db,
+      bundle(
+        {
+          id: 'fake:child',
+          sourcePath: '/fake/child.jsonl',
+          parentId: 'fake:parent',
+          relation: 'subagent',
+          depth: 1,
+          agentType: 'fake-explorer',
+          spawnCallId: 'c1',
+          title: 'Child title',
+          cwd: '/home/u/child',
+          gitBranch: 'main',
+          gitCommit: 'abc123',
+          startedAt: '2026-01-01T00:00:00.000Z',
+          endedAt: '2026-01-01T00:01:00.000Z',
+          durationMs: 60_000,
+          modelPrimary: 'fake-model-b',
+          modelChanges: 1,
+          modePrimary: 'auto',
+          modeChanges: 1,
+          effort: 'high',
+          uncachedInput: 100,
+          cachedInput: 5,
+          cacheWrite: 2,
+          output: 250,
+          reasoningOutput: 3,
+          turns: 1,
+          apiCalls: 2,
+          toolCalls: 4,
+          compactions: 1,
+          costUsd: 0.42,
+          initiatorKind: 'machine',
+          initiatorSurface: 'sdk',
+          initiatorAutomation: 'sdk',
+          resumed: true,
+          forkedFrom: 'fake:other',
+          harnessVersionFirst: '1.0.0',
+          harnessVersionLast: '1.0.1',
+        },
+        [{ sessionId: 'fake:child', seq: 0, kind: 'call', output: 250 }],
+      ),
+    );
+    recomputeRollups(db);
+
+    // Sanity: the valid child contributes its exclusive totals to the parent.
+    const before = db
+      .query('SELECT uncached_input, output, descendants FROM rollups WHERE session_id = ?')
+      .get('fake:parent') as {
+      uncached_input: number | null;
+      output: number | null;
+      descendants: number;
+    };
+    expect(before).toEqual({ uncached_input: 101, output: 251, descendants: 1 });
+
+    // Same id/source re-imported as invalid: the row must become a pure stub.
+    const ok = persistInvalidBundle(
+      db,
+      'fake',
+      { session: { id: 'fake:child', sourcePath: '/fake/child.jsonl' } },
+      ['session.depth: too_small'],
+    );
+    expect(ok).toBe(true);
+
+    const row = db.query('SELECT * FROM sessions WHERE id = ?').get('fake:child') as Record<
+      string,
+      unknown
+    >;
+    const cleared = [
+      'project_key',
+      'parent_id',
+      'relation',
+      'agent_type',
+      'spawn_call_id',
+      'title',
+      'cwd',
+      'git_branch',
+      'git_commit',
+      'started_at',
+      'ended_at',
+      'duration_ms',
+      'model_primary_id',
+      'model_changes',
+      'mode_primary',
+      'mode_changes',
+      'effort',
+      'uncached_input',
+      'cached_input',
+      'cache_write',
+      'output',
+      'reasoning_output',
+      'turns',
+      'api_calls',
+      'tool_calls',
+      'compactions',
+      'cost_usd',
+      'initiator_kind',
+      'initiator_surface',
+      'initiator_automation',
+      'resumed',
+      'forked_from',
+      'harness_version_first',
+      'harness_version_last',
+      'source_size',
+      'source_mtime',
+    ];
+    for (const column of cleared) expect(row[column]).toBeNull();
+    // Identity and the stub defaults survive.
+    expect(row.id).toBe('fake:child');
+    expect(row.harness_id).toBe('fake');
+    expect(row.source_path).toBe('/fake/child.jsonl');
+    expect(row.depth).toBe(0);
+
+    const diags = db
+      .query('SELECT code, message FROM diagnostics WHERE session_id = ?')
+      .all('fake:child') as { code: string; message: string }[];
+    expect(diags).toEqual([{ code: 'bundle-invalid', message: 'session.depth: too_small' }]);
+
+    // The stale exclusive totals can no longer inflate the parent's inclusive rollup.
+    recomputeRollups(db);
+    const after = db
+      .query('SELECT uncached_input, output, descendants FROM rollups WHERE session_id = ?')
+      .get('fake:parent') as {
+      uncached_input: number | null;
+      output: number | null;
+      descendants: number;
+    };
+    expect(after).toEqual({ uncached_input: 1, output: 1, descendants: 0 });
   });
 
   test('returns false and writes nothing when id/sourcePath are unusable', () => {
