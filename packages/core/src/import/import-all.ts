@@ -83,7 +83,15 @@ export async function importAll(opts: {
       } else {
         upsertHarness(opts.db, adapter);
         const known = loadKnown(opts.db, adapter.id, probe.roots);
-        const discoveryKnown = opts.force ? new Map() : known;
+        // Privacy-driven discovery bypass (D7/D71, ARCHITECTURE §7): a source the
+        // size/mtime cache would skip never reaches persistBundle, so the F4
+        // `titles:false` binding (which NULLs a title on every bundle it persists)
+        // would never see it and a previously stored title would survive an
+        // import run with `--no-titles`. So when the caller opted out of titles,
+        // ignore the cache and re-discover every source; `known` stays the real
+        // set for vanished-source removal and report accounting, exactly as with
+        // `force`. With `titles:true` the cache is untouched.
+        const discoveryKnown = opts.force || !opts.ctx.privacy.titles ? new Map() : known;
         const emitted = new Set<string>();
 
         for await (const bundle of adapter.discover(opts.ctx, discoveryKnown)) {
@@ -94,7 +102,7 @@ export async function importAll(opts: {
           emitted.add(effectiveSourceId(bundle.session));
           const result = validateBundle(bundle);
           if (result.ok) {
-            persistBundle(opts.db, result.bundle);
+            persistBundle(opts.db, result.bundle, opts.ctx.privacy.titles);
             report.imported++;
           } else {
             persistInvalidBundle(opts.db, adapter.id, bundle, result.issues);

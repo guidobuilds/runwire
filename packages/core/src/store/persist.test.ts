@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { createMemoryFs } from '../adapter/fs.memory';
 import type { AdapterContext } from '../adapter/types';
@@ -53,6 +54,11 @@ function storeWithFakeHarness() {
   return store;
 }
 
+/** persistBundle with titles on: the D7 opt-in default these tests don't exercise. */
+function persistWithTitles(db: Database, b: SessionBundle): void {
+  persistBundle(db, b, true);
+}
+
 /** A minimal AdapterContext for removeVanished's `opts.ctx` (the sourceExists callback ignores it). */
 function adapterCtx(): AdapterContext {
   return {
@@ -68,14 +74,14 @@ function adapterCtx(): AdapterContext {
 describe('persistBundle', () => {
   test("replaces an existing session's steps/tool counts/diagnostics rather than accumulating", () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(
+    persistWithTitles(
       db,
       bundle({}, [
         { sessionId: 'fake:s1', seq: 0, kind: 'tool', toolCategory: 'read' },
         { sessionId: 'fake:s1', seq: 1, kind: 'tool', toolCategory: 'read' },
       ]),
     );
-    persistBundle(
+    persistWithTitles(
       db,
       bundle({}, [{ sessionId: 'fake:s1', seq: 0, kind: 'tool', toolCategory: 'write' }]),
     );
@@ -90,7 +96,7 @@ describe('persistBundle', () => {
 
   test('derives session_tool_counts by GROUP BY tool_category from the bundle steps', () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(
+    persistWithTitles(
       db,
       bundle({}, [
         { sessionId: 'fake:s1', seq: 0, kind: 'tool', toolCategory: 'read' },
@@ -112,8 +118,8 @@ describe('persistBundle', () => {
 
   test('the two-unique-key case: a new bundle at the same source_path but a different id displaces the old row', () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(db, bundle({ id: 'fake:old-id', sourcePath: '/fake/same.jsonl' }));
-    persistBundle(db, bundle({ id: 'fake:new-id', sourcePath: '/fake/same.jsonl' }));
+    persistWithTitles(db, bundle({ id: 'fake:old-id', sourcePath: '/fake/same.jsonl' }));
+    persistWithTitles(db, bundle({ id: 'fake:new-id', sourcePath: '/fake/same.jsonl' }));
 
     const rows = db
       .query('SELECT id FROM sessions WHERE source_path = ?')
@@ -125,7 +131,7 @@ describe('persistBundle', () => {
 
   test('persists step.skillName into steps.skill_name, and NULL when a step has none', () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(
+    persistWithTitles(
       db,
       bundle({}, [
         {
@@ -149,10 +155,43 @@ describe('persistBundle', () => {
   });
 });
 
+describe('persistBundle: titles (D7)', () => {
+  test('titles: true persists the bundle title', () => {
+    const { db } = storeWithFakeHarness();
+    persistBundle(db, bundle({ title: 'A kept title' }), true);
+
+    const row = db.query('SELECT title FROM sessions WHERE id = ?').get('fake:s1') as {
+      title: string | null;
+    };
+    expect(row.title).toBe('A kept title');
+  });
+
+  test('titles: false binds NULL even when the bundle carries a title', () => {
+    const { db } = storeWithFakeHarness();
+    persistBundle(db, bundle({ title: 'RUNWIRE_CANARY_TITLE' }), false);
+
+    const row = db.query('SELECT title FROM sessions WHERE id = ?').get('fake:s1') as {
+      title: string | null;
+    };
+    expect(row.title).toBeNull();
+  });
+
+  test('reimport with titles: false after titles: true clears the stored title', () => {
+    const { db } = storeWithFakeHarness();
+    persistBundle(db, bundle({ title: 'A kept title' }), true);
+    persistBundle(db, bundle({ title: 'A kept title' }), false);
+
+    const row = db.query('SELECT title FROM sessions WHERE id = ?').get('fake:s1') as {
+      title: string | null;
+    };
+    expect(row.title).toBeNull();
+  });
+});
+
 describe('persistBundle: model identity (models table + FK ids)', () => {
   test('upserts distinct raw model strings and writes model_primary_id/model_id', () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(
+    persistWithTitles(
       db,
       bundle({ modelPrimary: 'claude-sonnet-4' }, [
         { sessionId: 'fake:s1', seq: 0, kind: 'call', model: 'claude-sonnet-4' },
@@ -182,7 +221,7 @@ describe('persistBundle: model identity (models table + FK ids)', () => {
 
   test('a step with no model keeps model_id NULL and adds no models row', () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(db, bundle({}, [{ sessionId: 'fake:s1', seq: 0, kind: 'turn' }]));
+    persistWithTitles(db, bundle({}, [{ sessionId: 'fake:s1', seq: 0, kind: 'turn' }]));
 
     const step = db.query('SELECT model_id FROM steps WHERE session_id = ?').get('fake:s1') as {
       model_id: number | null;
@@ -197,8 +236,8 @@ describe('persistBundle: model identity (models table + FK ids)', () => {
       { sessionId: 'fake:s1', seq: 0, kind: 'call', model: 'claude-sonnet-4' },
       { sessionId: 'fake:s1', seq: 1, kind: 'call', model: 'claude-haiku' },
     ]);
-    persistBundle(db, b);
-    persistBundle(db, b);
+    persistWithTitles(db, b);
+    persistWithTitles(db, b);
 
     const models = db.query('SELECT name FROM models ORDER BY name').all() as { name: string }[];
     expect(models).toEqual([{ name: 'claude-haiku' }, { name: 'claude-sonnet-4' }]);
@@ -206,11 +245,11 @@ describe('persistBundle: model identity (models table + FK ids)', () => {
 
   test('two sessions sharing a model string share one models row', () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(
+    persistWithTitles(
       db,
       bundle({ id: 'fake:s1', sourcePath: '/fake/s1.jsonl', modelPrimary: 'shared-model' }),
     );
-    persistBundle(
+    persistWithTitles(
       db,
       bundle({ id: 'fake:s2', sourcePath: '/fake/s2.jsonl', modelPrimary: 'shared-model' }),
     );
@@ -259,7 +298,7 @@ describe('persistInvalidBundle', () => {
 
   test('does the same source_path cleanup as persistBundle (two-unique-key case)', () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(db, bundle({ id: 'fake:old-id', sourcePath: '/fake/same.jsonl' }));
+    persistWithTitles(db, bundle({ id: 'fake:old-id', sourcePath: '/fake/same.jsonl' }));
     persistInvalidBundle(
       db,
       'fake',
@@ -287,8 +326,8 @@ describe('persistInvalidBundle', () => {
 describe('loadKnown', () => {
   test("root scoping: a row under /other/... is not returned when roots = ['/fake']", () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(db, bundle({ id: 'fake:in', sourcePath: '/fake/in.jsonl' }));
-    persistBundle(db, bundle({ id: 'fake:out', sourcePath: '/other/out.jsonl' }));
+    persistWithTitles(db, bundle({ id: 'fake:in', sourcePath: '/fake/in.jsonl' }));
+    persistWithTitles(db, bundle({ id: 'fake:out', sourcePath: '/other/out.jsonl' }));
 
     const known = loadKnown(db, 'fake', ['/fake']);
     expect([...known.keys()]).toEqual(['/fake/in.jsonl']);
@@ -296,7 +335,7 @@ describe('loadKnown', () => {
 
   test('a root path itself (exact match, no trailing separator) is included', () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(db, bundle({ id: 'fake:exact', sourcePath: '/fake' }));
+    persistWithTitles(db, bundle({ id: 'fake:exact', sourcePath: '/fake' }));
     const known = loadKnown(db, 'fake', ['/fake']);
     expect(known.has('/fake')).toBe(true);
   });
@@ -336,7 +375,7 @@ describe('effectiveSourceId/effectiveSourceLocator', () => {
 describe('sourceId/sourceLocator persistence', () => {
   test('persistBundle writes source_id and source_locator columns', () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(
+    persistWithTitles(
       db,
       bundle({
         id: 'opencode:current:ses_1',
@@ -383,7 +422,7 @@ describe('sourceId/sourceLocator persistence', () => {
 describe('loadKnown: identity-keyed and locator-scoped', () => {
   test('a row with source_id distinct from source_path is keyed by source_id', () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(
+    persistWithTitles(
       db,
       bundle({
         id: 'opencode:current:ses_1',
@@ -398,7 +437,7 @@ describe('loadKnown: identity-keyed and locator-scoped', () => {
 
   test('root scoping uses the physical source_locator, not the opaque id', () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(
+    persistWithTitles(
       db,
       bundle({
         id: 'opencode:current:ses_1',
@@ -415,7 +454,7 @@ describe('loadKnown: identity-keyed and locator-scoped', () => {
 
   test('identity default: a row with no source_id is keyed by source_path', () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(db, bundle({ id: 'fake:s1', sourcePath: '/fake/s1.jsonl' }));
+    persistWithTitles(db, bundle({ id: 'fake:s1', sourcePath: '/fake/s1.jsonl' }));
     const known = loadKnown(db, 'fake', ['/fake']);
     expect([...known.keys()]).toEqual(['/fake/s1.jsonl']);
   });
@@ -424,7 +463,7 @@ describe('loadKnown: identity-keyed and locator-scoped', () => {
 describe('removeVanished', () => {
   test('deletes sessions whose known path no longer stats, cascading to child tables', async () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(
+    persistWithTitles(
       db,
       bundle({ id: 'fake:gone', sourcePath: '/fake/gone.jsonl' }, [
         { sessionId: 'fake:gone', seq: 0, kind: 'turn' },
@@ -440,7 +479,7 @@ describe('removeVanished', () => {
 
   test('a path that still stats is not removed', async () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(db, bundle({ id: 'fake:still-here', sourcePath: '/fake/still-here.jsonl' }));
+    persistWithTitles(db, bundle({ id: 'fake:still-here', sourcePath: '/fake/still-here.jsonl' }));
     const known = loadKnown(db, 'fake', ['/fake']);
     const fs = createMemoryFs({ files: { '/fake/still-here.jsonl': 'x' } });
     const removed = await removeVanished(db, 'fake', known, new Set(), fs);
@@ -450,7 +489,7 @@ describe('removeVanished', () => {
 
   test('a path that was re-emitted this run is not removed even if it no longer stats', async () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(db, bundle({ id: 'fake:emitted', sourcePath: '/fake/emitted.jsonl' }));
+    persistWithTitles(db, bundle({ id: 'fake:emitted', sourcePath: '/fake/emitted.jsonl' }));
     const known = loadKnown(db, 'fake', ['/fake']);
     const fs = createMemoryFs({ files: {} });
     const removed = await removeVanished(db, 'fake', known, new Set(['/fake/emitted.jsonl']), fs);
@@ -459,7 +498,7 @@ describe('removeVanished', () => {
 
   test('a row under another root is never removed by a run scoped to /fake', async () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(db, bundle({ id: 'fake:other', sourcePath: '/other/keep.jsonl' }));
+    persistWithTitles(db, bundle({ id: 'fake:other', sourcePath: '/other/keep.jsonl' }));
     const known = loadKnown(db, 'fake', ['/fake']);
     expect(known.size).toBe(0);
     const fs = createMemoryFs({ files: {} });
@@ -470,7 +509,7 @@ describe('removeVanished', () => {
 
   test('sourceExists returning false deletes a known-but-unemitted source by COALESCE(source_id, source_path)', async () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(
+    persistWithTitles(
       db,
       bundle({
         id: 'opencode:current:ses_1',
@@ -492,7 +531,7 @@ describe('removeVanished', () => {
 
   test('sourceExists returning true retains a known-but-unemitted source', async () => {
     const { db } = storeWithFakeHarness();
-    persistBundle(
+    persistWithTitles(
       db,
       bundle({
         id: 'opencode:current:ses_1',

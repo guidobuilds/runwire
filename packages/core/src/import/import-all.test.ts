@@ -145,6 +145,96 @@ describe('importAll', () => {
     );
   });
 
+  test('titles:true persists session titles end to end (D7 opt-in)', async () => {
+    const { db } = openStore(':memory:');
+    await importAll({ adapters: [createFakeAdapter()], db, ctx: ctxWithFiles(BASE_PATHS) });
+
+    const titled = db.query("SELECT title FROM sessions WHERE id = 'fake:titled'").get() as {
+      title: string | null;
+    };
+    expect(titled.title).toBe('A fake session title');
+  });
+
+  test('titles:false nulls titles at persist even when the adapter emits one (D7)', async () => {
+    const { db } = openStore(':memory:');
+    const inner = createFakeAdapter();
+    // An adapter bug: it ignores ctx.privacy.titles and always emits titles.
+    // persist must still refuse to write them when the caller opted out.
+    const leaky = {
+      ...inner,
+      async *discover(ctx: AdapterContext, known: Parameters<typeof inner.discover>[1]) {
+        for await (const bundle of inner.discover({ ...ctx, privacy: { titles: true } }, known)) {
+          yield bundle;
+        }
+      },
+    };
+    const ctx: AdapterContext = { ...ctxWithFiles(BASE_PATHS), privacy: { titles: false } };
+    const report = await importAll({ adapters: [leaky], db, ctx });
+    expect(reportFor(report, 'fake').imported).toBe(9);
+
+    const rows = db.query('SELECT id, title FROM sessions').all() as {
+      id: string;
+      title: string | null;
+    }[];
+    expect(rows.length).toBe(9);
+    for (const row of rows) expect(row.title).toBeNull();
+  });
+
+  test('titles:false ignores the size/mtime cache: a stored title is nulled without force (D7/D71)', async () => {
+    const { db } = openStore(':memory:');
+    const adapter = createFakeAdapter();
+    await importAll({ adapters: [adapter], db, ctx: ctxWithFiles(BASE_PATHS) });
+
+    const titled = db.query("SELECT title FROM sessions WHERE id = 'fake:titled'").get() as {
+      title: string | null;
+    };
+    expect(titled.title).toBe('A fake session title');
+
+    // No `force`: the opt-out alone must reach every source, because the cache
+    // would otherwise skip a source and leave its stored title untouched.
+    const noTitles: AdapterContext = { ...ctxWithFiles(BASE_PATHS), privacy: { titles: false } };
+    const second = await importAll({ adapters: [adapter], db, ctx: noTitles });
+
+    expect(reportFor(second, 'fake')).toEqual({
+      discovered: 9,
+      imported: 9,
+      skipped: 0,
+      removed: 0,
+      failed: 0,
+    });
+    const rows = db.query('SELECT id, title FROM sessions').all() as {
+      id: string;
+      title: string | null;
+    }[];
+    expect(rows.length).toBe(9);
+    for (const row of rows) expect(row.title).toBeNull();
+    // Every known source was re-emitted, so none was treated as vanished.
+    expect(sessionIds(db).length).toBe(9);
+  });
+
+  test('titles:true keeps the size/mtime cache: an unchanged rerun is skipped and the title survives', async () => {
+    const { db } = openStore(':memory:');
+    const adapter = createFakeAdapter();
+    const ctx = ctxWithFiles(BASE_PATHS);
+    await importAll({ adapters: [adapter], db, ctx });
+
+    const second = await importAll({ adapters: [adapter], db, ctx });
+
+    // Regression guard for the titles:false bypass above: the opt-in path must
+    // not lose the cache.
+    expect(reportFor(second, 'fake')).toEqual({
+      discovered: 0,
+      imported: 0,
+      skipped: 9,
+      removed: 0,
+      failed: 0,
+    });
+    const titled = db.query("SELECT title FROM sessions WHERE id = 'fake:titled'").get() as {
+      title: string | null;
+    };
+    expect(titled.title).toBe('A fake session title');
+  });
+
   test('linkSessions runs afterward: child_id is filled and the orphan is nulled with a diagnostic', async () => {
     const { db } = openStore(':memory:');
     const adapter = createFakeAdapter();

@@ -176,6 +176,16 @@ export function adapterContract(opts: AdapterContractOptions): void {
       });
     }
 
+    test('privacy.titles=false: no discovered session carries a title (D7)', async () => {
+      // A bundle must never carry a title when the caller opted out; persist
+      // enforces this too, but the adapter owns the opt-out at discovery time.
+      const titlesOff: AdapterContext = { ...ctx, privacy: { titles: false } };
+      const bundles = await collectAll(adapter, titlesOff);
+      for (const bundle of bundles) {
+        expect(bundle.session.title).toBeUndefined();
+      }
+    });
+
     test('canary: the sentinel never appears in any string reached from any bundle', async () => {
       const sentinel = opts.canarySentinel ?? 'RUNWIRE_CANARY_';
       const bundles = await collectAll(adapter, ctx);

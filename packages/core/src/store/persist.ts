@@ -95,7 +95,12 @@ function upsertModels(db: Database, b: SessionBundle): Map<string, number> {
   return ids;
 }
 
-function upsertSessionRow(db: Database, s: Session, modelIds: Map<string, number>): void {
+function upsertSessionRow(
+  db: Database,
+  s: Session,
+  modelIds: Map<string, number>,
+  titles: boolean,
+): void {
   db.run(
     `INSERT INTO sessions (
        id, harness_id, project_key, parent_id, relation, depth, agent_type, spawn_call_id,
@@ -133,7 +138,11 @@ function upsertSessionRow(db: Database, s: Session, modelIds: Map<string, number
       s.depth,
       s.agentType ?? null,
       s.spawnCallId ?? null,
-      s.title ?? null,
+      // D7/D71: a title is the one content-derived exception to metadata-only,
+      // and only when the caller's privacy setting allows it. When off, bind
+      // NULL even if the adapter still sent one; the upsert's
+      // `title = excluded.title` then also clears a previously stored title.
+      titles ? (s.title ?? null) : null,
       s.cwd ?? null,
       s.gitBranch ?? null,
       s.gitCommit ?? null,
@@ -250,8 +259,12 @@ function replaceDiagnostics(
  * (two unique keys on `sessions`: `id` PK and `source_path UNIQUE`); upsert
  * the session by id; replace its steps, derived session_tool_counts and
  * diagnostics.
+ *
+ * `titles` is the caller's `ctx.privacy.titles` (D7): when false the session
+ * title is written as NULL no matter what the bundle carries, so a title can
+ * never reach disk because of an adapter bug.
  */
-export function persistBundle(db: Database, bundle: SessionBundle): void {
+export function persistBundle(db: Database, bundle: SessionBundle, titles: boolean): void {
   const run = db.transaction((b: SessionBundle) => {
     upsertProject(db, b.project);
     // Displace by the EFFECTIVE source id (COALESCE(source_id, source_path)) so a
@@ -262,7 +275,7 @@ export function persistBundle(db: Database, bundle: SessionBundle): void {
       b.session.id,
     ]);
     const modelIds = upsertModels(db, b);
-    upsertSessionRow(db, b.session, modelIds);
+    upsertSessionRow(db, b.session, modelIds, titles);
     replaceSteps(db, b.session.id, b.steps, modelIds);
     replaceToolCounts(db, b.session.id, b.steps);
     replaceDiagnostics(db, b.session.id, b.diagnostics);
