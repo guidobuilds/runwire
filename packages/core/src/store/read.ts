@@ -1,7 +1,7 @@
 import type { Database, SQLQueryBindings } from 'bun:sqlite';
 
 // Read/query layer for the local HTTP API (docs/ARCHITECTURE.md §7,
-// .forge/sessions-api/design.md T1/T2). The SQL lives in @scout/core so it is
+// .forge/sessions-api/design.md T1/T2). The SQL lives in @runwire/core so it is
 // testable on `:memory:`. DTO names are `Api*`-prefixed to avoid colliding with
 // `SessionSummary`/`TokenTotals` already exported by
 // packages/adapter-opencode/src/connector/types.ts (lesson `core-read-dto-name-

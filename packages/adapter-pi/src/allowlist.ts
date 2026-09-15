@@ -1,4 +1,4 @@
-import type { Projection } from '@scout/core';
+import type { Projection } from '@runwire/core';
 
 /**
  * The only fields this adapter is permitted to read from a raw Pi record

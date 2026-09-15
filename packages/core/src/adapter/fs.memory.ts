@@ -1,4 +1,4 @@
-import type { FsStat, ScoutFs, SqliteReader } from './types';
+import type { FsStat, RunwireFs, SqliteReader } from './types';
 
 export type MemoryFile = { content: string; mtimeMs?: number };
 
@@ -21,8 +21,8 @@ function basename(path: string): string {
   return i === -1 ? path : path.slice(i + 1);
 }
 
-/** In-memory ScoutFs for tests: no real filesystem I/O. */
-export function createMemoryFs(init: MemoryFsInit = {}): ScoutFs {
+/** In-memory RunwireFs for tests: no real filesystem I/O. */
+export function createMemoryFs(init: MemoryFsInit = {}): RunwireFs {
   const files = new Map<string, MemoryFile>();
   for (const [path, value] of Object.entries(init.files ?? {})) {
     const norm = normalize(path);

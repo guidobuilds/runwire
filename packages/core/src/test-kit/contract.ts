@@ -177,7 +177,7 @@ export function adapterContract(opts: AdapterContractOptions): void {
     }
 
     test('canary: the sentinel never appears in any string reached from any bundle', async () => {
-      const sentinel = opts.canarySentinel ?? 'SCOUT_CANARY_';
+      const sentinel = opts.canarySentinel ?? 'RUNWIRE_CANARY_';
       const bundles = await collectAll(adapter, ctx);
       for (const bundle of bundles) {
         everyString(bundle, (s) => {

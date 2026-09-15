@@ -1,8 +1,8 @@
-import type { Capability, HarnessAdapter } from '@scout/core';
+import type { Capability, HarnessAdapter } from '@runwire/core';
 import { claudeCodeAllowlist } from './allowlist';
 import { discover, probe } from './discover';
 
-// Re-exported: apps/scout/src/fixture.ts (the dev-only redaction tool) needs
+// Re-exported: apps/runwire/src/fixture.ts (the dev-only redaction tool) needs
 // this adapter's own allowlist to know what to redact (docs/ARCHITECTURE.md §1).
 export { claudeCodeAllowlist } from './allowlist';
 // Re-exported for the same reason: the redactor keeps `entrypoint`/`promptSource`

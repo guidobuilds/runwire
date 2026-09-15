@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import type { AdapterContext } from '@scout/core';
-import { createBunFs } from '@scout/core';
+import type { AdapterContext } from '@runwire/core';
+import { createBunFs } from '@runwire/core';
 import {
   detectDbKind,
   opencodeDataDir,

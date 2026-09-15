@@ -1,10 +1,10 @@
 import type { Database } from 'bun:sqlite';
 import { describe, expect, mock, test } from 'bun:test';
 import { resolve } from 'node:path';
-import type { AdapterContext, ImportReport } from '@scout/core';
+import type { AdapterContext, ImportReport } from '@runwire/core';
 
 // Proves `runServe`'s flag parsing and DB resolution by injecting fakes for the
-// seams it depends on (no real server, no ~/.scout side effect). Each test
+// seams it depends on (no real server, no ~/.runwire side effect). Each test
 // triggers shutdown via `process.emit('SIGINT')` and asserts the fake server was
 // stopped (no leaked server). `runServe` removes its signal handlers on
 // shutdown, so handlers do not accumulate across tests.
@@ -77,7 +77,7 @@ describe('runServe', () => {
     const p = runServe(
       { titles: true },
       {
-        defaultDbPath: () => '/fake/home/.scout/scout.db',
+        defaultDbPath: () => '/fake/home/.runwire/runwire.db',
         ensureDbDir,
         openStore,
         createServer: createServerMock,
@@ -88,8 +88,8 @@ describe('runServe', () => {
     const code = await p;
 
     expect(code).toBe(0);
-    expect(ensureDbDir).toHaveBeenCalledWith('/fake/home/.scout/scout.db');
-    expect(openStore).toHaveBeenCalledWith('/fake/home/.scout/scout.db');
+    expect(ensureDbDir).toHaveBeenCalledWith('/fake/home/.runwire/runwire.db');
+    expect(openStore).toHaveBeenCalledWith('/fake/home/.runwire/runwire.db');
     expect(captured[0]?.host).toBe('127.0.0.1');
     expect(captured[0]?.port).toBe(8787);
     expect(stopMock).toHaveBeenCalled();
@@ -142,7 +142,7 @@ describe('runServe', () => {
   });
 });
 
-describe('scout serve (cli entry)', () => {
+describe('runwire serve (cli entry)', () => {
   test('an out-of-range --port exits 2 and never starts a server', async () => {
     const proc = Bun.spawn([process.execPath, CLI_SCRIPT, 'serve', '--port', '99999'], {
       cwd: REPO_ROOT,

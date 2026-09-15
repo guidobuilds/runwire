@@ -1,4 +1,4 @@
-import type { TokenField } from '@scout/core';
+import type { TokenField } from '@runwire/core';
 
 // Shared, pure, locale-safe formatting helpers for the session profile page.
 // See .forge/session-profile-v2/design.md "Web layer files" and grill.md G10.

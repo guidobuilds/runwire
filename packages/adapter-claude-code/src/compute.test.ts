@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { AdapterContext, Project } from '@scout/core';
-import { project } from '@scout/core';
+import type { AdapterContext, Project } from '@runwire/core';
+import { project } from '@runwire/core';
 import { claudeCodeAllowlist } from './allowlist';
 import type { ComputeBundleInput, ComputeLink } from './compute';
 import { computeBundle } from './compute';

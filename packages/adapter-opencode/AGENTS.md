@@ -1,6 +1,6 @@
 - OpenCode adapter: reads the `opencode.db` / `opencode-tui-v2.db` stores read-only via
   `openSqliteReadonly`, and computes one `SessionBundle` per session. Imports
-  `@scout/core` only, never another adapter. Owns all harness knowledge (D68).
+  `@runwire/core` only, never another adapter. Owns all harness knowledge (D68).
 
 # Checks
 
@@ -12,11 +12,11 @@ bun run typecheck
 
 # Tests
 
-- `src/index.test.ts` runs `adapterContract` from `@scout/core/test-kit` over
+- `src/index.test.ts` runs `adapterContract` from `@runwire/core/test-kit` over
   `fixtures/opencode/all` (current + legacy union).
 - Per-case snapshots in `fixtures/opencode/<case>/expected.json`; regenerate with
   `UPDATE_EXPECTED=1 bun test`.
-- `canary/` must never leak `SCOUT_CANARY_<n>` into a bundle; `malformed/` must yield
+- `canary/` must never leak `RUNWIRE_CANARY_<n>` into a bundle; `malformed/` must yield
   diagnostics, not throw.
 - Use `createBunFs()` (its virtual SQLite reader); never touch the real
   `~/.local/share/opencode`.

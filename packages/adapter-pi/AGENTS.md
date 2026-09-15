@@ -1,5 +1,5 @@
 - Pi adapter: turns `~/.pi/agent/sessions` JSONL trees into `SessionBundle`s.
-  Imports `@scout/core` only, never another adapter. Owns all Pi harness knowledge (D68).
+  Imports `@runwire/core` only, never another adapter. Owns all Pi harness knowledge (D68).
 
 # Checks
 
@@ -11,11 +11,11 @@ bun run typecheck
 
 # Tests
 
-- `src/index.test.ts` runs `adapterContract` from `@scout/core/test-kit` over
+- `src/index.test.ts` runs `adapterContract` from `@runwire/core/test-kit` over
   `fixtures/pi/all`.
 - Per-case snapshots in `fixtures/pi/<case>/expected.json`; regenerate
   deliberately with `UPDATE_EXPECTED=1 bun test`.
-- Fixtures are synthetic and each case has `home/`. `canary/` puts `SCOUT_CANARY_<n>` in
+- Fixtures are synthetic and each case has `home/`. `canary/` puts `RUNWIRE_CANARY_<n>` in
   every content field and it must never appear in a bundle; `malformed/` must yield
   diagnostics, not throw.
 - Use `createBunFs()`; never touch the real `~/.pi`.

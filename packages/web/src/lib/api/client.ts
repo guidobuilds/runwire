@@ -1,9 +1,9 @@
-// Same-origin fetch wrapper for the scout HTTP API. Every URL is `/api/...`
+// Same-origin fetch wrapper for the runwire HTTP API. Every URL is `/api/...`
 // (api-prefix). Empty base URL: works unchanged under the dev proxy
-// (vite.config.ts server.proxy forwards `/api` to @scout/server) and under a
+// (vite.config.ts server.proxy forwards `/api` to @runwire/server) and under a
 // future same-origin production hosting setup (plan.md decision #9).
 
-/** Shape of every non-2xx JSON body returned by @scout/server (createServer.ts). */
+/** Shape of every non-2xx JSON body returned by @runwire/server (createServer.ts). */
 export type ApiErrorBody = {
   error: string;
   parameter?: string;

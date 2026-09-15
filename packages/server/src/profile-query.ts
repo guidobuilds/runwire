@@ -6,7 +6,7 @@ import type {
   SignalsQuery,
   TimelineQuery,
   TokenField,
-} from '@scout/core';
+} from '@runwire/core';
 
 const SCOPES = new Set<Scope>(['own', 'tree']);
 const TOKEN_FIELDS = new Set<TokenField>([

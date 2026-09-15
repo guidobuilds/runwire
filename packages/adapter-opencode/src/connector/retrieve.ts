@@ -1,4 +1,4 @@
-import type { AdapterContext, Step } from '@scout/core';
+import type { AdapterContext, Step } from '@runwire/core';
 import { computeBundle } from '../compute';
 import {
   type DbOrigin,

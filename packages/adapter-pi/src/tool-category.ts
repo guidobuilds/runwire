@@ -1,4 +1,4 @@
-import type { ToolCategory } from '@scout/core';
+import type { ToolCategory } from '@runwire/core';
 
 const EXACT: Record<string, ToolCategory> = {
   read: 'read',

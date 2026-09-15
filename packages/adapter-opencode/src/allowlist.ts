@@ -1,4 +1,4 @@
-import type { Projection } from '@scout/core';
+import type { Projection } from '@runwire/core';
 
 /**
  * The metadata-only projection for a raw OpenCode `session_message.data` object

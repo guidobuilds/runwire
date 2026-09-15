@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AdapterContext, SessionBundle } from '@scout/core';
-import { createBunFs, TOKEN_FIELDS } from '@scout/core';
-import { adapterContract } from '@scout/core/test-kit';
+import type { AdapterContext, SessionBundle } from '@runwire/core';
+import { createBunFs, TOKEN_FIELDS } from '@runwire/core';
+import { adapterContract } from '@runwire/core/test-kit';
 import { createPiAdapter } from './index';
 
 const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', 'fixtures', 'pi');
@@ -46,7 +46,7 @@ adapterContract({
   adapter: createPiAdapter(),
   ctx: contextForFixture('all'),
   malformedSessionId: 'pi:a1000000-0000-7000-8000-000000000008',
-  canarySentinel: 'SCOUT_CANARY_',
+  canarySentinel: 'RUNWIRE_CANARY_',
 });
 
 // --- Per-fixture correctness ---
@@ -177,7 +177,7 @@ describe('pi adapter: canary fixture', () => {
     expect(bundle.session.title).toBeUndefined();
     expect(bundle.diagnostics.some((d) => d.code === 'branched-tree')).toBe(false);
     const serialized = JSON.stringify(bundle);
-    expect(serialized.includes('SCOUT_CANARY_')).toBe(false);
+    expect(serialized.includes('RUNWIRE_CANARY_')).toBe(false);
   });
 });
 

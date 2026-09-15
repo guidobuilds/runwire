@@ -1,4 +1,4 @@
-import type { AdapterContext, FsStat, Known, SessionBundle, SqliteReader } from '@scout/core';
+import type { AdapterContext, FsStat, Known, SessionBundle, SqliteReader } from '@runwire/core';
 import { computeBundle } from './compute';
 import {
   OPENCODE_ORIGINS,

@@ -1,4 +1,4 @@
-import type { ListSessionsQuery } from '@scout/core';
+import type { ListSessionsQuery } from '@runwire/core';
 import { keepPreviousData, queryOptions, useQuery } from '@tanstack/react-query';
 import { fetchSession, fetchSessions, fetchSessionsStats } from '@/lib/api/sessions';
 

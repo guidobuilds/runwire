@@ -1,11 +1,11 @@
-// Paths built here are handed to ScoutFs (createBunFs or createMemoryFs), not
+// Paths built here are handed to RunwireFs (createBunFs or createMemoryFs), not
 // used as opaque OS file paths directly — createMemoryFs's virtual layout is
 // always '/'-joined regardless of host OS, and a real filesystem on Windows
 // accepts '/' as a path separator just as readily as '\', so path.posix.join
 // keeps both backends correct on every platform. (Same convention as the
 // Claude Code adapter's paths.ts.)
 import { join } from 'node:path/posix';
-import type { AdapterContext, SqliteReader } from '@scout/core';
+import type { AdapterContext, SqliteReader } from '@runwire/core';
 
 export type DbOrigin = 'current' | 'legacy';
 

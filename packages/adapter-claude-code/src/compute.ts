@@ -5,8 +5,8 @@ import type {
   Session,
   SessionBundle,
   Step,
-} from '@scout/core';
-import { makeDiagnostic, TOKEN_FIELDS } from '@scout/core';
+} from '@runwire/core';
+import { makeDiagnostic, TOKEN_FIELDS } from '@runwire/core';
 import { classifyInitiator } from './initiator';
 import type { ClaudeCodeRecord } from './schema';
 import { claudeCodeToolCategory, hookEventName } from './tool-category';

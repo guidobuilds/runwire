@@ -1,5 +1,5 @@
 import { basename, dirname } from 'node:path';
-import type { Project, ScoutFs } from '@scout/core';
+import type { Project, RunwireFs } from '@runwire/core';
 
 export type ProjectIdentityMode = 'repo' | 'cwd';
 
@@ -10,7 +10,7 @@ export type ResolveProjectInput = {
   repoRootHint?: string;
 };
 
-export type ResolveProjectOptions = { fs: ScoutFs; mode?: ProjectIdentityMode };
+export type ResolveProjectOptions = { fs: RunwireFs; mode?: ProjectIdentityMode };
 
 /**
  * Normalizes `git@host:org/repo.git` and `https://host/org/repo.git` (and
@@ -43,7 +43,7 @@ export function normalizeRemoteUrl(url: string): string | undefined {
 
 async function findGitRoot(
   startCwd: string,
-  fs: ScoutFs,
+  fs: RunwireFs,
 ): Promise<{ repoRoot: string; worktree?: string } | undefined> {
   let dir = startCwd;
   for (let i = 0; i < 64; i++) {
@@ -63,7 +63,7 @@ async function findGitRoot(
   return undefined;
 }
 
-async function readOriginRemote(repoRoot: string, fs: ScoutFs): Promise<string | undefined> {
+async function readOriginRemote(repoRoot: string, fs: RunwireFs): Promise<string | undefined> {
   const config = await fs.readFile(`${repoRoot}/.git/config`);
   if (!config) return undefined;
   const sectionMatch = config.match(/\[remote "origin"\]([\s\S]*?)(?:\n\[|$)/);

@@ -5,7 +5,7 @@
 //
 // Known limitation: pure `import type { ... }` declarations produce no
 // runtime import and are invisible to this graph (verified empirically —
-// packages/web's type-only import of @scout/core is not reported as an
+// packages/web's type-only import of @runwire/core is not reported as an
 // edge at all). This only weakens the "web imports core *types only*"
 // guidance, not enforcement: any forbidden *runtime* import (the actual
 // privacy/data-flow risk) is a normal import and is still caught.
@@ -22,7 +22,7 @@ module.exports = {
     {
       name: 'adapter-imports-core-only',
       comment:
-        'An adapter package may only import @scout/core and its own files (this also forbids ' +
+        'An adapter package may only import @runwire/core and its own files (this also forbids ' +
         'importing another adapter or packages/cli). The `$1` back-reference in `to.pathNot` ' +
         "self-exempts each adapter's own intra-package imports from the rule that matches " +
         '`^packages/(?!core)` — without it, every import an adapter makes of its own sibling ' +
@@ -34,8 +34,8 @@ module.exports = {
     {
       name: 'cli-imports-core-and-adapters',
       comment:
-        'packages/cli is the composition root (D76): it may import @scout/core, any ' +
-        'adapter-* package, @scout/server (the transport it dispatches to), plus its own ' +
+        'packages/cli is the composition root (D76): it may import @runwire/core, any ' +
+        'adapter-* package, @runwire/server (the transport it dispatches to), plus its own ' +
         "files. The `|server|cli` alternatives in `to.path`'s negative " +
         "lookahead self-exempt the cli's own intra-package imports (e.g. index.ts → " +
         'commands/import.ts) - without it, every import the cli makes of its own sibling files ' +
@@ -48,7 +48,7 @@ module.exports = {
     {
       name: 'server-imports-core-only',
       comment:
-        'packages/server is the API transport (D66 "api layer"): it may import @scout/core ' +
+        'packages/server is the API transport (D66 "api layer"): it may import @runwire/core ' +
         'and its own files, nothing else. The `$1` back-reference in `to.pathNot` self-exempts ' +
         "the server's own intra-package imports (e.g. index.ts → createServer.ts).",
       severity: 'error',
@@ -58,8 +58,8 @@ module.exports = {
     {
       name: 'web-is-standalone-at-runtime',
       comment:
-        'packages/web talks to @scout/server only over HTTP (fetch); it may use `import type` ' +
-        'from @scout/core for DTO shapes (invisible to this graph, see header note above) but ' +
+        'packages/web talks to @runwire/server only over HTTP (fetch); it may use `import type` ' +
+        'from @runwire/core for DTO shapes (invisible to this graph, see header note above) but ' +
         'must have zero runtime repo imports.',
       severity: 'error',
       from: { path: '^packages/web' },

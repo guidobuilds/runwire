@@ -1,5 +1,5 @@
 {
-  "name": "scout-workspace",
+  "name": "runwire-workspace",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -13,7 +13,7 @@
     "boundaries": "depcruise packages --config .dependency-cruiser.cjs",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun run --filter '*' test",
-    "scout": "bun packages/cli/src/index.ts"
+    "runwire": "bun packages/cli/src/index.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.11",

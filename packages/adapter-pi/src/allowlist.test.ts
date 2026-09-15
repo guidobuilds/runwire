@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { project } from '@scout/core';
+import { project } from '@runwire/core';
 import { piAllowlist } from './allowlist';
 
 type Rec = Record<string, unknown>;

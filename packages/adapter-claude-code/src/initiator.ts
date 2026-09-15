@@ -1,4 +1,4 @@
-import type { InitiatorKind } from '@scout/core';
+import type { InitiatorKind } from '@runwire/core';
 
 /**
  * Classifies who started a Claude Code session
@@ -63,7 +63,7 @@ const HUMAN_ENTRYPOINTS: ReadonlySet<string> = new Set([
 
 /**
  * Every `entrypoint` value known to this adapter, for the dev-only fixture
- * redactor's vocabulary check (apps/scout/src/fixture.ts). An unlisted value
+ * redactor's vocabulary check (apps/runwire/src/fixture.ts). An unlisted value
  * is still handled at runtime - it classifies as `unknown` - so this set is a
  * privacy bound, not a validation gate.
  */

@@ -1,4 +1,4 @@
-import type { ApiHarnessOption } from '@scout/core';
+import type { ApiHarnessOption } from '@runwire/core';
 import { apiFetch } from './client';
 
 /** `GET /api/harnesses` — the harness options (id + display name) that have at

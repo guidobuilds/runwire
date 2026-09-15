@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createMemoryFs } from '@scout/core';
+import { createMemoryFs } from '@runwire/core';
 import { normalizeRemoteUrl, resolveProject } from './project';
 
 describe('normalizeRemoteUrl', () => {

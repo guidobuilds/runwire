@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "scout-workspace",
+      "name": "runwire-workspace",
       "devDependencies": {
         "@biomejs/biome": "2.5.11",
         "bun-types": "1.4.0",
@@ -12,56 +12,56 @@
       },
     },
     "packages/adapter-claude-code": {
-      "name": "@scout/adapter-claude-code",
+      "name": "@runwire/adapter-claude-code",
       "version": "0.0.0",
       "dependencies": {
-        "@scout/core": "workspace:*",
+        "@runwire/core": "workspace:*",
         "zod": "4.5.4",
       },
     },
     "packages/adapter-opencode": {
-      "name": "@scout/adapter-opencode",
+      "name": "@runwire/adapter-opencode",
       "version": "0.0.0",
       "dependencies": {
-        "@scout/core": "workspace:*",
+        "@runwire/core": "workspace:*",
         "zod": "4.5.4",
       },
     },
     "packages/adapter-pi": {
-      "name": "@scout/adapter-pi",
+      "name": "@runwire/adapter-pi",
       "version": "0.0.0",
       "dependencies": {
-        "@scout/core": "workspace:*",
+        "@runwire/core": "workspace:*",
         "zod": "4.5.4",
       },
     },
     "packages/cli": {
-      "name": "@scout/cli",
+      "name": "@runwire/cli",
       "version": "0.0.0",
       "dependencies": {
-        "@scout/adapter-claude-code": "workspace:*",
-        "@scout/adapter-opencode": "workspace:*",
-        "@scout/adapter-pi": "workspace:*",
-        "@scout/core": "workspace:*",
-        "@scout/server": "workspace:*",
+        "@runwire/adapter-claude-code": "workspace:*",
+        "@runwire/adapter-opencode": "workspace:*",
+        "@runwire/adapter-pi": "workspace:*",
+        "@runwire/core": "workspace:*",
+        "@runwire/server": "workspace:*",
       },
     },
     "packages/core": {
-      "name": "@scout/core",
+      "name": "@runwire/core",
       "version": "0.0.0",
       "dependencies": {
         "zod": "4.5.4",
       },
     },
     "packages/server": {
-      "name": "@scout/server",
+      "name": "@runwire/server",
       "version": "0.0.0",
       "dependencies": {
-        "@scout/core": "workspace:*",
+        "@runwire/core": "workspace:*",
       },
     },
     "packages/web": {
-      "name": "@scout/web",
+      "name": "@runwire/web",
       "version": "0.0.0",
       "dependencies": {
         "@base-ui/react": "1.8.0",
@@ -70,7 +70,7 @@
         "@dnd-kit/sortable": "10.0.0",
         "@dnd-kit/utilities": "3.2.2",
         "@fontsource-variable/geist": "5.3.0",
-        "@scout/core": "workspace:*",
+        "@runwire/core": "workspace:*",
         "@tailwindcss/vite": "^4",
         "@tanstack/react-query": "5.102.8",
         "@tanstack/react-router": "1.170.32",
@@ -308,19 +308,19 @@
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.1", "", {}, "sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw=="],
 
-    "@scout/adapter-claude-code": ["@scout/adapter-claude-code@workspace:packages/adapter-claude-code"],
+    "@runwire/adapter-claude-code": ["@runwire/adapter-claude-code@workspace:packages/adapter-claude-code"],
 
-    "@scout/adapter-opencode": ["@scout/adapter-opencode@workspace:packages/adapter-opencode"],
+    "@runwire/adapter-opencode": ["@runwire/adapter-opencode@workspace:packages/adapter-opencode"],
 
-    "@scout/adapter-pi": ["@scout/adapter-pi@workspace:packages/adapter-pi"],
+    "@runwire/adapter-pi": ["@runwire/adapter-pi@workspace:packages/adapter-pi"],
 
-    "@scout/cli": ["@scout/cli@workspace:packages/cli"],
+    "@runwire/cli": ["@runwire/cli@workspace:packages/cli"],
 
-    "@scout/core": ["@scout/core@workspace:packages/core"],
+    "@runwire/core": ["@runwire/core@workspace:packages/core"],
 
-    "@scout/server": ["@scout/server@workspace:packages/server"],
+    "@runwire/server": ["@runwire/server@workspace:packages/server"],
 
-    "@scout/web": ["@scout/web@workspace:packages/web"],
+    "@runwire/web": ["@runwire/web@workspace:packages/web"],
 
     "@sec-ant/readable-stream": ["@sec-ant/readable-stream@0.4.1", "", {}, "sha512-831qok9r2t8AlxLko40y2ebgSDhenenCatLVeW/uBtnHPyhHOvG0C7TvfgecV+wHzIm5KUICgzmVpWS+IMEAeg=="],
 

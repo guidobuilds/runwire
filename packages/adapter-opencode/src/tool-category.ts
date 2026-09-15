@@ -1,4 +1,4 @@
-import type { ToolCategory } from '@scout/core';
+import type { ToolCategory } from '@runwire/core';
 
 // OpenCode tool names are lowercase (docs/adapters/opencode.md "Tool
 // categories"). Total: unknown names fall back to 'other'.

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { SessionBundleSchema } from '@scout/core';
+import { SessionBundleSchema } from '@runwire/core';
 
 // Never 'bun' from PATH (Windows lookup, PATH-dependence) and never
 // process.cwd() (depends on the caller's shell) - process.execPath is the
@@ -27,7 +27,7 @@ async function run(args: string[]): Promise<{ code: number; stdout: string; stde
   return { code, stdout, stderr };
 }
 
-describe('scout discover', () => {
+describe('runwire discover', () => {
   test('--json on small yields NDJSON where every line parses and validates', async () => {
     const { code, stdout, stderr } = await run([
       'discover',
@@ -63,12 +63,12 @@ describe('scout discover', () => {
   });
 });
 
-describe('scout import', () => {
+describe('runwire import', () => {
   let tmpDir: string;
 
   test('subagents fixture: row counts via bun:sqlite on a tmp DB', async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), 'scout-cli-import-test-'));
-    const dbPath = join(tmpDir, 'scout.db');
+    tmpDir = await mkdtemp(join(tmpdir(), 'runwire-cli-import-test-'));
+    const dbPath = join(tmpDir, 'runwire.db');
     try {
       const { code, stderr } = await run([
         'import',
@@ -124,8 +124,8 @@ describe('scout import', () => {
   });
 
   test('--force reimports sources that an incremental second run skips', async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), 'scout-cli-force-test-'));
-    const dbPath = join(tmpDir, 'scout.db');
+    tmpDir = await mkdtemp(join(tmpdir(), 'runwire-cli-force-test-'));
+    const dbPath = join(tmpDir, 'runwire.db');
     const args = ['import', '--db', dbPath, '--home', 'fixtures/claude-code/small/home'];
     try {
       const first = await run(args);

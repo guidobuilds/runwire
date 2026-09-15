@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createBunFs, createMemoryFs } from '@scout/core';
+import { createBunFs, createMemoryFs } from '@runwire/core';
 import { normalizeRemoteUrl, resolveProject } from './project';
 
 describe('normalizeRemoteUrl', () => {
@@ -25,7 +25,7 @@ describe('resolveProject - real filesystem', () => {
   let root: string;
 
   beforeAll(async () => {
-    root = await mkdtemp(join(tmpdir(), 'scout-adapter-project-test-'));
+    root = await mkdtemp(join(tmpdir(), 'runwire-adapter-project-test-'));
   });
 
   afterAll(async () => {

@@ -1,4 +1,4 @@
-import type { Event, EventFilter } from '@scout/core';
+import type { Event, EventFilter } from '@runwire/core';
 import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

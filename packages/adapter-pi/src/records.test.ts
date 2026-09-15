@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { AdapterContext, Diagnostic } from '@scout/core';
-import { createMemoryFs } from '@scout/core';
+import type { AdapterContext, Diagnostic } from '@runwire/core';
+import { createMemoryFs } from '@runwire/core';
 import { readRecords } from './records';
 
 function ctxWith(content: string): AdapterContext {

@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import type { ImportReport } from '@scout/core';
-import { openStore, recomputeRollups } from '@scout/core';
+import type { ImportReport } from '@runwire/core';
+import { openStore, recomputeRollups } from '@runwire/core';
 import { createServer } from './createServer';
 
 /** Idempotently upserts a raw model string and returns its `models.id`. */
@@ -71,7 +71,7 @@ describe('createServer', () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body).toEqual({
-        service: 'scout',
+        service: 'runwire',
         endpoints: [
           '/api/sessions',
           '/api/sessions/stats',
