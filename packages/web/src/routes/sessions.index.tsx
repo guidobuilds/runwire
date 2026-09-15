@@ -1,4 +1,4 @@
-import type { ApiSessionsStats } from '@scout/core';
+import type { ApiSessionsStats } from '@runwire/core';
 import { createFileRoute } from '@tanstack/react-router';
 import { type ChartAreaDataPoint, ChartAreaInteractive } from '@/components/chart-area-interactive';
 import { DataTable } from '@/components/data-table';

@@ -1,4 +1,4 @@
-import type { Scope, TokenField } from '@scout/core';
+import type { Scope, TokenField } from '@runwire/core';
 import { Bot, ZoomIn } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {

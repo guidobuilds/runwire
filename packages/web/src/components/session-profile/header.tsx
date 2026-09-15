@@ -1,4 +1,4 @@
-import type { ApiSessionDetail, ApiSessionSummary } from '@scout/core';
+import type { ApiSessionDetail, ApiSessionSummary } from '@runwire/core';
 import { Link } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { HarnessIdentity } from '@/components/harness-identity';

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import type { AdapterContext, SessionBundle } from '@scout/core';
-import { createBunFs } from '@scout/core';
-import { adapterContract } from '@scout/core/test-kit';
+import type { AdapterContext, SessionBundle } from '@runwire/core';
+import { createBunFs } from '@runwire/core';
+import { adapterContract } from '@runwire/core/test-kit';
 import { createClaudeCodeAdapter } from './index';
 
 const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', 'fixtures', 'claude-code');
@@ -44,7 +44,7 @@ adapterContract({
   adapter: createClaudeCodeAdapter(),
   ctx: contextForFixture('all'),
   malformedSessionId: 'claude-code:malformed-session',
-  canarySentinel: 'SCOUT_CANARY_',
+  canarySentinel: 'RUNWIRE_CANARY_',
 });
 
 // --- Per-fixture correctness ---

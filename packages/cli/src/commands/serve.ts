@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
-import type { AdapterContext, HarnessAdapter, ImportReport } from '@scout/core';
-import { importAll, openStore } from '@scout/core';
-import { createServer, DEFAULT_HOST, DEFAULT_PORT } from '@scout/server';
+import type { AdapterContext, HarnessAdapter, ImportReport } from '@runwire/core';
+import { importAll, openStore } from '@runwire/core';
+import { createServer, DEFAULT_HOST, DEFAULT_PORT } from '@runwire/server';
 import { adapters as defaultAdapters } from '../adapters';
 import { createContext, defaultDbPath, ensureDbDir } from '../context';
 
@@ -10,7 +10,7 @@ export type ServeOptions = {
   host?: string;
   port?: string;
   /** Stored harness titles opt-out (`--no-titles`). The web-triggered scan
-   * shares the same privacy switch as `scout import` (D7). */
+   * shares the same privacy switch as `runwire import` (D7). */
   titles: boolean;
 };
 
@@ -44,9 +44,9 @@ export type ServeDeps = {
 /**
  * Thin dispatcher (architecture §4): resolves the DB path (`defaultDbPath()`
  * when `--db` is omitted), calls `ensureDbDir` first (openStore cannot create a
- * missing parent dir), opens the store, calls `@scout/server`'s `createServer`,
+ * missing parent dir), opens the store, calls `@runwire/server`'s `createServer`,
  * prints the listening URL to stderr (stdout stays clean), and on SIGINT/SIGTERM
- * stops the server and closes the store. `scout serve` is the first long-running
+ * stops the server and closes the store. `runwire serve` is the first long-running
  * process in the repo; it does not watch the DB — it reads SQLite live per
  * request (architecture §6).
  */
@@ -57,9 +57,9 @@ export async function runServe(opts: ServeOptions, deps: ServeDeps = {}): Promis
   const port = opts.port === undefined ? DEFAULT_PORT : Number(opts.port);
   const { db, close } = (deps.openStore ?? openStore)(dbPath);
   // The scan callback is built here because the adapter registry and the
-  // `AdapterContext` are CLI concerns (D76); `@scout/server` only invokes it.
+  // `AdapterContext` are CLI concerns (D76); `@runwire/server` only invokes it.
   // `--no-titles` must reach this context so a web scan obeys the same privacy
-  // rule as `scout import` (D7): what was never written cannot leak.
+  // rule as `runwire import` (D7): what was never written cannot leak.
   const ctx = (deps.createContext ?? createContext)({ titles: opts.titles });
   const server = (deps.createServer ?? createServer)({
     db,
@@ -67,7 +67,7 @@ export async function runServe(opts: ServeOptions, deps: ServeDeps = {}): Promis
     port,
     scan: () => importAll({ adapters: deps.adapters ?? defaultAdapters, db, ctx }),
   });
-  console.error(`scout serve listening on http://${host}:${server.port}`);
+  console.error(`runwire serve listening on http://${host}:${server.port}`);
 
   return await new Promise<number>((resolve) => {
     const shutdown = (): void => {

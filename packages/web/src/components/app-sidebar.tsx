@@ -24,8 +24,8 @@ import {
 } from '@/components/ui/sidebar';
 import { useScanMutation } from '@/queries/scan';
 
-// Scout branding + navigation. `navClouds`/`documents` from the CLI-generated
-// dashboard-01 block had no Scout equivalent (fictional proposal/document-library
+// Runwire branding + navigation. `navClouds`/`documents` from the CLI-generated
+// dashboard-01 block had no Runwire equivalent (fictional proposal/document-library
 // nav) and were dropped rather than repurposed. f6: "Projects"/"Harnesses" are
 // inert placeholders (no views yet); user-account chrome removed entirely (local-
 // only app, no accounts). "Scan" is the one sidebar action: it opens a confirmation
@@ -89,7 +89,7 @@ function ScanConfirmDialog({
       <div className="w-full max-w-md rounded-lg border bg-background p-6 shadow-lg">
         <h2 className="text-lg font-semibold">Scan for sessions</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Scout re-reads every harness source and imports new or changed sessions into the local
+          Runwire re-reads every harness source and imports new or changed sessions into the local
           database. This can take a moment.
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -156,7 +156,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               render={<a href="/sessions" />}
             >
               <TerminalIcon className="size-5!" />
-              <span className="text-base font-semibold">Scout</span>
+              <span className="text-base font-semibold">Runwire</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

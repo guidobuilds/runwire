@@ -1,4 +1,4 @@
-import type { Capability, HarnessAdapter } from '@scout/core';
+import type { Capability, HarnessAdapter } from '@runwire/core';
 import { piAllowlist } from './allowlist';
 import { discover, probe } from './discover';
 

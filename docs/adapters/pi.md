@@ -3,7 +3,7 @@
 Status: **implemented (v1, 2026-09-10)** — see `packages/adapter-pi/`. This file remains the
 mapping reference for the Pi adapter, written against the same contract as the Claude Code and
 OpenCode adapters ([README](README.md), [ARCHITECTURE §3–§8](../ARCHITECTURE.md)). It answers
-three questions: where Pi keeps its information, what Scout can obtain from it, and what Scout
+three questions: where Pi keeps its information, what Runwire can obtain from it, and what Runwire
 would be missing.
 
 Evidence base:
@@ -66,9 +66,9 @@ Two precedents from those adapters matter a lot for Pi, and are referenced below
 | Project dir | `<sessions>/<encoded cwd>/` where `<encoded cwd>` = `--` + `cwd.replace(/^[/\\]/,'').replace(/[/\\:]/g,'-')` + `--` |
 | Session | `<projectDir>/<name>_<uuidv7>.jsonl` where `<name>` is the creation ISO timestamp with every `:` and `.` replaced by `-` |
 | Format version | header `version`, `CURRENT_SESSION_VERSION = 3`; **absent ⇒ v1** |
-| Ephemeral | `pi --no-session` writes nothing at all — invisible to Scout, by construction |
+| Ephemeral | `pi --no-session` writes nothing at all — invisible to Runwire, by construction |
 
-Observed: `sessions/--Users-guido-orca-workspaces-scout-session-profile-dynamic--/2026-09-08T15-34-04-313Z_01a081a7-ab18-…-….jsonl`.
+Observed: `sessions/--Users-guido-orca-workspaces-runwire-session-profile-dynamic--/2026-09-08T15-34-04-313Z_01a081a7-ab18-…-….jsonl`.
 
 The encoding is **lossy in the same way Claude's is** (a literal `-` in a path segment is
 indistinguishable from an encoded separator, and Windows adds a drive letter), so the decoded
@@ -104,7 +104,7 @@ Every line is a JSON object with `type`. The header carries `id` (the session uu
 SessionEntryBase = { type: string; id: string /* 8-hex */; parentId: string | null; timestamp: string /* ISO */ }
 ```
 
-| `type` | Payload that matters to Scout | Content that must never be read |
+| `type` | Payload that matters to Runwire | Content that must never be read |
 |---|---|---|
 | `session` (header) | `version`, `id` (uuidv7), `timestamp`, `cwd`, `parentSession?` (a path) | — |
 | `message` | `message.role` and per-role metadata (§3) | all text/thinking/tool args/tool output/`details` |
@@ -114,7 +114,7 @@ SessionEntryBase = { type: string; id: string /* 8-hex */; parentId: string | nu
 | `branch_summary` | `usage?`, `fromHook?` — `fromId` is not allowlisted: the entry's presence is the fact, the tree pointer is not followed in v1 | `summary`, `details` |
 | `custom` | *presence only* — `customType` is deliberately not read (§3.3) | `data` — arbitrary extension state |
 | `custom_message` | *presence only* | `content` — extension-injected context, and `customType` |
-| `label` | *presence only* | `label` (user-authored bookmark text), `targetId` (a tree pointer Scout does not follow) |
+| `label` | *presence only* | `label` (user-authored bookmark text), `targetId` (a tree pointer Runwire does not follow) |
 | `session_info` | presence | `name` (user-authored display name) |
 
 Message roles (`AgentMessage` union, verified against `pi-ai/dist/types.d.ts` +
@@ -137,7 +137,7 @@ ToolCall   = { type:'toolCall', id, name, arguments /* content */ }
 
 `pending` cannot appear in a persisted session: pi replaces it before writing the terminal message.
 
-### 2.3 Pi is deliberately feature-poor — and that shapes what Scout sees
+### 2.3 Pi is deliberately feature-poor — and that shapes what Runwire sees
 
 `docs/usage.md`, Design Principles: *"It intentionally does not include built-in MCP, sub-agents,
 permission popups, plan mode, to-dos, or background bash."* The built-in tool set is closed and
@@ -154,14 +154,14 @@ tool vocabulary is **open** (observed on the reference machine: `todo`, `subagen
 from core data, no `mode`, no `subagents`, and a `tool-category.ts` that must degrade unknown
 names to `other` without failing.
 
-## 3. What Scout can obtain
+## 3. What Runwire can obtain
 
 ### 3.1 Token and cost semantics (verified, not assumed)
 
 The D5 mapping is a rename — **no derivation needed**, which is the best outcome of the three
 harnesses surveyed:
 
-| Scout column | Pi field | Evidence |
+| Runwire column | Pi field | Evidence |
 |---|---|---|
 | `uncached_input` | `usage.input` | `totalTokens === input + output + cacheRead + cacheWrite` on 170/170 messages → `input` and `cacheRead` are **disjoint** (unlike OpenAI-style `cached ⊂ input`, so no `input − cached` subtraction, and unlike Codex) |
 | `cached_input` | `usage.cacheRead` | reference session: 22 227 968 cache-read vs 584 156 uncached input (97.4 % hit) |
@@ -176,11 +176,11 @@ response as several records sharing a `requestId`, so a naive sum over-counts 2.
 170/170 messages. Pi's risk is the opposite: usage that is *not* on an assistant message
 (`compaction.usage`, `branch_summary.usage`, `toolResult.usage`). Pi itself includes all three in
 its own totals — `getUsageCostBreakdown()` buckets them under `"Tools/summaries"` — so ignoring
-them would make Scout's numbers disagree with what `pi /session` shows the user. That is §5.2.
+them would make Runwire's numbers disagree with what `pi /session` shows the user. That is §5.2.
 
 ### 3.2 `Session` fields
 
-| Scout field | Source | Notes |
+| Runwire field | Source | Notes |
 |---|---|---|
 | `id` | `pi:<id>` with `<id>` from the **filename** | not from the header — §5.3 |
 | `harnessId` | `pi` | |
@@ -249,15 +249,15 @@ Pi's headline structure: every entry has `parentId`, `/tree` branches **in place
 and `/fork`+`/clone` create new files. So one file can contain several roots and several live
 leaves, i.e. mutually exclusive conversation paths, one of which the model actually saw.
 
-Scout's `steps[]` is a linear, 0-based sequence. Options:
+Runwire's `steps[]` is a linear, 0-based sequence. Options:
 
 | Option | Effect |
 |---|---|
 | (a) **file/append order** *(chosen)* | every billed API call is counted; matches [ARCHITECTURE §4](../ARCHITECTURE.md#4-what-an-adapter-computes)'s "source order"; matches what the user spent |
 | (b) the active branch (`buildSessionPath` to the last leaf) | matches what the model saw, silently discards the tokens that abandoned branches really cost |
-| (c) one Scout session per branch | breaks D4 ("one source file = one session") and re-counts shared prefix usage |
+| (c) one Runwire session per branch | breaks D4 ("one source file = one session") and re-counts shared prefix usage |
 
-Chosen: **(a) file order**, because Scout's purpose is making waste visible (D67) and an abandoned
+Chosen: **(a) file order**, because Runwire's purpose is making waste visible (D67) and an abandoned
 branch is spend, not noise. The active-path view is *derivable later* from `parentId`, which is
 why (a) does not foreclose anything. Two consequences must be documented, not hidden:
 
@@ -274,7 +274,7 @@ message as a number, never as content). Reference session: 1 root, 1 leaf → no
 ### 5.2 Usage that is not attached to an assistant message
 
 `compaction.usage`, `branch_summary.usage` and `toolResult.usage` are real API spend that Pi
-counts in its own totals but that Scout's schema cannot hang off a `compaction`/`tool` step
+counts in its own totals but that Runwire's schema cannot hang off a `compaction`/`tool` step
 (`Step` has token columns only on `call`; `compaction` has `pre/postTokens`).
 
 Chosen: **emit an additional `call` step** for each such usage record — `at` = the entry
@@ -293,7 +293,7 @@ uses for `<synthetic>` usage. Rules:
 Alternative (rejected): drop them and match only "main context accounting". Rejected because the
 reference machine runs extensions whose tools call models (`gentle_review`,
 `mem_session_summary`, `subagent_run`), and silently dropping their cost would understate exactly
-the harness-layer waste Scout exists to find. Note `toolResult.usage` is declared but **not
+the harness-layer waste Runwire exists to find. Note `toolResult.usage` is declared but **not
 observed** in the reference data — verify against more sessions before trusting it.
 
 ### 5.3 Identity stability (the "stable ids" contract check is the trap)
@@ -389,12 +389,12 @@ of blindness for every consumer.
 Pi implements the Agent Skills standard, but a skill is *not a tool*: skills are listed in the
 system prompt and the model loads `SKILL.md` with `read` (or `bash`), or the user forces it with
 `/skill:<name>`, which expands into a **user message containing the skill's text**. So the only
-trace is a file path inside `toolCall.arguments` — which is tool input, and Scout never reads tool
+trace is a file path inside `toolCall.arguments` — which is tool input, and Runwire never reads tool
 input (D7, D31: "Tool inputs/outputs never leave the adapter").
 
 Options: (a) leave `skillName` unreachable — honest, and D51 signal #5 ("no skill usage") is then
 neutral-not-broken for Pi; (b) match `read` argument paths against the skill directory names
-Scout can enumerate from `<agentDir>/skills` and the project's `.pi/skills`/`.agents/skills`,
+Runwire can enumerate from `<agentDir>/skills` and the project's `.pi/skills`/`.agents/skills`,
 keeping the skill *name* and dropping the rest of the path. (b) is a real D7 extension — it reads
 one argument key — so it must be an explicit numbered decision before it is implemented, not a
 convenience in `compute.ts`. Recommendation for v1: **(a)** — shipped as **D79** (`skill` not declarable), with option (b)
@@ -423,7 +423,7 @@ first message, which is the same trade-off D7 already adjudicated. Shipped as **
 | `compaction.compactionTrigger` | Pi computes `reason ∈ {'manual','threshold','overflow'}` for its `session_before_compact` event but does **not** persist it, and `CompactionDetails` only carries `{readFiles, modifiedFiles}` | D51 signal #1 ("repeated *automatic* compaction") degrades to "repeated compaction". `fromHook` does distinguish extension-authored. **Upstream ask:** persist the reason you already compute |
 | `compaction.postTokens` | `CompactionResult.estimatedTokensAfter` is not written to the entry | only `preTokens` available |
 | `Step.error` on a failed call | `error` is gated for `tool` steps only (`CAPABILITY_FIELDS['steps.errors']`) | workaround chosen in §3.3 (`harness` step `call-error`); the clean fix is widening `error` to `call` steps |
-| `provider` | Scout has no provider column, and Pi's cost per token varies by provider as well as model | decide whether `modelPrimary` carries `provider/model`; see D-"decisions" below |
+| `provider` | Runwire has no provider column, and Pi's cost per token varies by provider as well as model | decide whether `modelPrimary` carries `provider/model`; see D-"decisions" below |
 | `usage.cacheWrite1h` | Anthropic's 1 h-retention split, a subset of `cacheWrite` | outside the contract; a future cache-cost signal |
 | `--no-session` runs | nothing written | invisible, and unfixable from disk |
 | custom `--session-dir` runs | written outside `<agentDir>/sessions` | invisible unless extra roots are configured; do not hardcode extension dirs |
@@ -485,7 +485,7 @@ not a theoretical one:
 
 Two projection idioms worth noting: `[{}]` (an array whose element projection keeps nothing) is how
 `retainedTail` presence is kept without its content, and `content: [{ … }]` is the per-element
-projection Claude and OpenCode already rely on. Everything Scout needs from a Pi session is
+projection Claude and OpenCode already rely on. Everything Runwire needs from a Pi session is
 reachable **without** touching a single content-bearing key — which is the strongest argument that
 Pi is a safe harness to add.
 
@@ -547,7 +547,7 @@ fixtures/pi/<case>/home/.pi/agent/sessions/--home-u-pi--/<ts>_<uuid>.jsonl
   read → compute → yield. Files are independent, so — unlike Claude's parent+child coupling —
   there is no group rule. Sort by project dir then filename; the uuidv7 ids make that order
   chronological, so the stream is deterministic (the "stable ids" test needs it).
-- **Boundaries**: `@scout/core` only; register in `packages/cli/src/adapters.ts` (D76).
+- **Boundaries**: `@runwire/core` only; register in `packages/cli/src/adapters.ts` (D76).
 - Pi can rewrite a whole file during migration (`_rewriteFile`), which jumps both `size` and
   `mtime` → one full re-import of that session. Correct, not a bug, but worth a line in the docs.
 
@@ -562,10 +562,10 @@ fixtures/pi/<case>/home/.pi/agent/sessions/--home-u-pi--/<ts>_<uuid>.jsonl
 | `legacy/` | v1 (no `id`/`parentId`, no header `version`, `firstKeptEntryIndex`) and a v2 `hookMessage` role: `legacy-format`, stable ids from the filename |
 | `fork/` | `parentSession` → `relation:'fork'`, `forkedFrom`, and **no** `parentId` (no `orphan-child`) |
 | `malformed/` | hand-written: a broken line and a truncated final line, mid-file |
-| `canary/` | hand-written: `SCOUT_CANARY_<n>` in **every** content key, especially `content[].arguments`, `details.diff`, `details.patch`, `details.gentleTodo.tasks[].title`, `summary`, `retainedTail`, `errorMessage`, `custom.data`, `label.label`, `session_info.name`, `diagnostics` |
+| `canary/` | hand-written: `RUNWIRE_CANARY_<n>` in **every** content key, especially `content[].arguments`, `details.diff`, `details.patch`, `details.gentleTodo.tasks[].title`, `summary`, `retainedTail`, `errorMessage`, `custom.data`, `label.label`, `session_info.name`, `diagnostics` |
 | `all/` | generated union, for the kit's capability-consistency check (must observe `cacheWrite` and `compactions`, which the real machine's single file does not) |
 
-Real sessions may be redacted into fixtures with `scout fixture` as for Claude Code; `malformed/`
+Real sessions may be redacted into fixtures with `runwire fixture` as for Claude Code; `malformed/`
 and `canary/` are hand-written. The `expected.json` convention and
 `UPDATE_EXPECTED=1 bun test packages/adapter-pi` apply unchanged.
 
@@ -577,16 +577,16 @@ dedup, no SQLite/WAL handling, no `sourceExists` policy — while being the harn
 directly answers D67, because a Pi session is nearly pure model spend with no hook or permission
 chatter.
 
-What Scout gains that the current pair does not give: a third, *minimal* harness to compare
+What Runwire gains that the current pair does not give: a third, *minimal* harness to compare
 against. Pi is the control group. Only Claude Code reports `mode`, `git` and `initiator` today,
 because only Claude Code persists them; a Pi row's NULLs are harness truth, not adapter laziness —
 and the difference between "this harness did not do that work" and "this harness did not tell us
-about it" is exactly the ambiguity Scout has to be able to query.
-`usage.totalTokens === input+output+cacheRead+cacheWrite` also gives Scout a self-check no other
+about it" is exactly the ambiguity Runwire has to be able to query.
+`usage.totalTokens === input+output+cacheRead+cacheWrite` also gives Runwire a self-check no other
 adapter offers: a per-record arithmetic invariant (a `token-arithmetic-drift` diagnostic, the
 direct analogue of OpenCode's `token-total-drift`).
 
-What Scout loses, honestly: delegation structure (`subagents`), version attribution (`version`),
+What Runwire loses, honestly: delegation structure (`subagents`), version attribution (`version`),
 git context (`git`), machine-vs-human attribution (`initiator`), permission/plan mode (`mode`) and
 skill usage — six of twenty capabilities. Three are Pi's design (it ships without sub-agents, plan
 mode or MCP by intent) and cannot be fixed by any adapter; three are missing persisted fields that

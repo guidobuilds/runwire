@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { cpSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { AdapterContext, AdapterReport, ImportReport } from '@scout/core';
-import { createBunFs, importAll, openStore } from '@scout/core';
+import type { AdapterContext, AdapterReport, ImportReport } from '@runwire/core';
+import { createBunFs, importAll, openStore } from '@runwire/core';
 import { retrieveSession } from './connector/retrieve';
 import { createOpencodeAdapter } from './index';
 
@@ -66,7 +66,7 @@ describe('connector is CORE-representable (no content parts)', () => {
     expect(details.session.id).toBe('opencode:current:ses_all_1');
     expect(details.steps.length).toBeGreaterThan(0);
     const json = JSON.stringify(details);
-    expect(json.includes('SCOUT_CANARY_')).toBe(false);
+    expect(json.includes('RUNWIRE_CANARY_')).toBe(false);
     for (const step of details.steps) {
       expect('text' in step).toBe(false);
       expect('content' in step).toBe(false);

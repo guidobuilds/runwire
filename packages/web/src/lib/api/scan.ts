@@ -1,4 +1,4 @@
-import type { ImportReport } from '@scout/core';
+import type { ImportReport } from '@runwire/core';
 import { apiFetch } from './client';
 
 /**

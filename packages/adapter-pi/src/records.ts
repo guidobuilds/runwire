@@ -1,5 +1,5 @@
-import type { AdapterContext, Diagnostic } from '@scout/core';
-import { makeDiagnostic, project, readLinesRaw } from '@scout/core';
+import type { AdapterContext, Diagnostic } from '@runwire/core';
+import { makeDiagnostic, project, readLinesRaw } from '@runwire/core';
 import { piAllowlist } from './allowlist';
 import { type PiRecord, piRecordSchema } from './schema';
 

@@ -2,7 +2,7 @@
 
 The session profile is the `/sessions/{id}` page: answers **what did my
 harness do here that cost me context or time?** for a single session and its
-complete tree. It reads distinct session-scoped profile resources (every scout
+complete tree. It reads distinct session-scoped profile resources (every runwire
 API route is served under `/api/*`) and
 composes, in order: header → agent graph (git-graph, one wall-clock line per
 agent, branches at spawn time) → token chart (tree-wide cumulative, one line
@@ -17,7 +17,7 @@ profile.
 
 ## Resources: `GET /api/sessions/{id}/profile/{projection}`
 
-- Every scout API route is served **exclusively under `/api`**; the legacy
+- Every runwire API route is served **exclusively under `/api`**; the legacy
   un-prefixed `/session-profiles*` / `/sessions*` and `/` are not exposed.
 - `{id}` is the opaque whole path remainder before `/profile/{projection}`, decoded
   **exactly once** (a literal `/` or `%2F` stays part of the id).
@@ -116,7 +116,7 @@ profile.
   clamped >= 0).
 - **Metadata only.** Rows carry kind, timestamp, and kind-specific fields
   (`model`, `category · toolName`, `durationMs`, `trigger`, `from → to`). Tool
-  rows carry `model` like call rows (em-dash / NULL before a `scout import --force`
+  rows carry `model` like call rows (em-dash / NULL before a `runwire import --force`
   backfill). They never render args, paths, or tool output.
 
 ---
@@ -176,5 +176,5 @@ profile.
 - **No raw content.** The profile is metadata-only: no code, prompts, responses,
   args, file paths, or tool output.
 - **No model-cost tier.** "Expensive model on cheap work" is not assessed:
-  Scout has no model cost tier.
+  Runwire has no model cost tier.
 - **No side-by-side compare view.**

@@ -1,4 +1,4 @@
-import type { ApiSessionSummary, ApiTokenTotals } from '@scout/core';
+import type { ApiSessionSummary, ApiTokenTotals } from '@runwire/core';
 import { Link } from '@tanstack/react-router';
 import {
   type ColumnVisibilityState,

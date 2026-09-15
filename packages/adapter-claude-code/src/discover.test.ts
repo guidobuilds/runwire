@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { AdapterContext, Known } from '@scout/core';
-import { createMemoryFs } from '@scout/core';
+import type { AdapterContext, Known } from '@runwire/core';
+import { createMemoryFs } from '@runwire/core';
 import { discover } from './discover';
 
 function line(overrides: Record<string, unknown> = {}): string {

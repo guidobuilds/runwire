@@ -1,5 +1,5 @@
-import type { HarnessAdapter } from '@scout/core';
-import { importAll, openStore } from '@scout/core';
+import type { HarnessAdapter } from '@runwire/core';
+import { importAll, openStore } from '@runwire/core';
 import { createContext, defaultDbPath, ensureDbDir } from '../context';
 import { formatReport } from '../report';
 

@@ -93,7 +93,7 @@ Mirror of `src/allowlist.ts`; kept in step by hand.
 
 Explicitly excluded: `message.content[].text|thinking|content` (content) and the rest of `input` (`input.args|input.command|input.content` — `input.skill` is now the sole allowlisted `input` key), everything in `attachment` except `type` and `hookName` (attachments embed file contents, hook stdout and injected context), `toolUseResult` (tool output), `lastPrompt`, `agentName`, `slug` (prompt-derived), `summary`, `agentSetting` (a user-authored agent name — only the *presence* of the `agent-setting` record is read).
 
-`entrypoint` and `promptSource` are closed-ish enums the CLI emits — no user- or model-authored content, admissible under D7 like `model`/`mode`/`stop_reason`. The dev-only fixture redactor (`scout fixture`) keeps their value only when it is in `CLAUDE_CODE_ENTRYPOINTS` / `CLAUDE_CODE_PROMPT_SOURCES` (`src/initiator.ts`); anything else degrades to filler.
+`entrypoint` and `promptSource` are closed-ish enums the CLI emits — no user- or model-authored content, admissible under D7 like `model`/`mode`/`stop_reason`. The dev-only fixture redactor (`runwire fixture`) keeps their value only when it is in `CLAUDE_CODE_ENTRYPOINTS` / `CLAUDE_CODE_PROMPT_SOURCES` (`src/initiator.ts`); anything else degrades to filler.
 
 ## Usage mapping
 
@@ -175,7 +175,7 @@ Harness event vocabulary (`claudeCodeHarnessEventNames`): `hook:<hookEvent>` (th
 
 ## Fixtures
 
-Generated from real sessions on the reference machine via `scout fixture` (the dev-only redactor), except `malformed/` and `canary/`, which are hand-written. `all/` is a generated union of the others, used only so the contract test kit's capability-consistency check sees the full repertoire in one `discover()` view.
+Generated from real sessions on the reference machine via `runwire fixture` (the dev-only redactor), except `malformed/` and `canary/`, which are hand-written. `all/` is a generated union of the others, used only so the contract test kit's capability-consistency check sees the full repertoire in one `discover()` view.
 
 Every case except `all/` has a committed `expected.json` snapshot (`packages/adapter-claude-code/src/expected.test.ts`): `{ sessions (sorted by id, sourcePath relative to home, sourceMtime omitted), stepCounts, toolCounts, diagnostics }`, compared with `toEqual` and rewritten with `UPDATE_EXPECTED=1 bun test packages/adapter-claude-code`.
 
@@ -187,5 +187,5 @@ Every case except `all/` has a committed `expected.json` snapshot (`packages/ada
 | `old-version/` | a real session on CLI 2.1.234 | no `cost-state`, no `turn_duration`; turns derived from user-message heuristics |
 | `dispatch/` | a real `cli`-entrypoint session dispatched by another agent framework | initiator classifies `machine`/`subagent-dispatch` on the `agent-setting` marker alone, since `entrypoint` says `cli` exactly as a human terminal session would |
 | `malformed/` | hand-written | a broken JSON line and a truncated final line, both mid-file so records before and after still parse. The oversized-line path is exercised in-memory in `records.test.ts`, not via an 8 MB fixture |
-| `canary/` | hand-written | every content field = a unique `SCOUT_CANARY_<n>` sentinel, except `aiTitle` (a different, unchecked sentinel — the sanctioned D7 exception that legitimately reaches `title`) |
+| `canary/` | hand-written | every content field = a unique `RUNWIRE_CANARY_<n>` sentinel, except `aiTitle` (a different, unchecked sentinel — the sanctioned D7 exception that legitimately reaches `title`) |
 | `all/` | generated | union of every fixture above, for the contract test kit's capability-consistency check only (see `all/README.md`) |

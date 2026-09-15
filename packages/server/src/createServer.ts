@@ -11,7 +11,7 @@ import {
   readProfileSignals,
   readProfileSpawns,
   readProfileTimeline,
-} from '@scout/core';
+} from '@runwire/core';
 import { parseProfileQuery } from './profile-query';
 
 export const DEFAULT_HOST = '127.0.0.1';
@@ -22,7 +22,7 @@ export type CreateServerOptions = {
   host: string;
   port: number;
   /**
-   * Runs a full import (the `scout import` orchestrator) when the web UI POSTs
+   * Runs a full import (the `runwire import` orchestrator) when the web UI POSTs
    * `/api/scan`. The CLI composition root injects it because the adapter
    * registry lives there; the transport layer stays adapter-agnostic. Omitted
    * when the server is embedded without a scan source, which returns 503.
@@ -226,7 +226,7 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
           if (method !== 'GET') return methodNotAllowed();
           return json(
             {
-              service: 'scout',
+              service: 'runwire',
               endpoints: [
                 '/api/sessions',
                 '/api/sessions/stats',

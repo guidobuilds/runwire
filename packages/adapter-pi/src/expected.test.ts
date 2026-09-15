@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import type { AdapterContext, Session, SessionBundle, StepKind, ToolCategory } from '@scout/core';
-import { createBunFs } from '@scout/core';
+import type { AdapterContext, Session, SessionBundle, StepKind, ToolCategory } from '@runwire/core';
+import { createBunFs } from '@runwire/core';
 import { createPiAdapter } from './index';
 
 const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', 'fixtures', 'pi');

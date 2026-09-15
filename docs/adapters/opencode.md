@@ -68,12 +68,12 @@ Core adds `orphan-child` and `bundle-invalid` at persist time — not emitted by
 
 ## Fixtures
 
-`fixtures/opencode/<case>/home/.local/share/opencode/` contains real SQLite fixture DBs. `small`, `subagents`, `canary`, `malformed` use the current store (`opencode.db`); `legacy` uses only the legacy store (`opencode-tui-v2.db`); `all` contains **both** stores and observes every declared capability (call tokens, model-change, compaction, tool.error, tool.durationMs, harness step, subagent fields, title, costUsd non-zero, version non-null, timing). The `canary` case plants `SCOUT_CANARY_<n>` in content that the allowlist must drop (asserted by the contract kit). Adapter tests that touch SQLite use `createBunFs()` against a real fixture DB — `createMemoryFs().openSqliteReadonly` throws.
+`fixtures/opencode/<case>/home/.local/share/opencode/` contains real SQLite fixture DBs. `small`, `subagents`, `canary`, `malformed` use the current store (`opencode.db`); `legacy` uses only the legacy store (`opencode-tui-v2.db`); `all` contains **both** stores and observes every declared capability (call tokens, model-change, compaction, tool.error, tool.durationMs, harness step, subagent fields, title, costUsd non-zero, version non-null, timing). The `canary` case plants `RUNWIRE_CANARY_<n>` in content that the allowlist must drop (asserted by the contract kit). Adapter tests that touch SQLite use `createBunFs()` against a real fixture DB — `createMemoryFs().openSqliteReadonly` throws.
 
 ## Connector API (metadata-only, CORE-representable)
 
 ```ts
-import { inventorySessions, retrieveSession, retrieveSessionParts, type SessionSummary, type SessionDetails } from '@scout/adapter-opencode';
+import { inventorySessions, retrieveSession, retrieveSessionParts, type SessionSummary, type SessionDetails } from '@runwire/adapter-opencode';
 
 for await (const summary of inventorySessions(ctx)) { ... }        // bounded memory stream
 const details: SessionDetails = await retrieveSession(ctx, sourceId); // project + session + steps + diagnostics

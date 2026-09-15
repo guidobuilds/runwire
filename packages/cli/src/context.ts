@@ -1,10 +1,10 @@
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
-import type { AdapterContext, Logger } from '@scout/core';
-import { createBunFs } from '@scout/core';
+import type { AdapterContext, Logger } from '@runwire/core';
+import { createBunFs } from '@runwire/core';
 
-/** stderr-only logger: stdout is reserved for `scout discover --json` output. */
+/** stderr-only logger: stdout is reserved for `runwire discover --json` output. */
 function createStderrLogger(): Logger {
   return {
     info: (message: string) => console.error(`info: ${message}`),
@@ -31,19 +31,19 @@ export function createContext(opts: { home?: string; titles: boolean }): Adapter
 }
 
 /**
- * `$HOME/.scout/scout.db` (P3) - the real OS home via `os.homedir()`, never
+ * `$HOME/.runwire/runwire.db` (P3) - the real OS home via `os.homedir()`, never
  * `--home` (which points at harness data, e.g. a fixture in tests, and must
  * never receive a write). Only evaluated when `--db` is absent.
  */
 export function defaultDbPath(): string {
-  return resolve(homedir(), '.scout', 'scout.db');
+  return resolve(homedir(), '.runwire', 'runwire.db');
 }
 
 /**
  * Creates the parent directory of `path` so `openStore` can create the DB
  * file itself - except for `:memory:`, which creates nothing on disk. When
  * `--db` is given explicitly, this is never called with the default path,
- * so nothing is created under `~/.scout` unless the default path is in use.
+ * so nothing is created under `~/.runwire` unless the default path is in use.
  */
 export async function ensureDbDir(path: string): Promise<void> {
   if (path === ':memory:') return;

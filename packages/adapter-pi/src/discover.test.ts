@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import type { AdapterContext, Known, SessionBundle } from '@scout/core';
-import { createBunFs } from '@scout/core';
+import type { AdapterContext, Known, SessionBundle } from '@runwire/core';
+import { createBunFs } from '@runwire/core';
 import { discover, probe } from './discover';
 
 const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', 'fixtures', 'pi');

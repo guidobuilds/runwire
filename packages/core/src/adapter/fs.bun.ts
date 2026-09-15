@@ -1,9 +1,9 @@
 import { Database } from 'bun:sqlite';
 import { stat as nodeStat, readdir } from 'node:fs/promises';
-import type { FsStat, ScoutFs, SqliteReader } from './types';
+import type { FsStat, RunwireFs, SqliteReader } from './types';
 
-/** Real ScoutFs over Bun/node:fs APIs. Read-only: no write/unlink is ever called. */
-export function createBunFs(): ScoutFs {
+/** Real RunwireFs over Bun/node:fs APIs. Read-only: no write/unlink is ever called. */
+export function createBunFs(): RunwireFs {
   return {
     async stat(path): Promise<FsStat | undefined> {
       try {

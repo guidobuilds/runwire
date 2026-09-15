@@ -6,7 +6,7 @@ export interface SqliteReader {
 }
 
 /** Read-only filesystem/DB abstraction adapters use instead of node:fs directly. */
-export interface ScoutFs {
+export interface RunwireFs {
   stat(path: string): Promise<FsStat | undefined>;
   readdir(path: string): Promise<string[]>;
   readFile(path: string): Promise<string | undefined>;
@@ -26,7 +26,7 @@ export type AdapterContext = {
   home: string;
   platform: NodeJS.Platform;
   env: Record<string, string | undefined>;
-  fs: ScoutFs;
+  fs: RunwireFs;
   privacy: { titles: boolean };
   log: Logger;
 };

@@ -1,4 +1,4 @@
-import type { ApiSessionDetail, ApiSessionSummary, ApiTokenTotals } from '@scout/core';
+import type { ApiSessionDetail, ApiSessionSummary, ApiTokenTotals } from '@runwire/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   createMemoryHistory,
@@ -61,7 +61,7 @@ const baseSummary: ApiSessionSummary = {
   title: 'Refactor auth module',
   parentId: null,
   harness: { id: 'claude-code', displayName: 'Claude Code', adapterVersion: '1.0.0' },
-  project: { key: 'scout', name: 'Scout' },
+  project: { key: 'runwire', name: 'Runwire' },
   depth: 0,
   relation: null,
   agentType: null,

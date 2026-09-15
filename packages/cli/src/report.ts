@@ -1,6 +1,6 @@
-import type { ImportReport } from '@scout/core';
+import type { ImportReport } from '@runwire/core';
 
-/** One human-readable line per adapter, for `scout import`'s stderr report. */
+/** One human-readable line per adapter, for `runwire import`'s stderr report. */
 export function formatReport(report: ImportReport): string {
   const lines: string[] = [];
   for (const [id, r] of Object.entries(report.perAdapter)) {

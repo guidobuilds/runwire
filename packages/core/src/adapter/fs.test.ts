@@ -10,7 +10,7 @@ describe('createBunFs', () => {
   let dir: string;
 
   beforeAll(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'scout-fs-test-'));
+    dir = await mkdtemp(join(tmpdir(), 'runwire-fs-test-'));
     await mkdir(join(dir, 'sub'));
     await writeFile(join(dir, 'a.txt'), 'hello\nworld\n');
     await writeFile(join(dir, 'sub', 'b.txt'), 'nested');

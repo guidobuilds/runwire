@@ -1,4 +1,4 @@
-import type { ApiSessionDetail, TokenField } from '@scout/core';
+import type { ApiSessionDetail, TokenField } from '@runwire/core';
 import type { ReactNode } from 'react';
 import {
   Accordion,
@@ -134,7 +134,7 @@ export function SignalsAccordion({
           ) : null}
 
           <p className="mt-3 text-muted-foreground text-xs">
-            Expensive-model-on-cheap-work is not assessed: Scout has no model cost tier.
+            Expensive-model-on-cheap-work is not assessed: Runwire has no model cost tier.
           </p>
         </AccordionContent>
       </AccordionItem>

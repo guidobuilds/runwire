@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { AdapterContext, Project, Step } from '@scout/core';
-import { TOKEN_FIELDS } from '@scout/core';
+import type { AdapterContext, Project, Step } from '@runwire/core';
+import { TOKEN_FIELDS } from '@runwire/core';
 import type { ComputeBundleInput } from './compute';
 import { computeBundle } from './compute';
 import type { PiRecord } from './schema';

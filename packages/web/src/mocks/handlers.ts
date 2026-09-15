@@ -5,7 +5,7 @@ import type {
   ApiSessionsStats,
   ImportReport,
   PagedSessions,
-} from '@scout/core';
+} from '@runwire/core';
 import { HttpResponse, http } from 'msw';
 import { sessionProfileHandlers } from './session-profile';
 
@@ -23,7 +23,7 @@ export const mockSessionSummary: ApiSessionSummary = {
   title: 'Refactor auth module',
   parentId: null,
   harness: { id: 'claude-code', displayName: 'Claude Code', adapterVersion: '1.0.0' },
-  project: { key: 'scout', name: 'Scout' },
+  project: { key: 'runwire', name: 'Runwire' },
   depth: 0,
   relation: null,
   agentType: null,

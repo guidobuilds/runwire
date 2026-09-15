@@ -5,7 +5,7 @@ dist/
 *.log
 coverage/
 fixtures/*/canary/output/
-.scout/
+.runwire/
 .forge/
 # Local Pi runtime state
 .atl/

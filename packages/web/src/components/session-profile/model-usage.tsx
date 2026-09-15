@@ -1,4 +1,4 @@
-import type { ModelUsageEntry, ModelUsageGroup } from '@scout/core';
+import type { ModelUsageEntry, ModelUsageGroup } from '@runwire/core';
 import { Cell, Pie, PieChart, type PieLabelRenderProps } from 'recharts';
 import { type ChartConfig, ChartContainer } from '@/components/ui/chart';
 import { Skeleton } from '@/components/ui/skeleton';
