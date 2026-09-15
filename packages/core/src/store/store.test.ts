@@ -44,8 +44,8 @@ describe('openStore file permissions (SEC-03)', () => {
   test.skipIf(process.platform === 'win32')(
     'restricts a new file and its WAL sidecars to owner-only (0o600)',
     () => {
-      const dir = mkdtempSync(join(tmpdir(), 'scout-store-'));
-      const path = join(dir, 'scout.db');
+      const dir = mkdtempSync(join(tmpdir(), 'runwire-store-'));
+      const path = join(dir, 'runwire.db');
       const store = openStore(path);
       try {
         for (const p of [path, `${path}-wal`, `${path}-shm`]) {
@@ -61,8 +61,8 @@ describe('openStore file permissions (SEC-03)', () => {
   );
 
   test.skipIf(process.platform === 'win32')('tightens a pre-existing lax file on open', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'scout-store-'));
-    const path = join(dir, 'scout.db');
+    const dir = mkdtempSync(join(tmpdir(), 'runwire-store-'));
+    const path = join(dir, 'runwire.db');
     // Simulates a DB created before SEC-03 under umask 022.
     writeFileSync(path, '');
     chmodSync(path, 0o644);

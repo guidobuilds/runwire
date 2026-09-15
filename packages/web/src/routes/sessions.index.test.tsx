@@ -1,4 +1,4 @@
-import type { PagedSessions } from '@scout/core';
+import type { PagedSessions } from '@runwire/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createRouter, RouterProvider } from '@tanstack/react-router';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -148,7 +148,7 @@ describe('shared sidebar chrome (f6)', () => {
     expect(screen.queryByText('Quick Create')).not.toBeInTheDocument();
     expect(screen.queryByText('Inbox')).not.toBeInTheDocument();
     expect(screen.queryByText('Search')).not.toBeInTheDocument();
-    expect(screen.queryByText('user@scout.local')).not.toBeInTheDocument();
+    expect(screen.queryByText('user@runwire.local')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /ellipsis/i })).not.toBeInTheDocument();
   });
 });

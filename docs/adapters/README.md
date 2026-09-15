@@ -31,11 +31,11 @@ Every field of the bundle's `Session`, `Step[]`, `Project` and `Diagnostic[]` �
 ## Adding a harness
 
 1. **Survey** — add a section to [harness-survey.md](../harness-survey.md): paths per OS, layout, record types, where model/mode/usage/timestamps/links live, which fields are content. Structure only, never content.
-2. **Package** — `packages/adapter-<id>`: `src/index.ts` (the `HarnessAdapter`), `src/allowlist.ts`, `src/schema.ts` (loose Zod), `src/records.ts` (stream → allowlisted, schema-checked records), `src/compute.ts` (records → `SessionBundle`, per ARCHITECTURE §4), `src/project.ts` (project identity, D8/D9), `src/discover.ts` (walk + `known` rule + probe). Depends on `@scout/core` only.
+2. **Package** — `packages/adapter-<id>`: `src/index.ts` (the `HarnessAdapter`), `src/allowlist.ts`, `src/schema.ts` (loose Zod), `src/records.ts` (stream → allowlisted, schema-checked records), `src/compute.ts` (records → `SessionBundle`, per ARCHITECTURE §4), `src/project.ts` (project identity, D8/D9), `src/discover.ts` (walk + `known` rule + probe). Depends on `@runwire/core` only.
 3. **Allowlist** — the projection is the first thing applied to every raw record.
 4. **Discover** — walk the harness's roots; honor `known`; stream one bundle per session; never throw on a bad record.
 5. **Compute** — everything in ARCHITECTURE §4, with canonical token names (D5) and tool categories (D31).
-6. **Fixtures** — `fixtures/<id>/<case>/` redacted sessions, plus `canary/` (every content field = `SCOUT_CANARY_<n>`) and `malformed/`.
-7. **Contract kit** — `import { adapterContract } from '@scout/core/test-kit'`; run it against the adapter and its fixtures. Add per-fixture expected-session snapshots.
+6. **Fixtures** — `fixtures/<id>/<case>/` redacted sessions, plus `canary/` (every content field = `RUNWIRE_CANARY_<n>`) and `malformed/`.
+7. **Contract kit** — `import { adapterContract } from '@runwire/core/test-kit'`; run it against the adapter and its fixtures. Add per-fixture expected-session snapshots.
 8. **Register** — add the adapter to the registry in `packages/cli/src/adapters.ts` (D76). Core holds no registry; `importAll({ adapters, db, ctx })` receives the list.
 9. **Document** — `docs/adapters/<id>.md`: location/layout, allowlist, record → field mapping, tool categories, capabilities, known variations, fixtures.

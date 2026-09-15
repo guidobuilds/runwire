@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# scout dev — brings up the whole app from the repo root:
-#   [api] @scout/server  via `bun run scout serve` (default 127.0.0.1:8787)
-#   [web] @scout/web     via Vite dev server (its /api proxy targets that port)
+# runwire dev — brings up the whole app from the repo root:
+#   [api] @runwire/server  via `bun run runwire serve` (default 127.0.0.1:8787)
+#   [web] @runwire/web     via Vite dev server (its /api proxy targets that port)
 #
 # Both run as children, every line they print is prefixed, and one Ctrl-C
 # (or SIGTERM) takes the pair down. If either dies, the other is stopped too.
@@ -14,7 +14,7 @@ set -m # each child gets its own process group, so teardown can kill the group
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
 API_PORT="${API_PORT:-8787}" # keep in sync with the /api proxy in packages/web/vite.config.ts
-DB_PATH="${SCOUT_DB:-}"
+DB_PATH="${RUNWIRE_DB:-}"
 IMPORT_FIRST=false
 LABELS=()
 PIDS=()
@@ -24,13 +24,13 @@ usage() {
   cat <<'EOF'
 Usage: scripts/dev.sh [options]
 
-  --port <n>      port for @scout/server (default: 8787)
-  --db <path>     SQLite file for `scout serve` (default: ~/.scout/scout.db)
-  --import        run `scout import` once before starting the servers
+  --port <n>      port for @runwire/server (default: 8787)
+  --db <path>     SQLite file for `runwire serve` (default: ~/.runwire/runwire.db)
+  --import        run `runwire import` once before starting the servers
   --no-color      plain [api]/[web] prefixes
   -h, --help      this message
 
-Env: API_PORT, SCOUT_DB. The Vite dev URL stays http://localhost:5173.
+Env: API_PORT, RUNWIRE_DB. The Vite dev URL stays http://localhost:5173.
 EOF
 }
 
@@ -125,7 +125,7 @@ fi
 
 if [[ "$IMPORT_FIRST" == true ]]; then
   say "importing sessions"
-  (cd "$ROOT" && bun run scout import)
+  (cd "$ROOT" && bun run runwire import)
 fi
 
 serve_args=(serve --port "$API_PORT")
@@ -137,7 +137,7 @@ if [[ "$API_PORT" != 8787 ]]; then
   say "note: packages/web/vite.config.ts proxies /api to 127.0.0.1:8787 — point it at $API_PORT too, or /api will 502"
 fi
 
-launch api "$C_API" "$ROOT" bun run scout "${serve_args[@]}"
+launch api "$C_API" "$ROOT" bun run runwire "${serve_args[@]}"
 launch web "$C_WEB" "$ROOT/packages/web" bun run dev
 
 say "${C_API}api${NC} http://127.0.0.1:${API_PORT}  ${C_DIM}|${NC}  ${C_WEB}web${NC} http://localhost:5173  ${C_DIM}|${NC}  Ctrl-C stops both"

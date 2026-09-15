@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import type { ImportReport } from '@scout/core';
-import { openStore, recomputeRollups } from '@scout/core';
+import type { ImportReport } from '@runwire/core';
+import { openStore, recomputeRollups } from '@runwire/core';
 import { createServer } from './createServer';
 
 /** Idempotently upserts a raw model string and returns its `models.id`. */
@@ -71,7 +71,7 @@ describe('createServer', () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body).toEqual({
-        service: 'scout',
+        service: 'runwire',
         endpoints: [
           '/api/sessions',
           '/api/sessions/stats',
@@ -516,7 +516,7 @@ describe('createServer /api/harnesses', () => {
 describe('createServer /api/scan', () => {
   /** The CSRF header the UI sends; every POST that must reach the handler
    * proves it is same-origin with it (SEC-02). */
-  const scanHeaders = { 'X-Scout-Scan': '1' };
+  const scanHeaders = { 'X-Runwire-Scan': '1' };
 
   const report: ImportReport = {
     perAdapter: {
@@ -576,7 +576,7 @@ describe('createServer /api/scan', () => {
     const { store, server, base } = await startServer({ scan });
     try {
       // A cross-site HTML form is a simple request: it cannot set
-      // `X-Scout-Scan`, so the guard rejects it before any side effect.
+      // `X-Runwire-Scan`, so the guard rejects it before any side effect.
       const res = await fetch(`${base}/api/scan`, { method: 'POST' });
       expect(res.status).toBe(403);
       expect(await res.json()).toEqual({ error: 'forbidden' });
@@ -587,7 +587,7 @@ describe('createServer /api/scan', () => {
     }
   });
 
-  test('a wrong or empty X-Scout-Scan value is rejected with 403 (SEC-02)', async () => {
+  test('a wrong or empty X-Runwire-Scan value is rejected with 403 (SEC-02)', async () => {
     let calls = 0;
     const scan = async (): Promise<ImportReport> => {
       calls += 1;
@@ -598,7 +598,7 @@ describe('createServer /api/scan', () => {
       for (const value of ['0', 'true', 'yes', '']) {
         const res = await fetch(`${base}/api/scan`, {
           method: 'POST',
-          headers: { 'X-Scout-Scan': value },
+          headers: { 'X-Runwire-Scan': value },
         });
         expect(res.status, value).toBe(403);
       }

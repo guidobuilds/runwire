@@ -3,7 +3,7 @@ import type {
   ApiSessionsStats,
   ListSessionsQuery,
   PagedSessions,
-} from '@scout/core';
+} from '@runwire/core';
 import { apiFetch } from './client';
 
 /** Builds `/sessions?...` from only the defined fields of `query` — omits

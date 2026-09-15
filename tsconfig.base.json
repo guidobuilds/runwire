@@ -18,12 +18,12 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["bun-types"],
     "paths": {
-      "@scout/core": ["./packages/core/src/index.ts"],
-      "@scout/core/test-kit": ["./packages/core/src/test-kit/index.ts"],
-      "@scout/adapter-claude-code": ["./packages/adapter-claude-code/src/index.ts"],
-      "@scout/adapter-opencode": ["./packages/adapter-opencode/src/index.ts"],
-      "@scout/adapter-pi": ["./packages/adapter-pi/src/index.ts"],
-      "@scout/server": ["./packages/server/src/index.ts"],
+      "@runwire/core": ["./packages/core/src/index.ts"],
+      "@runwire/core/test-kit": ["./packages/core/src/test-kit/index.ts"],
+      "@runwire/adapter-claude-code": ["./packages/adapter-claude-code/src/index.ts"],
+      "@runwire/adapter-opencode": ["./packages/adapter-opencode/src/index.ts"],
+      "@runwire/adapter-pi": ["./packages/adapter-pi/src/index.ts"],
+      "@runwire/server": ["./packages/server/src/index.ts"],
       "@/*": ["./packages/web/src/*"]
     }
   }

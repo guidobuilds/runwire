@@ -1,4 +1,4 @@
-import type { ApiSessionDetail } from '@scout/core';
+import type { ApiSessionDetail } from '@runwire/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';

@@ -24,7 +24,7 @@
       "toolCalls": 1,
       "harnessVersionFirst": "2.1.250",
       "harnessVersionLast": "2.1.250",
-      "sourceSize": 2100,
+      "sourceSize": 2130,
       "sourcePath": ".claude/projects/proj/canary-session.jsonl"
     }
   ],

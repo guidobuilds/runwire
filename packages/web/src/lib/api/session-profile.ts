@@ -16,7 +16,7 @@ import type {
   TimelineResponse,
   TokenField,
   UsageSeries,
-} from '@scout/core';
+} from '@runwire/core';
 import { apiFetch } from './client';
 
 export type SessionProfileSpawns = ProfileSpawnsResponse & { view: 'spawns' };

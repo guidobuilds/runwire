@@ -7,7 +7,7 @@ import type {
   Scope,
   TokenField,
   UsageSeries,
-} from '@scout/core';
+} from '@runwire/core';
 import { HttpResponse, http } from 'msw';
 import type {
   SessionProfileMergedEvents,

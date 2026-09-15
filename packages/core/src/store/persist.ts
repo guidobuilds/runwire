@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { isAbsolute, relative } from 'node:path';
-import type { AdapterContext, ScoutFs } from '../adapter/types';
+import type { AdapterContext, RunwireFs } from '../adapter/types';
 import type { Known } from '../contract/adapter';
 import { makeDiagnostic } from '../contract/diagnostic';
 import type {
@@ -388,7 +388,7 @@ export async function removeVanished(
   harnessId: string,
   known: Known,
   emitted: Set<string>,
-  fs: ScoutFs,
+  fs: RunwireFs,
   opts?: {
     sourceExists?: (ctx: AdapterContext, source: SourceRef) => Promise<boolean>;
     ctx?: AdapterContext;

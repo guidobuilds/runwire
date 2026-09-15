@@ -1,10 +1,10 @@
-# Scout
+# Runwire
 
 Local, read-only explorer of coding-agent sessions. Current brief; decisions in [DECISIONS.md](DECISIONS.md), design in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Purpose (D67)
 
-Scout makes the token and time waste of a developer's hand-built agent harness visible: repeated automatic compaction, mid-session model switches, expensive models doing cheap work, heavy MCP use, a root agent that never delegates and exhausts its own context (the catalog in D51). It reads local session data and keeps only operational metadata and usage metrics, across all sessions and harnesses.
+Runwire makes the token and time waste of a developer's hand-built agent harness visible: repeated automatic compaction, mid-session model switches, expensive models doing cheap work, heavy MCP use, a root agent that never delegates and exhausts its own context (the catalog in D51). It reads local session data and keeps only operational metadata and usage metrics, across all sessions and harnesses.
 
 ## Principles
 

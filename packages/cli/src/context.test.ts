@@ -6,8 +6,10 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { createContext, defaultDbPath, ensureDbDir, resolveUserPath } from './context';
 
 describe('resolveUserPath', () => {
-  test('~/.scout/scout.db expands to <os.homedir()>/.scout/scout.db', () => {
-    expect(resolveUserPath('~/.scout/scout.db')).toBe(resolve(homedir(), '.scout', 'scout.db'));
+  test('~/.runwire/runwire.db expands to <os.homedir()>/.runwire/runwire.db', () => {
+    expect(resolveUserPath('~/.runwire/runwire.db')).toBe(
+      resolve(homedir(), '.runwire', 'runwire.db'),
+    );
   });
 
   test('bare ~ expands to <os.homedir()>', () => {
@@ -24,7 +26,7 @@ describe('resolveUserPath', () => {
   });
 
   test('an absolute path with no ~ is unchanged', () => {
-    const abs = resolve('/tmp/scout', 'scout.db');
+    const abs = resolve('/tmp/runwire', 'runwire.db');
     expect(resolveUserPath(abs)).toBe(abs);
   });
 
@@ -80,8 +82,8 @@ describe('createContext', () => {
 });
 
 describe('defaultDbPath', () => {
-  test('is <os.homedir()>/.scout/scout.db', () => {
-    expect(defaultDbPath()).toBe(resolve(homedir(), '.scout', 'scout.db'));
+  test('is <os.homedir()>/.runwire/runwire.db', () => {
+    expect(defaultDbPath()).toBe(resolve(homedir(), '.runwire', 'runwire.db'));
   });
 });
 
@@ -94,9 +96,9 @@ describe('ensureDbDir', () => {
   });
 
   test('creates the parent directory of a real path', async () => {
-    const tmp = await mkdtemp(join(tmpdir(), 'scout-cli-test-'));
+    const tmp = await mkdtemp(join(tmpdir(), 'runwire-cli-test-'));
     try {
-      const dbPath = join(tmp, 'nested', 'dir', 'scout.db');
+      const dbPath = join(tmp, 'nested', 'dir', 'runwire.db');
       expect(existsSync(join(tmp, 'nested'))).toBe(false);
       await ensureDbDir(dbPath);
       expect(existsSync(join(tmp, 'nested', 'dir'))).toBe(true);
@@ -108,9 +110,9 @@ describe('ensureDbDir', () => {
   test.skipIf(process.platform === 'win32')(
     'creates the DB parent directory with mode 0o700',
     async () => {
-      const tmp = await mkdtemp(join(tmpdir(), 'scout-cli-test-'));
+      const tmp = await mkdtemp(join(tmpdir(), 'runwire-cli-test-'));
       try {
-        const dbPath = join(tmp, 'private', 'scout.db');
+        const dbPath = join(tmp, 'private', 'runwire.db');
         await ensureDbDir(dbPath);
         expect(statSync(join(tmp, 'private')).mode & 0o777).toBe(0o700);
       } finally {
@@ -119,13 +121,13 @@ describe('ensureDbDir', () => {
     },
   );
 
-  test('given --db, nothing under ~/.scout is created (does not call defaultDbPath)', async () => {
-    const scoutDir = join(homedir(), '.scout');
-    const existedBefore = existsSync(scoutDir);
-    const tmp = await mkdtemp(join(tmpdir(), 'scout-cli-test-'));
+  test('given --db, nothing under ~/.runwire is created (does not call defaultDbPath)', async () => {
+    const runwireDir = join(homedir(), '.runwire');
+    const existedBefore = existsSync(runwireDir);
+    const tmp = await mkdtemp(join(tmpdir(), 'runwire-cli-test-'));
     try {
       await ensureDbDir(join(tmp, 'explicit.db'));
-      expect(existsSync(scoutDir)).toBe(existedBefore);
+      expect(existsSync(runwireDir)).toBe(existedBefore);
     } finally {
       await rm(tmp, { recursive: true, force: true });
     }

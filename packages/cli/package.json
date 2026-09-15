@@ -1,16 +1,16 @@
 {
-  "name": "@scout/cli",
+  "name": "@runwire/cli",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "dependencies": {
-    "@scout/core": "workspace:*",
-    "@scout/adapter-claude-code": "workspace:*",
-    "@scout/adapter-opencode": "workspace:*",
-    "@scout/adapter-pi": "workspace:*",
-    "@scout/server": "workspace:*"
+    "@runwire/core": "workspace:*",
+    "@runwire/adapter-claude-code": "workspace:*",
+    "@runwire/adapter-opencode": "workspace:*",
+    "@runwire/adapter-pi": "workspace:*",
+    "@runwire/server": "workspace:*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",

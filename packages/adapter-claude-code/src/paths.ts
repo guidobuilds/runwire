@@ -1,4 +1,4 @@
-// Paths built here are handed to ScoutFs (createBunFs or createMemoryFs), not
+// Paths built here are handed to RunwireFs (createBunFs or createMemoryFs), not
 // used as opaque OS file paths directly - createMemoryFs's virtual layout is
 // always '/'-joined regardless of host OS (packages/core/src/adapter/fs.memory.ts),
 // and a real filesystem on Windows accepts '/' as a path separator just as
@@ -6,7 +6,7 @@
 // platform. node:path's OS-native join() would instead normalize to '\' on
 // Windows, breaking any lookup against a memoryFs built with literal '/' keys.
 import { join } from 'node:path/posix';
-import type { AdapterContext } from '@scout/core';
+import type { AdapterContext } from '@runwire/core';
 
 export function projectsRoot(ctx: AdapterContext): string {
   return join(ctx.home, '.claude', 'projects');

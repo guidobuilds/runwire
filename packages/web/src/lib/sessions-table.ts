@@ -1,4 +1,4 @@
-import type { ListSessionsQuery } from '@scout/core';
+import type { ListSessionsQuery } from '@runwire/core';
 
 /** Server-sortable columns of the sessions table. */
 export type SortField = 'name' | 'harness' | 'startedAt' | 'duration' | 'tokens' | 'cost';

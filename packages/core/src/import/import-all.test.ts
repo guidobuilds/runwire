@@ -382,7 +382,7 @@ describe('importAll', () => {
   test('a throwing adapter never logs record text: the error is code-like, one-line and bounded', async () => {
     const { db } = openStore(':memory:');
     const inner = createFakeAdapter();
-    const canary = 'SCOUT_CANARY_SECRET_RECORD';
+    const canary = 'RUNWIRE_CANARY_SECRET_RECORD';
     const recordLikeMessage = `failed to parse record {"prompt":"${canary}"}\nsecond line\r\nthird line`;
     const throwingAdapter = {
       ...inner,

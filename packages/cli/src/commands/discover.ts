@@ -1,4 +1,4 @@
-import type { HarnessAdapter } from '@scout/core';
+import type { HarnessAdapter } from '@runwire/core';
 import { createContext } from '../context';
 
 export type DiscoverOptions = {
@@ -12,7 +12,7 @@ export type DiscoverOptions = {
 /**
  * Streams the named adapter's bundles. With `--json`, one `SessionBundle`
  * per line (NDJSON) on stdout and nothing else on stdout (all logs/errors go
- * to stderr, so `scout discover --json > out.json` is clean). Without
+ * to stderr, so `runwire discover --json > out.json` is clean). Without
  * `--json`, one terse human line per bundle on stdout instead. `known` is
  * always empty here (`new Map()`): `discover` is a read-only listing of
  * whatever the adapter currently sees, never gated by what's already in a

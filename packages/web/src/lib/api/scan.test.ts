@@ -20,7 +20,7 @@ describe('runScan', () => {
     expect(fetch.mock.calls[0]?.[0]).toBe('/api/scan');
     expect(fetch.mock.calls[0]?.[1]).toEqual({
       method: 'POST',
-      headers: { 'X-Scout-Scan': '1' },
+      headers: { 'X-Runwire-Scan': '1' },
     });
   });
 

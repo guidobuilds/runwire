@@ -1,5 +1,5 @@
-import type { AdapterContext, Diagnostic, Known, SessionBundle, SqliteReader } from '@scout/core';
-import { makeDiagnostic } from '@scout/core';
+import type { AdapterContext, Diagnostic, Known, SessionBundle, SqliteReader } from '@runwire/core';
+import { makeDiagnostic } from '@runwire/core';
 import type { ComputeSessionInput } from './compute';
 import { computeBundle, computeDepth } from './compute';
 import {

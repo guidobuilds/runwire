@@ -1,5 +1,5 @@
-import type { AdapterContext, Diagnostic, SqliteReader } from '@scout/core';
-import { makeDiagnostic, project } from '@scout/core';
+import type { AdapterContext, Diagnostic, SqliteReader } from '@runwire/core';
+import { makeDiagnostic, project } from '@runwire/core';
 import { opencodeAllowlist, sessionRowAllowlist } from './allowlist';
 import { type DbKind, type DbOrigin, detectDbKind, opencodeDbPath } from './paths';
 import {

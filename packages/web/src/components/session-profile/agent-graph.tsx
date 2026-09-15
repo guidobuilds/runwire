@@ -1,4 +1,4 @@
-import type { Event, ProfileNode, ProfileSpawnsResponse, SpawnItem } from '@scout/core';
+import type { Event, ProfileNode, ProfileSpawnsResponse, SpawnItem } from '@runwire/core';
 import { Clock3, GitBranch, HelpCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {

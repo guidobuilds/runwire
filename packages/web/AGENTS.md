@@ -1,6 +1,6 @@
 - Vitest + jsdom + Testing Library + MSW (`vitest run`).
-- Zero runtime repo imports: the web talks to `@scout/server` over HTTP. `import type`
-  from `@scout/core` is fine for DTO shapes.
+- Zero runtime repo imports: the web talks to `@runwire/server` over HTTP. `import type`
+  from `@runwire/core` is fine for DTO shapes.
 
 # Checks
 

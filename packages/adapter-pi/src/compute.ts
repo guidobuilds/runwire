@@ -6,8 +6,8 @@ import type {
   Session,
   SessionBundle,
   Step,
-} from '@scout/core';
-import { makeDiagnostic, TOKEN_FIELDS } from '@scout/core';
+} from '@runwire/core';
+import { makeDiagnostic, TOKEN_FIELDS } from '@runwire/core';
 import { sessionIdFromRootFile } from './paths';
 import type { PiRecord } from './schema';
 import { piToolCategory } from './tool-category';

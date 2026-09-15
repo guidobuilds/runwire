@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { openStore } from '@scout/core';
+import { openStore } from '@runwire/core';
 import { createServer } from './createServer';
 
 /** Idempotently upserts a raw model string and returns its `models.id`. */

@@ -1,5 +1,5 @@
 - Bun + `bun:test`. `core` is standalone: it must not import any other workspace package.
-- `@scout/core/test-kit` is the public surface adapters test against; change the
+- `@runwire/core/test-kit` is the public surface adapters test against; change the
   contract and the kit changes with it.
 
 # Checks

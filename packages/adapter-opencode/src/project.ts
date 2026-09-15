@@ -1,5 +1,5 @@
 import { basename, dirname } from 'node:path';
-import type { Project, ScoutFs } from '@scout/core';
+import type { Project, RunwireFs } from '@runwire/core';
 
 export type OpenCodeResolveInput = {
   /** The session's `directory` (cwd). */
@@ -8,13 +8,13 @@ export type OpenCodeResolveInput = {
   repoRootHint?: string;
 };
 
-export type OpenCodeResolveOptions = { fs: ScoutFs };
+export type OpenCodeResolveOptions = { fs: RunwireFs };
 
 /**
  * Normalizes `git@host:org/repo.git` and `https://host/org/repo.git` (and
  * similar variants) to `host/org/repo` (docs/ARCHITECTURE.md §3 Project.key).
- * Re-implemented here (not imported from @scout/adapter-claude-code) so this
- * package depends on @scout/core only, and so the same repo rolls up to the
+ * Re-implemented here (not imported from @runwire/adapter-claude-code) so this
+ * package depends on @runwire/core only, and so the same repo rolls up to the
  * same key as the Claude adapter.
  */
 export function normalizeRemoteUrl(url: string): string | undefined {
@@ -42,7 +42,7 @@ export function normalizeRemoteUrl(url: string): string | undefined {
 
 async function findGitRoot(
   startCwd: string,
-  fs: ScoutFs,
+  fs: RunwireFs,
 ): Promise<{ repoRoot: string; worktree?: string } | undefined> {
   let dir = startCwd;
   for (let i = 0; i < 64; i++) {
@@ -62,7 +62,7 @@ async function findGitRoot(
   return undefined;
 }
 
-async function readOriginRemote(repoRoot: string, fs: ScoutFs): Promise<string | undefined> {
+async function readOriginRemote(repoRoot: string, fs: RunwireFs): Promise<string | undefined> {
   const config = await fs.readFile(`${repoRoot}/.git/config`);
   if (!config) return undefined;
   const sectionMatch = config.match(/\[remote "origin"\]([\s\S]*?)(?:\n\[|$)/);

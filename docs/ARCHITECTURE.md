@@ -4,7 +4,7 @@ The contract between `core` and the harness adapters. Decisions are `D<n>` in [D
 
 ## 1. Overview
 
-Scout reads harness session files from disk, read-only. Each adapter discovers its harness's sessions and returns one fully computed record per session. Core validates, persists to SQLite, links parents to children, and computes rollups and aggregates. Core never reads or interprets harness data.
+Runwire reads harness session files from disk, read-only. Each adapter discovers its harness's sessions and returns one fully computed record per session. Core validates, persists to SQLite, links parents to children, and computes rollups and aggregates. Core never reads or interprets harness data.
 
 ```text
 harness files on disk ──▶ adapter ──────────────▶ SessionBundle stream ──▶ core
@@ -20,17 +20,17 @@ harness files on disk ──▶ adapter ─────────────�
 ## 2. Packages and boundaries
 
 ```text
-packages/core/                 types, SQLite store, import orchestrator, contract test kit, ScoutFs
+packages/core/                 types, SQLite store, import orchestrator, contract test kit, RunwireFs
 packages/adapter-claude-code/  Claude Code adapter
-packages/cli/                  composition root (D76): adapter registry + the `scout` command
+packages/cli/                  composition root (D76): adapter registry + the `runwire` command
 fixtures/<harness>/            redacted sessions: versions, subagents, canary, malformed
 ```
 
 | Package | May import |
 |---|---|
 | `core` | nothing from the repo |
-| `adapter-*` | `@scout/core` only (never another adapter) |
-| `cli` | `@scout/core` and `@scout/adapter-*` — the only package that knows which adapters exist |
+| `adapter-*` | `@runwire/core` only (never another adapter) |
+| `cli` | `@runwire/core` and `@runwire/adapter-*` — the only package that knows which adapters exist |
 
 Enforced by `.dependency-cruiser.cjs` inside `bun run lint`.
 
@@ -61,7 +61,7 @@ type Known = Map<string, { size: number; mtime: number }>;
 
 type AdapterContext = {
   home: string; platform: NodeJS.Platform; env: Record<string, string | undefined>;
-  fs: ScoutFs;                         // read-only: stat, readdir, readFile, openStream, openSqliteReadonly; core exports readLines(stream) over openStream
+  fs: RunwireFs;                         // read-only: stat, readdir, readFile, openStream, openSqliteReadonly; core exports readLines(stream) over openStream
   privacy: { titles: boolean };
   log: Logger;
 };
@@ -223,7 +223,7 @@ Foreign-key policy: `sessions.model_primary_id` and `steps.model_id` are hard FK
 | Mechanism | Rule |
 |---|---|
 | Allowlist as data | `allowlist: Projection` names the only keys kept from a raw record; applied before Zod validation. |
-| Canary fixture | `fixtures/<harness>/canary/`: every content field = `SCOUT_CANARY_<n>`. The sentinel must appear in no bundle field. |
+| Canary fixture | `fixtures/<harness>/canary/`: every content field = `RUNWIRE_CANARY_<n>`. The sentinel must appear in no bundle field. |
 | Diagnostics | Fixed code + message (≤ 200 chars, no newlines); never record content. |
 | Titles | Written only when `ctx.privacy.titles` at import; otherwise never on disk (D7, D71). |
 | Skill name | Metadata only; only `message.content[].input.skill` is read — the rest of a tool_use `input` is never read. |
@@ -231,7 +231,7 @@ Foreign-key policy: `sessions.model_primary_id` and `steps.model_id` are hard FK
 
 ## 8. Contract test kit
 
-`@scout/core/test-kit`. Every adapter must pass, on its fixtures:
+`@runwire/core/test-kit`. Every adapter must pass, on its fixtures:
 
 | Check | Fails when |
 |---|---|
@@ -251,11 +251,11 @@ Foreign-key policy: `sessions.model_primary_id` and `steps.model_id` are hard FK
 | `bun run test` | `bun test` in every package — never bare `bun test` at the root |
 | `bun run typecheck` | `tsc --noEmit` per package |
 | `bun run lint` | Biome + dependency-cruiser boundaries |
-| `bun run scout import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles] [--force]` | Imports every registered adapter (or just `--adapter`) into `~/.scout/scout.db` (`--db` overrides, `--db :memory:` allowed); `--force` bypasses the size/mtime cache and recomputes every source; prints the `ImportReport` to stderr; exits 1 if any adapter errored or a bundle failed validation, else 0. |
-| `bun run scout discover --adapter <id> [--home <dir>] [--json]` | Streams the named adapter's bundles read-only, without touching the store; `--json` writes one `SessionBundle` per line (NDJSON) to stdout and nothing else, so the output can be piped straight into a file or `jq`. |
+| `bun run runwire import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles] [--force]` | Imports every registered adapter (or just `--adapter`) into `~/.runwire/runwire.db` (`--db` overrides, `--db :memory:` allowed); `--force` bypasses the size/mtime cache and recomputes every source; prints the `ImportReport` to stderr; exits 1 if any adapter errored or a bundle failed validation, else 0. |
+| `bun run runwire discover --adapter <id> [--home <dir>] [--json]` | Streams the named adapter's bundles read-only, without touching the store; `--json` writes one `SessionBundle` per line (NDJSON) to stdout and nothing else, so the output can be piped straight into a file or `jq`. |
 
 ## 10. Open items
 
 - Second harness (Codex) and the contract changes it forces.
 
-Closed in the 2026-09-04 build plan (`.forge/core-adapter-reset/plan.md`): rollups are a table (§6); the DB lives at `~/.scout/scout.db` (`scout import --db <path>`, `:memory:` allowed); sessions whose source file disappeared are deleted on the next import (§6).
+Closed in the 2026-09-04 build plan (`.forge/core-adapter-reset/plan.md`): rollups are a table (§6); the DB lives at `~/.runwire/runwire.db` (`runwire import --db <path>`, `:memory:` allowed); sessions whose source file disappeared are deleted on the next import (§6).

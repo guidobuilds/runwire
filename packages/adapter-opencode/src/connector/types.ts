@@ -1,5 +1,5 @@
-import type { Diagnostic, Project, Session, Step } from '@scout/core';
-import { DiagnosticSchema, ProjectSchema, SessionSchema, StepSchema } from '@scout/core';
+import type { Diagnostic, Project, Session, Step } from '@runwire/core';
+import { DiagnosticSchema, ProjectSchema, SessionSchema, StepSchema } from '@runwire/core';
 import { z } from 'zod';
 import type { DbOrigin } from '../paths';
 

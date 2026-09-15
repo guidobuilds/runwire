@@ -1,4 +1,4 @@
-import type { EventFilter, Scope, TokenField } from '@scout/core';
+import type { EventFilter, Scope, TokenField } from '@runwire/core';
 import {
   infiniteQueryOptions,
   keepPreviousData,

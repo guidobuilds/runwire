@@ -5,9 +5,9 @@ import { runImport } from './commands/import';
 import { assertBindHost, runServe } from './commands/serve';
 
 const USAGE = `Usage:
-  scout import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles] [--force]
-  scout discover --adapter <id> [--home <dir>] [--json] [--no-titles]
-  scout serve [--db <path>] [--host <host>] [--port <n>] [--no-titles] [--expose]
+  runwire import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles] [--force]
+  runwire discover --adapter <id> [--home <dir>] [--json] [--no-titles]
+  runwire serve [--db <path>] [--host <host>] [--port <n>] [--no-titles] [--expose]
 
 Known adapters: ${adapters.map((a) => a.id).join(', ')}`;
 

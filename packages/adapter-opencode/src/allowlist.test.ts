@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { project } from '@scout/core';
+import { project } from '@runwire/core';
 import { opencodeAllowlist, sessionRowAllowlist } from './allowlist';
 
 describe('opencodeAllowlist (message data projection)', () => {
@@ -81,12 +81,12 @@ describe('opencodeAllowlist (message data projection)', () => {
     const hostile = {
       ...raw,
       content: [
-        { type: 'text', text: 'SCOUT_CANARY_1' },
+        { type: 'text', text: 'RUNWIRE_CANARY_1' },
         { type: 'tool', id: 't1', tool: 'read', state: { status: 'completed' } },
       ],
     };
     const out = project(hostile, opencodeAllowlist);
-    expect(JSON.stringify(out)).not.toContain('SCOUT_CANARY_');
+    expect(JSON.stringify(out)).not.toContain('RUNWIRE_CANARY_');
   });
 });
 

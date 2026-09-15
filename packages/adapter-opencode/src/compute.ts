@@ -5,8 +5,8 @@ import type {
   Session,
   SessionBundle,
   Step,
-} from '@scout/core';
-import { makeDiagnostic, TOKEN_FIELDS } from '@scout/core';
+} from '@runwire/core';
+import { makeDiagnostic, TOKEN_FIELDS } from '@runwire/core';
 import type { DbOrigin } from './paths';
 import { sourceIdFor, sourceLocatorFor } from './paths';
 import { resolveOpencodeProject } from './project';

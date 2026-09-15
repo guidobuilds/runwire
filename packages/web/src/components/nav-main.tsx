@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/sidebar';
 
 // f6: "Quick Create" + the mail-icon button (fictional CLI-scaffolded chrome
-// with no Scout equivalent) were dropped. Items with a `url` render as real
+// with no Runwire equivalent) were dropped. Items with a `url` render as real
 // TanStack Router links and pick up active-route styling via `isActive`; items
 // with an `onClick` (actions such as Scan) render an enabled button; items with
 // neither ("Projects"/"Harnesses" -- no views built yet) render as inert,

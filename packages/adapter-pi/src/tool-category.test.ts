@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { ToolCategory } from '@scout/core';
+import type { ToolCategory } from '@runwire/core';
 import { piToolCategory } from './tool-category';
 
 const BUILT_INS: Array<[string, ToolCategory]> = [

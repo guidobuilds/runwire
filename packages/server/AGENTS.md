@@ -1,4 +1,4 @@
-- API transport (D66): imports `@scout/core` and its own files only. JSON in/out.
+- API transport (D66): imports `@runwire/core` and its own files only. JSON in/out.
 - Every endpoint lives under `/api*`; the server serves no static files.
 
 # Checks

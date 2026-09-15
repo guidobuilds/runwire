@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { AdapterContext } from '@scout/core';
-import { createMemoryFs } from '@scout/core';
+import type { AdapterContext } from '@runwire/core';
+import { createMemoryFs } from '@runwire/core';
 import { agentDir, decodeProjectDirname, sessionIdFromRootFile, sessionsRoot } from './paths';
 
 function ctx(overrides: Partial<AdapterContext> = {}): AdapterContext {

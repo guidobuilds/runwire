@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import type { AdapterContext } from '@scout/core';
-import { createBunFs } from '@scout/core';
+import type { AdapterContext } from '@runwire/core';
+import { createBunFs } from '@runwire/core';
 import { inventorySessions, retrieveSession, retrieveSessionParts } from './retrieve';
 import { sessionDetailsSchema, sessionSummarySchema } from './types';
 
@@ -52,7 +52,7 @@ describe('retrieveSession', () => {
     expect(details.harnessId).toBe('opencode');
     expect(details.dbOrigin).toBe('current');
     const json = JSON.stringify(details);
-    expect(json.includes('SCOUT_CANARY_')).toBe(false);
+    expect(json.includes('RUNWIRE_CANARY_')).toBe(false);
     // Steps are CORE Steps: no content-carrying key beyond the contract schema.
     for (const step of details.steps) {
       expect('text' in step).toBe(false);

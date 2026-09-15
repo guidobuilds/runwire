@@ -12,5 +12,5 @@ Docs live under [docs/](docs/):
 ## Workflow
 
 - `bun run test` and `bun run lint` before committing.
-- Import boundaries (ARCHITECTURE §2) are enforced in CI: `core` imports nothing from the repo; an adapter imports `@scout/core` only.
+- Import boundaries (ARCHITECTURE §2) are enforced in CI: `core` imports nothing from the repo; an adapter imports `@runwire/core` only.
 - Any code that reads harness data goes through the adapter's declared allowlist (ARCHITECTURE §7) and ships a canary fixture.

@@ -11,7 +11,7 @@ import {
   readProfileSignals,
   readProfileSpawns,
   readProfileTimeline,
-} from '@scout/core';
+} from '@runwire/core';
 import { parseProfileQuery } from './profile-query';
 
 export const DEFAULT_HOST = '127.0.0.1';
@@ -22,7 +22,7 @@ export type CreateServerOptions = {
   host: string;
   port: number;
   /**
-   * Runs a full import (the `scout import` orchestrator) when the web UI POSTs
+   * Runs a full import (the `runwire import` orchestrator) when the web UI POSTs
    * `/api/scan`. The CLI composition root injects it because the adapter
    * registry lives there; the transport layer stays adapter-agnostic. Omitted
    * when the server is embedded without a scan source, which returns 503.
@@ -73,7 +73,7 @@ function methodNotAllowed(allow = 'GET'): Response {
 
 /** The custom header that proves `POST /api/scan` came from `fetch`, not a
  * cross-site HTML form (SEC-02). */
-const SCAN_CSRF_HEADER = 'x-scout-scan';
+const SCAN_CSRF_HEADER = 'x-runwire-scan';
 
 /**
  * CSRF guard for the one mutating endpoint (SEC-02). A malicious page can POST
@@ -224,7 +224,7 @@ function parseFilterParams(
  *
  * **Loopback by default.** `createServer` refuses a non-loopback `host` (and
  * an empty one) unless `allowNonLocal: true` is passed, because the API is
- * unauthenticated (F3). `scout serve` maps that to the explicit `--expose` flag.
+ * unauthenticated (F3). `runwire serve` maps that to the explicit `--expose` flag.
  *
  * **API-only under `/api`.** Every endpoint is served exclusively under
  * `/api/*`; the root `/` and the legacy `/sessions*` / `/session-profiles*`
@@ -280,7 +280,7 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
           if (method !== 'GET') return methodNotAllowed();
           return json(
             {
-              service: 'scout',
+              service: 'runwire',
               endpoints: [
                 '/api/sessions',
                 '/api/sessions/stats',
