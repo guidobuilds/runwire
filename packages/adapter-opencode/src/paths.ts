@@ -35,13 +35,15 @@ export function sourceLocatorFor(ctx: AdapterContext, origin: DbOrigin): string 
   return opencodeDbPath(ctx, origin);
 }
 
-export type DbKind = 'current' | 'legacy' | 'not-opencode';
+export type DbKind = 'current' | 'legacy' | 'not-opencode' | 'unreadable';
 
 /**
  * Schema/version discriminator: `PRAGMA user_version` is 0 for both stores, so
  * table presence in `sqlite_master` decides. `session_v2` present -> current;
- * `session` present and no `session_v2` -> legacy; neither -> not-opencode.
- * Never throws: a missing/unreadable DB returns 'not-opencode'.
+ * `session` present and no `session_v2` -> legacy; a readable DB with neither
+ * -> not-opencode. Never throws: a missing DB file (stat undefined) returns
+ * 'not-opencode'; a present file whose `openSqliteReadonly` or `sqlite_master`
+ * query throws returns 'unreadable' (fatal for the caller).
  */
 export async function detectDbKind(ctx: AdapterContext, origin: DbOrigin): Promise<DbKind> {
   const path = opencodeDbPath(ctx, origin);
@@ -58,7 +60,7 @@ export async function detectDbKind(ctx: AdapterContext, origin: DbOrigin): Promi
     if (names.has('session') && !names.has('session_v2')) return 'legacy';
     return 'not-opencode';
   } catch {
-    return 'not-opencode';
+    return 'unreadable';
   } finally {
     reader?.close();
   }

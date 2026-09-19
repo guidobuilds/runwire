@@ -109,15 +109,25 @@ async function countSessions(ctx: AdapterContext, path: string): Promise<number>
 /**
  * Streams one metadata-only `SessionBundle` per session across BOTH origins
  * (current then legacy), sorted by id within each origin, skipping a source
- * whose `sourceId` matches `known` at `{size,mtime}`. Never throws: a bad row
- * is carried as a content-free diagnostic; a session whose fold throws yields
- * a `source-read-failed` stub so the rest of the origin still streams; a
- * DB-level read failure yields nothing for that origin (the `sourceExists`
- * path retains its known sessions).
+ * whose `sourceId` matches `known` at `{size,mtime}`. A bad row is carried as
+ * a content-free diagnostic; a session whose fold throws yields a
+ * `source-read-failed` stub so the rest of the origin still streams. An origin
+ * whose DB exists but cannot be opened or queried is fatal: after logging the
+ * fixed `opencode: origin <origin> read failed (source-read-failed)` line,
+ * `discover` throws `Error('opencode <origin> source-read-failed')` with code
+ * `source-read-failed`, so core records `report.error` and skips
+ * `removeVanished` for this adapter. A healthy empty origin (missing DB, or a
+ * readable DB with no OpenCode tables) yields no bundles and does not throw.
  */
 export async function* discover(ctx: AdapterContext, known: Known): AsyncIterable<SessionBundle> {
   for (const origin of OPENCODE_ORIGINS) {
     const records = await readOrigin(ctx, origin);
+    if (records.diagnostics.some((d) => d.code === 'source-read-failed' && d.level === 'error')) {
+      ctx.log.error(`opencode: origin ${origin} read failed (source-read-failed)`);
+      const error = new Error(`opencode ${origin} source-read-failed`) as Error & { code: string };
+      error.code = 'source-read-failed';
+      throw error;
+    }
     const sessionsById = new Map(records.sessions.map((s) => [s.id, s]));
     const sorted = [...records.sessions].sort((a, b) => a.id.localeCompare(b.id));
 

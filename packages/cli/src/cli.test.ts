@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { HarnessAdapter, SessionBundle } from '@runwire/core';
@@ -264,6 +264,57 @@ describe('runwire import', () => {
       }
     },
   );
+
+  test('opencode: a present-but-unreadable origin DB exits 1, retains prior rows and leaks no raw error', async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'runwire-cli-opencode-readfail-test-'));
+    const dbPath = join(tmpDir, 'runwire.db');
+    const badHome = join(tmpDir, 'bad-home');
+    try {
+      const healthy = await run([
+        'import',
+        '--adapter',
+        'opencode',
+        '--db',
+        dbPath,
+        '--home',
+        'fixtures/opencode/small/home',
+      ]);
+      expect(healthy.code).toBe(0);
+      expect(healthy.stderr).toContain('imported=1');
+
+      const opencodeDir = join(badHome, '.local', 'share', 'opencode');
+      await mkdir(opencodeDir, { recursive: true });
+      await writeFile(join(opencodeDir, 'opencode.db'), 'this is not a sqlite database\n');
+
+      const failed = await run([
+        'import',
+        '--adapter',
+        'opencode',
+        '--db',
+        dbPath,
+        '--home',
+        badHome,
+      ]);
+      expect(failed.code).toBe(1);
+      expect(failed.stderr).toContain('source-read-failed');
+      expect(failed.stderr).toContain('removed=0');
+      // Privacy: the raw SQLite error and the temp path never reach stderr.
+      expect(failed.stderr).not.toMatch(/not a database|SQLITE|malformed/i);
+      expect(failed.stderr).not.toContain(badHome);
+
+      const db = new Database(dbPath, { readonly: true });
+      try {
+        const rows = db
+          .query("SELECT id FROM sessions WHERE id = 'opencode:current:ses_small'")
+          .all();
+        expect(rows).toHaveLength(1);
+      } finally {
+        db.close();
+      }
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
+  });
 
   test('--force reimports sources that an incremental second run skips', async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'runwire-cli-force-test-'));

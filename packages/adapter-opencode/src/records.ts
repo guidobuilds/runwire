@@ -52,24 +52,33 @@ export type OriginRecords = {
   diagnostics: Diagnostic[];
 };
 
-function sanitizeErrorMessage(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err);
-  const oneLine = raw.replace(/\s*\n\s*/g, ' ').trim();
-  return oneLine.length > 180 ? `${oneLine.slice(0, 177)}...` : oneLine;
-}
+/** Fixed, content-free message for an origin DB that exists but cannot be read. */
+export const ORIGIN_READ_FAILED_MESSAGE =
+  'the origin database exists but could not be opened or read';
 
 /**
  * Reads one OpenCode origin DB read-only, WAL-aware (never `immutable=1`),
  * projecting + schema-checking every session and message row. It never throws:
  * a bad row is skipped with a content-free diagnostic; a DB-level failure
- * yields an empty read plus a `source-read-failed` diagnostic (which the
- * `sourceExists` path treats as retain). Message `seq` is left in source order
- * here (the caller reindexes to 0..n-1).
+ * yields an empty read plus a fixed `source-read-failed` diagnostic (which the
+ * caller treats as fatal). Message `seq` is left in source order here (the
+ * caller reindexes to 0..n-1).
  */
 export async function readOrigin(ctx: AdapterContext, origin: DbOrigin): Promise<OriginRecords> {
   const diagnostics: Diagnostic[] = [];
   const kind = await detectDbKind(ctx, origin);
   if (kind === 'not-opencode') {
+    return {
+      origin,
+      kind,
+      sessions: [],
+      messagesBySession: new Map(),
+      projects: new Map(),
+      diagnostics,
+    };
+  }
+  if (kind === 'unreadable') {
+    diagnostics.push(makeDiagnostic('error', 'source-read-failed', ORIGIN_READ_FAILED_MESSAGE));
     return {
       origin,
       kind,
@@ -150,8 +159,8 @@ export async function readOrigin(ctx: AdapterContext, origin: DbOrigin): Promise
     attachSpawnCallIds(sessions, messagesBySession);
 
     return { origin, kind, sessions, messagesBySession, projects, diagnostics };
-  } catch (err) {
-    diagnostics.push(makeDiagnostic('error', 'source-read-failed', sanitizeErrorMessage(err)));
+  } catch {
+    diagnostics.push(makeDiagnostic('error', 'source-read-failed', ORIGIN_READ_FAILED_MESSAGE));
     return {
       origin,
       kind,

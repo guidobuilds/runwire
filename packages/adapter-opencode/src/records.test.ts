@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import type { AdapterContext } from '@runwire/core';
+import type { AdapterContext, SqliteReader } from '@runwire/core';
 import { createBunFs } from '@runwire/core';
+import { opencodeDbPath } from './paths';
 import {
   attachSpawnCallIds,
   type OpenCodeMessage,
   type OpenCodeSession,
+  ORIGIN_READ_FAILED_MESSAGE,
   readOrigin,
 } from './records';
 
@@ -47,8 +49,77 @@ describe('readOrigin', () => {
 
   test('a missing DB returns an empty read with no throw', async () => {
     const records = await readOrigin(ctxFor('small'), 'legacy');
+    expect(records.kind).toBe('not-opencode');
     expect(records.sessions).toHaveLength(0);
     expect(records.messagesBySession.size).toBe(0);
+    expect(records.diagnostics).toHaveLength(0);
+  });
+
+  test('a present-but-unreadable DB yields kind unreadable and the fixed fatal diagnostic', async () => {
+    const base = ctxFor('small');
+    const currentPath = opencodeDbPath(base, 'current');
+    const ctx: AdapterContext = {
+      ...base,
+      fs: {
+        ...base.fs,
+        stat: async (path: string) =>
+          path === currentPath
+            ? { sizeBytes: 8, mtimeMs: 0, isDirectory: false }
+            : base.fs.stat(path),
+        openSqliteReadonly: (path: string) => {
+          if (path === currentPath) throw new Error('SQLITE_NOTADB: file is not a database');
+          return base.fs.openSqliteReadonly(path);
+        },
+      },
+    };
+    const records = await readOrigin(ctx, 'current');
+    expect(records.kind).toBe('unreadable');
+    expect(records.sessions).toHaveLength(0);
+    const fatal = records.diagnostics.filter((d) => d.code === 'source-read-failed');
+    expect(fatal).toHaveLength(1);
+    expect(fatal[0]?.level).toBe('error');
+    expect(fatal[0]?.message).toBe(ORIGIN_READ_FAILED_MESSAGE);
+    expect(JSON.stringify(records)).not.toContain('SQLITE_NOTADB');
+  });
+
+  test('a read failure after successful detection converges on the fixed fatal diagnostic', async () => {
+    const base = ctxFor('small');
+    const currentPath = opencodeDbPath(base, 'current');
+    let opens = 0;
+    const detectReader: SqliteReader = {
+      all<T = Record<string, unknown>>(): T[] {
+        return [{ name: 'session_v2' }] as T[];
+      },
+      close() {},
+    };
+    const brokenReader: SqliteReader = {
+      all<T = Record<string, unknown>>(): T[] {
+        throw new Error('SQLITE_CORRUPT: database disk image is malformed');
+      },
+      close() {},
+    };
+    const ctx: AdapterContext = {
+      ...base,
+      fs: {
+        ...base.fs,
+        stat: async (path: string) =>
+          path === currentPath
+            ? { sizeBytes: 8, mtimeMs: 0, isDirectory: false }
+            : base.fs.stat(path),
+        openSqliteReadonly: () => {
+          opens++;
+          return opens === 1 ? detectReader : brokenReader;
+        },
+      },
+    };
+    const records = await readOrigin(ctx, 'current');
+    expect(records.kind).toBe('current');
+    expect(records.sessions).toHaveLength(0);
+    const fatal = records.diagnostics.filter((d) => d.code === 'source-read-failed');
+    expect(fatal).toHaveLength(1);
+    expect(fatal[0]?.level).toBe('error');
+    expect(fatal[0]?.message).toBe(ORIGIN_READ_FAILED_MESSAGE);
+    expect(JSON.stringify(records)).not.toContain('SQLITE_CORRUPT');
   });
 
   test('a malformed message yields an invalid-record diagnostic but no throw', async () => {

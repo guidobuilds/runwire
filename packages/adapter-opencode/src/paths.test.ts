@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import type { AdapterContext } from '@runwire/core';
+import type { AdapterContext, SqliteReader } from '@runwire/core';
 import { createBunFs } from '@runwire/core';
 import {
   detectDbKind,
@@ -56,5 +56,49 @@ describe('paths', () => {
     // A missing DB file is not-opencode, never a throw.
     expect(await detectDbKind(ctxFor('legacy'), 'current')).toBe('not-opencode');
     expect(await detectDbKind(ctxFor('small'), 'legacy')).toBe('not-opencode');
+  });
+
+  test('a present DB that cannot be opened is unreadable, not not-opencode', async () => {
+    const base = ctxFor('small');
+    const currentPath = opencodeDbPath(base, 'current');
+    const ctx: AdapterContext = {
+      ...base,
+      fs: {
+        ...base.fs,
+        stat: async (path: string) =>
+          path === currentPath
+            ? { sizeBytes: 8, mtimeMs: 0, isDirectory: false }
+            : base.fs.stat(path),
+        openSqliteReadonly: (path: string) => {
+          if (path === currentPath) throw new Error('SQLITE_NOTADB: file is not a database');
+          return base.fs.openSqliteReadonly(path);
+        },
+      },
+    };
+    expect(await detectDbKind(ctx, 'current')).toBe('unreadable');
+    expect(await detectDbKind(ctx, 'legacy')).toBe('not-opencode');
+  });
+
+  test('a readable DB without OpenCode tables is not-opencode', async () => {
+    const base = ctxFor('small');
+    const currentPath = opencodeDbPath(base, 'current');
+    const reader: SqliteReader = {
+      all<T = Record<string, unknown>>(): T[] {
+        return [{ name: 'other' }] as T[];
+      },
+      close() {},
+    };
+    const ctx: AdapterContext = {
+      ...base,
+      fs: {
+        ...base.fs,
+        stat: async (path: string) =>
+          path === currentPath
+            ? { sizeBytes: 8, mtimeMs: 0, isDirectory: false }
+            : base.fs.stat(path),
+        openSqliteReadonly: () => reader,
+      },
+    };
+    expect(await detectDbKind(ctx, 'current')).toBe('not-opencode');
   });
 });

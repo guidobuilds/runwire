@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import type { AdapterContext } from '@runwire/core';
+import type { AdapterContext, SessionBundle, SqliteReader } from '@runwire/core';
 import { createBunFs } from '@runwire/core';
 import { discover, probe, sourceExists } from './discover';
+import { opencodeDbPath } from './paths';
 
 const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', 'fixtures', 'opencode');
 
@@ -104,6 +105,151 @@ describe('discover', () => {
       })(),
     ).resolves.toBeUndefined();
     expect(bundles.length).toBeGreaterThan(0);
+  });
+
+  test('throws the fixed error when a present origin DB cannot be opened', async () => {
+    const base = ctxFor('small');
+    const currentPath = opencodeDbPath(base, 'current');
+    const logs: string[] = [];
+    const ctx: AdapterContext = {
+      ...base,
+      log: { info() {}, warn() {}, error: (message: string) => logs.push(message) },
+      fs: {
+        ...base.fs,
+        stat: async (path: string) =>
+          path === currentPath
+            ? { sizeBytes: 8, mtimeMs: 0, isDirectory: false }
+            : base.fs.stat(path),
+        openSqliteReadonly: (path: string) => {
+          if (path === currentPath) throw new Error('SQLITE_NOTADB: file is not a database');
+          return base.fs.openSqliteReadonly(path);
+        },
+      },
+    };
+    const bundles: SessionBundle[] = [];
+    let caught: unknown;
+    try {
+      for await (const b of discover(ctx, new Map())) bundles.push(b);
+    } catch (e) {
+      caught = e;
+    }
+    expect(bundles).toHaveLength(0);
+    expect(caught).toBeInstanceOf(Error);
+    const err = caught as Error & { code?: string };
+    expect(err.message).toBe('opencode current source-read-failed');
+    expect(err.code).toBe('source-read-failed');
+    expect(logs).toEqual(['opencode: origin current read failed (source-read-failed)']);
+    expect(logs.join('\n')).not.toContain('SQLITE_NOTADB');
+  });
+
+  test('a fatal legacy origin throws mid-stream after the current bundles', async () => {
+    const base = ctxFor('small');
+    const legacyPath = opencodeDbPath(base, 'legacy');
+    const ctx: AdapterContext = {
+      ...base,
+      fs: {
+        ...base.fs,
+        stat: async (path: string) =>
+          path === legacyPath
+            ? { sizeBytes: 8, mtimeMs: 0, isDirectory: false }
+            : base.fs.stat(path),
+        openSqliteReadonly: (path: string) => {
+          if (path === legacyPath) throw new Error('SQLITE_NOTADB: file is not a database');
+          return base.fs.openSqliteReadonly(path);
+        },
+      },
+    };
+    const bundles: SessionBundle[] = [];
+    let caught: unknown;
+    try {
+      for await (const b of discover(ctx, new Map())) bundles.push(b);
+    } catch (e) {
+      caught = e;
+    }
+    expect(bundles.map((b) => b.session.id)).toContain('opencode:current:ses_small');
+    const err = caught as Error & { code?: string };
+    expect(err.message).toBe('opencode legacy source-read-failed');
+    expect(err.code).toBe('source-read-failed');
+  });
+
+  test('a read failure after successful detection rejects with the fixed error', async () => {
+    const base = ctxFor('small');
+    const currentPath = opencodeDbPath(base, 'current');
+    let opens = 0;
+    const detectReader: SqliteReader = {
+      all<T = Record<string, unknown>>(): T[] {
+        return [{ name: 'session_v2' }] as T[];
+      },
+      close() {},
+    };
+    const brokenReader: SqliteReader = {
+      all<T = Record<string, unknown>>(): T[] {
+        throw new Error('SQLITE_CORRUPT: database disk image is malformed');
+      },
+      close() {},
+    };
+    const ctx: AdapterContext = {
+      ...base,
+      fs: {
+        ...base.fs,
+        stat: async (path: string) =>
+          path === currentPath
+            ? { sizeBytes: 8, mtimeMs: 0, isDirectory: false }
+            : base.fs.stat(path),
+        openSqliteReadonly: () => {
+          opens++;
+          return opens === 1 ? detectReader : brokenReader;
+        },
+      },
+    };
+    const bundles: SessionBundle[] = [];
+    let caught: unknown;
+    try {
+      for await (const b of discover(ctx, new Map())) bundles.push(b);
+    } catch (e) {
+      caught = e;
+    }
+    expect(bundles).toHaveLength(0);
+    const err = caught as Error & { code?: string };
+    expect(err.message).toBe('opencode current source-read-failed');
+    expect(err.code).toBe('source-read-failed');
+  });
+
+  test('a healthy empty origin yields no bundles and does not throw', async () => {
+    const base = ctxFor('small');
+    const empty: AdapterContext = { ...base, home: '/does/not/exist' };
+    const bundles: SessionBundle[] = [];
+    await expect(
+      (async () => {
+        for await (const b of discover(empty, new Map())) bundles.push(b);
+      })(),
+    ).resolves.toBeUndefined();
+    expect(bundles).toHaveLength(0);
+  });
+
+  test('a readable DB without OpenCode tables is healthy-empty (no throw)', async () => {
+    const base = ctxFor('small');
+    const currentPath = opencodeDbPath(base, 'current');
+    const reader: SqliteReader = {
+      all<T = Record<string, unknown>>(): T[] {
+        return [{ name: 'other' }] as T[];
+      },
+      close() {},
+    };
+    const ctx: AdapterContext = {
+      ...base,
+      fs: {
+        ...base.fs,
+        stat: async (path: string) =>
+          path === currentPath
+            ? { sizeBytes: 8, mtimeMs: 0, isDirectory: false }
+            : base.fs.stat(path),
+        openSqliteReadonly: () => reader,
+      },
+    };
+    const bundles: SessionBundle[] = [];
+    for await (const b of discover(ctx, new Map())) bundles.push(b);
+    expect(bundles).toHaveLength(0);
   });
 });
 
