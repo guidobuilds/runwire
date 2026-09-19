@@ -303,6 +303,18 @@ describe('AgentGraph — signal markers', () => {
     expect(titles).toContain('Error — bash — 2026-09-01T10:25:00.000Z');
   });
 
+  it('does not render signal counters below the graph', async () => {
+    installHandlers();
+    const { container } = render(
+      <AgentGraph onOpenNode={() => {}} rootSession={ROOT} sessionId={ROOT.id} />,
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect(container.querySelectorAll('.agent-graph-marker').length).toBe(SIGNAL_EVENTS.length);
+    });
+    expect(screen.queryByRole('list', { name: 'Signal filters' })).not.toBeInTheDocument();
+  });
+
   it('notes when only the first page of signals is shown', async () => {
     installHandlers({ merged: mergedEventsResponse(500) });
     render(<AgentGraph onOpenNode={() => {}} rootSession={ROOT} sessionId={ROOT.id} />, {
@@ -347,6 +359,21 @@ describe('AgentGraph — states', () => {
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
     });
+  });
+
+  it('does not explain compressed gaps below the graph', async () => {
+    const longSession = {
+      ...ROOT,
+      endedAt: '2026-09-01T13:00:00.000Z',
+    };
+    installHandlers({ spawns: () => singleNodeSpawnsPage(), merged: mergedEventsResponse(0) });
+    render(
+      <AgentGraph onOpenNode={() => {}} rootSession={longSession} sessionId={longSession.id} />,
+      { wrapper },
+    );
+
+    expect(await screen.findByRole('button', { name: 'Compress gaps' })).toBeInTheDocument();
+    expect(screen.queryByText(/long timeline gaps? compressed/i)).not.toBeInTheDocument();
   });
 });
 

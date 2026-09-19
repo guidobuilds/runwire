@@ -13,7 +13,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer } from '@/components/ui/chart';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Toggle } from '@/components/ui/toggle';
 import { useSessionProfileMergedEvents, useSessionProfileSpawns } from '@/queries/session-profile';
 import { AgentGraphConnectors } from './agent-graph-connectors';
 import { formatDuration } from './format';
@@ -439,7 +438,6 @@ function AgentGraphBody({
   onOpenNode: (nodeId: string) => void;
 }) {
   const [timelineMode, setTimelineMode] = useState<TimelineMode>('compressed');
-  const [hiddenKinds, setHiddenKinds] = useState<Set<MarkerKind>>(() => new Set());
   const rows = buildRows(rootSession, pages);
   const rowsById = new Map(rows.map((row) => [row.id, row]));
 
@@ -534,10 +532,6 @@ function AgentGraphBody({
     x: displayTime(absoluteX) - displayDomainStart,
   }));
 
-  const presentKinds = Array.from(new Set(markers.map((marker) => marker.kind)));
-  const kindCounts = new Map<MarkerKind, number>();
-  for (const marker of markers) kindCounts.set(marker.kind, (kindCounts.get(marker.kind) ?? 0) + 1);
-  const visibleMarkers = markers.filter((marker) => !hiddenKinds.has(marker.kind));
   const chartHeight = Math.max(MIN_CHART_HEIGHT, rows.length * ROW_HEIGHT + 44);
   const viewportHeight = Math.min(chartHeight, MAX_VIEWPORT_HEIGHT);
   const elapsedMs = Math.max(0, domain.end - domain.start);
@@ -556,15 +550,6 @@ function AgentGraphBody({
     }
     return axisDateTime.format(date);
   };
-
-  function toggleKind(kind: MarkerKind) {
-    setHiddenKinds((current) => {
-      const next = new Set(current);
-      if (next.has(kind)) next.delete(kind);
-      else next.add(kind);
-      return next;
-    });
-  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -646,39 +631,10 @@ function AgentGraphBody({
               stackId="lifespan"
             />
             <AgentGraphConnectors connectors={connectors} />
-            <AgentGraphMarkers markers={visibleMarkers} />
+            <AgentGraphMarkers markers={markers} />
           </RechartsComposedChart>
         </ChartContainer>
       </div>
-      {compressesGaps ? (
-        <p className="text-muted-foreground text-xs">
-          {timelineGaps.length} long timeline gap{timelineGaps.length === 1 ? '' : 's'} compressed.
-          This means no starts, ends, spawns, or signals were recorded—not necessarily that agents
-          were idle.
-        </p>
-      ) : null}
-      {presentKinds.length > 0 ? (
-        <ul aria-label="Signal filters" className="flex flex-wrap gap-1.5">
-          {presentKinds.map((kind) => (
-            <li key={kind}>
-              <Toggle
-                aria-label={`${hiddenKinds.has(kind) ? 'Show' : 'Hide'} ${MARKER_LABEL[kind]} signals`}
-                onPressedChange={() => toggleKind(kind)}
-                pressed={!hiddenKinds.has(kind)}
-                size="sm"
-                variant="outline"
-              >
-                <span
-                  aria-hidden="true"
-                  className="size-2 rounded-full"
-                  style={{ backgroundColor: MARKER_COLOR[kind] }}
-                />
-                {MARKER_LABEL[kind]} {kindCounts.get(kind)}
-              </Toggle>
-            </li>
-          ))}
-        </ul>
-      ) : null}
       {markerTotal > SIGNALS_LIMIT ? (
         <p className="text-muted-foreground text-xs">
           Showing the first {SIGNALS_LIMIT} signals of {markerTotal}.
