@@ -9,3 +9,7 @@ fixtures/*/canary/output/
 .forge/
 # Local Pi runtime state
 .atl/
+.grok/
+.claude/
+.agents/
+skills-lock.json
