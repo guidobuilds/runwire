@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="360 250 455 290" role="img" aria-labelledby="title desc">
+  <title id="title">Runwire</title>
+  <desc id="desc">Terminal prompt connected to an execution trace.</desc>
+  <g fill="none" stroke="#111111" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M395 285 L485 355 L395 425" stroke-width="34"/>
+  </g>
+  <g fill="none" stroke="#111111" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M430 490 H555 C585 490 598 478 608 452 L650 342 C659 318 674 305 700 305 H748" stroke-width="34"/>
+  </g>
+  <circle cx="430" cy="490" r="34" fill="#111111"/>
+  <circle cx="755" cy="305" r="40" fill="#111111"/>
+</svg>

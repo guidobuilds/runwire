@@ -6,7 +6,6 @@ import {
   ScanSearchIcon,
   ServerIcon,
   Settings2Icon,
-  TerminalIcon,
 } from 'lucide-react';
 import type * as React from 'react';
 import { useState } from 'react';
@@ -155,8 +154,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               className="data-[slot=sidebar-menu-button]:p-1.5!"
               render={<a href="/sessions" />}
             >
-              <TerminalIcon className="size-5!" />
-              <span className="text-base font-semibold">Runwire</span>
+              <img
+                src="/runwire-logo.svg"
+                alt=""
+                aria-hidden="true"
+                className="h-4 w-auto shrink-0 dark:invert"
+              />
+              <span className="text-base font-semibold">runwire</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
