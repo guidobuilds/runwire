@@ -693,10 +693,10 @@ describe('listSessions sort whitelist', () => {
     db.close();
   });
 
-  test('tokens sorts by the sum of every rollup token field (missing rollup -> 0)', () => {
+  test('tokens sorts by the sum of the prompt+output rollup fields (missing rollup -> 0)', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // 40+30+20+10+0 = 100, spread across every summed field.
+    // 40+30+20+10 = 100, spread across every summed field.
     insertSession(db, 'fake:multi', {
       uncachedInput: 40,
       cachedInput: 30,
@@ -724,6 +724,34 @@ describe('listSessions sort whitelist', () => {
       'fake:norow',
       'fake:single',
       'fake:multi',
+    ]);
+    db.close();
+  });
+
+  test('tokens sort excludes reasoning_output (reasoning must not re-enter the total)', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    // ASC: reasoning-heavy (100) < output-only (150). Including reasoning would
+    // flip this to reasoning-heavy first (1100 > 150).
+    insertSession(db, 'fake:reasoning-heavy', {
+      output: 100,
+      reasoningOutput: 1000,
+      startedAt: '2024-01-03T00:00:00Z',
+    });
+    insertSession(db, 'fake:output-heavy', {
+      output: 150,
+      reasoningOutput: 0,
+      startedAt: '2024-01-02T00:00:00Z',
+    });
+    recomputeRollups(db);
+
+    expect(listSessions(db, { sort: 'tokens' }).items.map((s) => s.id)).toEqual([
+      'fake:reasoning-heavy',
+      'fake:output-heavy',
+    ]);
+    expect(listSessions(db, { sort: '-tokens' }).items.map((s) => s.id)).toEqual([
+      'fake:output-heavy',
+      'fake:reasoning-heavy',
     ]);
     db.close();
   });
@@ -857,9 +885,9 @@ describe('getSessionsStats', () => {
     // root1 + root2 + root3; the child is NOT a root.
     expect(stats.totalSessions).toBe(3);
     expect(stats.totalCostUsd).toBeCloseTo(3.5);
-    // root1 inclusive (own + child) = 120/12/6/1200/60 = 1398; root2 = 110;
-    // root3 = 0.
-    expect(stats.totalTokens).toBe(1398 + 110);
+    // root1 inclusive (own + child) prompt+output = 120/12/6/1200 = 1338
+    // (reasoning_output is NOT part of the total), root2 = 110; root3 = 0.
+    expect(stats.totalTokens).toBe(1338 + 110);
     // NULL duration (root3) excluded from the mean.
     expect(stats.avgDurationMs).toBe((3_600_000 + 1_800_000) / 2);
     // Day buckets, ascending; root3 has no started_at and is excluded.
@@ -916,8 +944,8 @@ describe('getSessionsStats', () => {
 
     const stats = getSessionsStats(db, { model: 'm-child' });
     expect(stats.totalSessions).toBe(1);
-    // root1's inclusive tokens, proving the descendant-scoped match.
-    expect(stats.totalTokens).toBe(1398);
+    // root1's inclusive tokens (prompt+output only), proving the descendant-scoped match.
+    expect(stats.totalTokens).toBe(1338);
 
     db.close();
   });

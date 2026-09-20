@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from './client';
 import {
+  fetchSessionProfileContext,
   fetchSessionProfileMergedEvents,
   fetchSessionProfileModels,
   fetchSessionProfileSignals,
@@ -330,5 +331,159 @@ describe('session profile API', () => {
       ),
     );
     await expect(fetchSessionProfileModels('root')).rejects.toBeInstanceOf(TypeError);
+  });
+
+  const contextResponse = {
+    sessionId: 'root',
+    own: {
+      observedCalls: 2,
+      promptInput: 300,
+      avgPromptInput: 150,
+      p95PromptInput: 200,
+      peakPromptInput: 200,
+      cacheReadShare: 0.25,
+    },
+    tree: {
+      observedCalls: 3,
+      promptInput: 400,
+      avgPromptInput: 400 / 3,
+      p95PromptInput: 200,
+      peakPromptInput: 200,
+      cacheReadShare: 0.1,
+    },
+    descendants: [
+      {
+        id: 'root/child',
+        parentId: 'root',
+        relativeDepth: 1,
+        agentType: 'worker',
+        startedAt: '2026-09-01T10:05:00.000Z',
+        durationMs: 600000,
+        modelPrimary: 'claude-sonnet-5',
+        costUsd: 0.12,
+        metrics: {
+          observedCalls: 1,
+          promptInput: 100,
+          avgPromptInput: 100,
+          p95PromptInput: 100,
+          peakPromptInput: 100,
+          cacheReadShare: null,
+        },
+      },
+    ],
+  };
+
+  it('fetches context with no query string and encodes the opaque id once', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(contextResponse), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    await fetchSessionProfileContext('root/a%25');
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/sessions/root%2Fa%2525/profile/context',
+      expect.any(Object),
+    );
+    // The endpoint accepts no query parameters: the path must not gain a `?`.
+    expect(fetch.mock.calls[0]?.[0]).not.toContain('?');
+  });
+
+  it('normalizes the context response into the view shape', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(contextResponse), { status: 200 })),
+    );
+    const result = await fetchSessionProfileContext('root');
+    expect(result).toEqual({ view: 'context', ...contextResponse });
+  });
+
+  it('preserves null metrics and null descendant metadata', async () => {
+    const nullMetrics = {
+      observedCalls: 0,
+      promptInput: null,
+      avgPromptInput: null,
+      p95PromptInput: null,
+      peakPromptInput: null,
+      cacheReadShare: null,
+    };
+    const body = {
+      ...contextResponse,
+      own: nullMetrics,
+      tree: nullMetrics,
+      descendants: [
+        {
+          ...contextResponse.descendants[0],
+          agentType: null,
+          durationMs: null,
+          modelPrimary: null,
+          costUsd: null,
+          metrics: nullMetrics,
+        },
+      ],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 200 })),
+    );
+    const result = await fetchSessionProfileContext('root');
+    expect(result.own).toEqual(nullMetrics);
+    expect(result.descendants[0]).toMatchObject({
+      agentType: null,
+      durationMs: null,
+      modelPrimary: null,
+      costUsd: null,
+      metrics: nullMetrics,
+    });
+  });
+
+  it('rejects a context response with a non-nullable metric', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ...contextResponse,
+            own: { ...contextResponse.own, peakPromptInput: 'x' },
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    await expect(fetchSessionProfileContext('root')).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it('rejects a context response whose descendants is not an array', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ ...contextResponse, descendants: null }), { status: 200 }),
+        ),
+    );
+    await expect(fetchSessionProfileContext('root')).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it('rejects a context descendant with a missing id', async () => {
+    const broken = {
+      ...contextResponse,
+      descendants: [{ ...contextResponse.descendants[0], id: 7 }],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(broken), { status: 200 })),
+    );
+    await expect(fetchSessionProfileContext('root')).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it('surfaces API errors for the context endpoint', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ error: 'session not found' }), { status: 404 }),
+        ),
+    );
+    await expect(fetchSessionProfileContext('missing')).rejects.toBeInstanceOf(ApiError);
   });
 });

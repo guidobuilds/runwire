@@ -411,7 +411,7 @@ const SORT_COLUMNS: Record<string, string> = {
   startedAt: 's.started_at',
   duration: 's.duration_ms',
   tokens:
-    '(COALESCE(r.uncached_input,0)+COALESCE(r.cached_input,0)+COALESCE(r.cache_write,0)+COALESCE(r.output,0)+COALESCE(r.reasoning_output,0))',
+    '(COALESCE(r.uncached_input,0)+COALESCE(r.cached_input,0)+COALESCE(r.cache_write,0)+COALESCE(r.output,0))',
   cost: 's.cost_usd',
 };
 
@@ -577,7 +577,7 @@ export function getSessionsStats(db: Database, query: ListSessionsQuery = {}): A
       COALESCE(SUM(s.cost_usd), 0) AS total_cost_usd,
       COALESCE(SUM(
         COALESCE(r.uncached_input, 0) + COALESCE(r.cached_input, 0) + COALESCE(r.cache_write, 0)
-        + COALESCE(r.output, 0) + COALESCE(r.reasoning_output, 0)
+        + COALESCE(r.output, 0)
       ), 0) AS total_tokens,
       COALESCE(AVG(s.duration_ms), 0) AS avg_duration_ms
     FROM sessions s

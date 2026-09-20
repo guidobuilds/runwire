@@ -927,8 +927,9 @@ describe('createServer /api/sessions/stats', () => {
       expect(await res.json()).toEqual({
         totalSessions: 3,
         totalCostUsd: 3.5,
-        // r1 inclusive (own + child) 120/12/6/1200/60 = 1398, plus r2 110.
-        totalTokens: 1508,
+        // r1 inclusive (own + child) prompt+output 120/12/6/1200 = 1338
+        // (reasoning_output is not part of the total), plus r2 110.
+        totalTokens: 1448,
         avgDurationMs: 2_700_000,
         // r3 has no started_at, so only two day buckets (ascending).
         series: [

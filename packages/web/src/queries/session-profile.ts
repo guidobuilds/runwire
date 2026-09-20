@@ -7,6 +7,7 @@ import {
   useQuery,
 } from '@tanstack/react-query';
 import {
+  fetchSessionProfileContext,
   fetchSessionProfileMergedEvents,
   fetchSessionProfileModels,
   fetchSessionProfileSignals,
@@ -41,6 +42,10 @@ export type ProfileMergedEventsSelection = {
 };
 
 export type ProfileModelsSelection = {
+  refresh?: number;
+};
+
+export type ProfileContextSelection = {
   refresh?: number;
 };
 
@@ -82,6 +87,8 @@ export const sessionProfileKeys = {
     ] as const,
   models: (id: string, selection: ProfileModelsSelection) =>
     ['session-profile', id, 'models', selection.refresh ?? 0] as const,
+  context: (id: string, selection: ProfileContextSelection) =>
+    ['session-profile', id, 'context', selection.refresh ?? 0] as const,
 };
 
 export function sessionProfileSpawnsOptions(id: string, selection: ProfileSpawnsSelection) {
@@ -155,4 +162,16 @@ export function sessionProfileModelsOptions(id: string, selection: ProfileModels
 
 export function useSessionProfileModels(id: string, selection: ProfileModelsSelection) {
   return useQuery(sessionProfileModelsOptions(id, selection));
+}
+
+export function sessionProfileContextOptions(id: string, selection: ProfileContextSelection) {
+  return queryOptions({
+    queryKey: sessionProfileKeys.context(id, selection),
+    queryFn: ({ signal }) => fetchSessionProfileContext(id, signal),
+    ...noRefetch,
+  });
+}
+
+export function useSessionProfileContext(id: string, selection: ProfileContextSelection) {
+  return useQuery(sessionProfileContextOptions(id, selection));
 }

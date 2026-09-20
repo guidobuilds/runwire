@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
 import { AgentGraph } from '@/components/session-profile/agent-graph';
+import { ContextTable } from '@/components/session-profile/context-table';
 import { EventsTable } from '@/components/session-profile/events-table';
 import { Header, HeaderSkeleton } from '@/components/session-profile/header';
 import { SignalsAccordion } from '@/components/session-profile/signals-accordion';
@@ -138,6 +139,8 @@ function SessionProfileRoute() {
         rootSession={rootSession}
         sessionId={id}
       />
+
+      <ContextTable refresh={refresh} sessionId={id} />
 
       <TokenChart refresh={refresh} sessionId={id} />
 

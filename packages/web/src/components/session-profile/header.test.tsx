@@ -13,7 +13,7 @@ import userEvent from '@testing-library/user-event';
 import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { server } from '@/mocks/node';
-import { mockProfileModelsTree } from '@/mocks/session-profile';
+import { mockProfileContextTree, mockProfileModelsTree } from '@/mocks/session-profile';
 import { Header } from './header';
 
 function queryClient() {
@@ -243,6 +243,113 @@ describe('Header — model usage block', () => {
     const { rerender } = renderDirect(0, client);
     await waitFor(() => expect(calls).toBe(1));
 
+    rerender(
+      <QueryClientProvider client={client}>
+        <Header refresh={1} session={detail()} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(calls).toBe(2));
+  });
+});
+
+describe('Header — context pressure block', () => {
+  function renderDirect(refresh = 0, client = queryClient()) {
+    return {
+      client,
+      ...render(
+        <QueryClientProvider client={client}>
+          <Header refresh={refresh} session={detail()} />
+        </QueryClientProvider>,
+      ),
+    };
+  }
+
+  it('renders the Context pressure block with tree primary and own secondary', async () => {
+    renderDirect(0);
+    await screen.findByText('Context pressure');
+    // Fixture tree observed-calls is 9; own is 4.
+    expect(screen.getByText('9')).toBeInTheDocument();
+    expect(screen.getByText('own 4')).toBeInTheDocument();
+  });
+
+  it('places context pressure after the token stack and before the model charts', async () => {
+    renderDirect(0);
+    await screen.findByText('Context pressure');
+    const text = document.body.textContent ?? '';
+    const tokenStatsIndex = text.indexOf('Output');
+    const contextIndex = text.indexOf('Context pressure');
+    const modelUsageIndex = text.indexOf('Models in this session');
+    expect(tokenStatsIndex).toBeGreaterThanOrEqual(0);
+    expect(contextIndex).toBeGreaterThan(tokenStatsIndex);
+    expect(modelUsageIndex).toBeGreaterThan(contextIndex);
+  });
+
+  it('shows only the tree figure when there are no descendants', async () => {
+    server.use(
+      http.get('/api/sessions/:id/profile/context', () =>
+        HttpResponse.json({ ...mockProfileContextTree, descendants: [] }),
+      ),
+    );
+    renderDirect(0);
+    await screen.findByText('Context pressure');
+    expect(screen.queryByText(/own /)).not.toBeInTheDocument();
+    expect(screen.getByText('9')).toBeInTheDocument();
+  });
+
+  it('renders em dashes when every metric is null', async () => {
+    const nullMetrics = {
+      observedCalls: 0,
+      promptInput: null,
+      avgPromptInput: null,
+      p95PromptInput: null,
+      peakPromptInput: null,
+      cacheReadShare: null,
+    };
+    server.use(
+      http.get('/api/sessions/:id/profile/context', () =>
+        HttpResponse.json({
+          ...mockProfileContextTree,
+          own: nullMetrics,
+          tree: nullMetrics,
+          descendants: [],
+        }),
+      ),
+    );
+    renderDirect(0);
+    await screen.findByText('Context pressure');
+    // 4 nullable fields render an em dash; observed calls is a real 0.
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(4);
+    expect(screen.getByText('0')).toBeInTheDocument();
+  });
+
+  it('isolates an error with a Retry button that refetches', async () => {
+    let calls = 0;
+    server.use(
+      http.get('/api/sessions/:id/profile/context', () => {
+        calls += 1;
+        return calls === 1
+          ? HttpResponse.json({ error: 'boom' }, { status: 500 })
+          : HttpResponse.json(mockProfileContextTree);
+      }),
+    );
+    renderDirect(0);
+    await screen.findByText('Context metrics unavailable');
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await screen.findByText('Context pressure');
+    expect(calls).toBe(2);
+  });
+
+  it('threads the refresh prop into the context query', async () => {
+    let calls = 0;
+    server.use(
+      http.get('/api/sessions/:id/profile/context', () => {
+        calls += 1;
+        return HttpResponse.json(mockProfileContextTree);
+      }),
+    );
+    const client = queryClient();
+    const { rerender } = renderDirect(0, client);
+    await waitFor(() => expect(calls).toBe(1));
     rerender(
       <QueryClientProvider client={client}>
         <Header refresh={1} session={detail()} />

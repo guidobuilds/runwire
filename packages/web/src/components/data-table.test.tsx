@@ -105,6 +105,25 @@ describe('DataTable prop-sync', () => {
   });
 });
 
+describe('DataTable token totals', () => {
+  it('excludes reasoningOutput from the Total Tokens figure (225, never 275)', () => {
+    const totals = {
+      uncachedInput: 100,
+      cachedInput: 50,
+      cacheWrite: 25,
+      output: 50,
+      reasoningOutput: 50,
+    };
+    const session: ApiSessionSummary = { ...sessionA, tokensOwn: totals, tokensInclusive: totals };
+    renderTable({ data: [session] });
+
+    // prompt input (100+50+25) + output (50) = 225; re-adding reasoningOutput
+    // (50) would render 275.
+    expect(screen.getByText('225')).toBeInTheDocument();
+    expect(screen.queryByText('275')).not.toBeInTheDocument();
+  });
+});
+
 describe('DataTable harness identity', () => {
   it('renders only the SVG icon and reveals the harness name on hover', async () => {
     const { container } = renderTable({ data: [sessionA] });

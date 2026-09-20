@@ -4,9 +4,10 @@ import { HttpResponse, http } from 'msw';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { server } from '@/mocks/node';
-import { mockProfileModelsTree } from '@/mocks/session-profile';
+import { mockProfileContextTree, mockProfileModelsTree } from '@/mocks/session-profile';
 import {
   sessionProfileKeys,
+  useSessionProfileContext,
   useSessionProfileMergedEvents,
   useSessionProfileModels,
   useSessionProfileSignals,
@@ -188,6 +189,46 @@ describe('session profile query keys', () => {
       }),
     );
     const hook = renderHook(({ refresh }) => useSessionProfileModels('sess-1', { refresh }), {
+      initialProps: { refresh: 0 },
+      wrapper,
+    });
+    await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
+    hook.rerender({ refresh: 1 });
+    await waitFor(() => expect(calls).toBe(2));
+  });
+
+  it('keys context by refresh and separately from the other views', () => {
+    expect(sessionProfileKeys.context('a', {})).toEqual(['session-profile', 'a', 'context', 0]);
+    expect(sessionProfileKeys.context('a', { refresh: 1 })).not.toEqual(
+      sessionProfileKeys.context('a', { refresh: 0 }),
+    );
+    expect(sessionProfileKeys.context('a', {})).not.toEqual(sessionProfileKeys.models('a', {}));
+  });
+
+  it('fetches context through the MSW mock and surfaces the descendant tree', async () => {
+    const hook = renderHook(() => useSessionProfileContext('sess-1', {}), { wrapper });
+    await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
+    expect(hook.result.current.data).toMatchObject({
+      view: 'context',
+      sessionId: 'sess-1',
+      own: { observedCalls: 4, promptInput: 4000 },
+      tree: { observedCalls: 9, promptInput: 9000 },
+    });
+    expect(hook.result.current.data?.descendants.map((d) => [d.id, d.relativeDepth])).toEqual([
+      ['sess-1-child', 1],
+      ['sess-1-child/grand', 2],
+    ]);
+  });
+
+  it('refetches context when refresh changes', async () => {
+    let calls = 0;
+    server.use(
+      http.get('/api/sessions/:id/profile/context', () => {
+        calls += 1;
+        return HttpResponse.json(mockProfileContextTree);
+      }),
+    );
+    const hook = renderHook(({ refresh }) => useSessionProfileContext('sess-1', { refresh }), {
       initialProps: { refresh: 0 },
       wrapper,
     });

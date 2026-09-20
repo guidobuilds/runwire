@@ -126,13 +126,10 @@ function cycleSort(sort: SessionsSortState, id: SortField): SessionsSortState {
 }
 
 function sumTokens(totals: ApiTokenTotals): number {
-  return (
-    totals.uncachedInput +
-    totals.cachedInput +
-    totals.cacheWrite +
-    totals.output +
-    totals.reasoningOutput
-  );
+  // Total Tokens = prompt input + output. `reasoningOutput` is a separate
+  // breakdown and is never added here (it is already counted inside `output`
+  // for harnesses that report it that way, so adding it double-counts).
+  return totals.uncachedInput + totals.cachedInput + totals.cacheWrite + totals.output;
 }
 
 function formatDateTime(iso: string | null): string {

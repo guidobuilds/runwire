@@ -1,4 +1,5 @@
 import type {
+  ContextMetrics,
   Event,
   EventFilter,
   MergedEventsQuery,
@@ -6,6 +7,8 @@ import type {
   ModelsResponse,
   ModelUsageEntry,
   ModelUsageGroup,
+  ProfileContextDescendant,
+  ProfileContextResponse,
   ProfileSpawnsQuery,
   ProfileSpawnsResponse,
   Scope,
@@ -24,6 +27,7 @@ export type SessionProfileSignals = SignalsResponse & { view: 'signals' };
 export type SessionProfileTimeline = TimelineResponse & { view: 'timeline' };
 export type SessionProfileMergedEvents = MergedEventsResponse & { view: 'merged' };
 export type SessionProfileModels = ModelsResponse & { view: 'models' };
+export type SessionProfileContext = ProfileContextResponse & { view: 'context' };
 
 export type SpawnsRequest = ProfileSpawnsQuery;
 export type SignalsRequest = SignalsQuery;
@@ -32,7 +36,7 @@ export type MergedEventsRequest = MergedEventsQuery;
 
 function path(
   id: string,
-  endpoint: 'spawns' | 'signals' | 'timeline' | 'events' | 'models',
+  endpoint: 'spawns' | 'signals' | 'timeline' | 'events' | 'models' | 'context',
 ): string {
   return `/api/sessions/${encodeURIComponent(id)}/profile/${endpoint}`;
 }
@@ -366,6 +370,76 @@ function normalizeModelsResponse(value: unknown): SessionProfileModels {
   };
 }
 
+function isNullableNumber(value: unknown): value is number | null {
+  return typeof value === 'number' || value === null;
+}
+
+function normalizeContextMetrics(value: unknown): ContextMetrics {
+  if (
+    !isRecord(value) ||
+    typeof value.observedCalls !== 'number' ||
+    !isNullableNumber(value.promptInput) ||
+    !isNullableNumber(value.avgPromptInput) ||
+    !isNullableNumber(value.p95PromptInput) ||
+    !isNullableNumber(value.peakPromptInput) ||
+    !isNullableNumber(value.cacheReadShare)
+  ) {
+    throw new TypeError('invalid session profile context metrics');
+  }
+  return {
+    observedCalls: value.observedCalls,
+    promptInput: value.promptInput,
+    avgPromptInput: value.avgPromptInput,
+    p95PromptInput: value.p95PromptInput,
+    peakPromptInput: value.peakPromptInput,
+    cacheReadShare: value.cacheReadShare,
+  };
+}
+
+function normalizeContextDescendant(value: unknown): ProfileContextDescendant {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    (typeof value.parentId !== 'string' && value.parentId !== null) ||
+    typeof value.relativeDepth !== 'number' ||
+    (typeof value.agentType !== 'string' && value.agentType !== null) ||
+    (typeof value.startedAt !== 'string' && value.startedAt !== null) ||
+    !isNullableNumber(value.durationMs) ||
+    (typeof value.modelPrimary !== 'string' && value.modelPrimary !== null) ||
+    !isNullableNumber(value.costUsd)
+  ) {
+    throw new TypeError('invalid session profile context descendant');
+  }
+  return {
+    id: value.id,
+    parentId: value.parentId,
+    relativeDepth: value.relativeDepth,
+    agentType: value.agentType,
+    startedAt: value.startedAt,
+    durationMs: value.durationMs,
+    modelPrimary: value.modelPrimary,
+    costUsd: value.costUsd,
+    metrics: normalizeContextMetrics(value.metrics),
+  };
+}
+
+function normalizeContext(value: unknown): SessionProfileContext {
+  if (
+    !isRecord(value) ||
+    typeof value.sessionId !== 'string' ||
+    !Array.isArray(value.descendants)
+  ) {
+    throw new TypeError('invalid session profile context response');
+  }
+  return {
+    view: 'context',
+    sessionId: value.sessionId,
+    own: normalizeContextMetrics(value.own),
+    tree: normalizeContextMetrics(value.tree),
+    descendants: value.descendants.map(normalizeContextDescendant),
+  };
+}
+
 export function fetchSessionProfileSpawns(
   id: string,
   request: SpawnsRequest = {},
@@ -426,4 +500,14 @@ export async function fetchSessionProfileModels(
 ): Promise<SessionProfileModels> {
   const response = await apiFetch<unknown>(path(id, 'models'), { signal });
   return normalizeModelsResponse(response);
+}
+
+// `/profile/context` likewise accepts no query parameters: the path must carry
+// no `?` (the server 400s on any parameter, including `scope`).
+export async function fetchSessionProfileContext(
+  id: string,
+  signal?: AbortSignal,
+): Promise<SessionProfileContext> {
+  const response = await apiFetch<unknown>(path(id, 'context'), { signal });
+  return normalizeContext(response);
 }

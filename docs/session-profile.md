@@ -28,6 +28,8 @@ profile.
   - `/profile/events` → events merged by true chronology across the whole scope
   - `/profile/models` → per-model output-token shares for the session and its
     subagent descendants
+  - `/profile/context` → prompt-context pressure for the session (own + pooled
+    tree) plus one own-only row per descendant
 - `scope` (`tree` default | `own`) is validated strictly. `tree` covers the
   root and every descendant; `own` covers only the root.
 - Every parameter is validated by the transport before any core reader runs:
@@ -144,6 +146,41 @@ profile.
 
 ---
 
+## Context pressure (`/profile/context`)
+
+- **No query parameters.** This projection accepts **none** — every parameter
+  (`scope` included) is rejected `400` naming it.
+- **Two scopes + descendant rows.** `own` covers the requested session's own
+  `kind='call'` steps; `tree` pools the same rows across the whole recursive
+  subtree. `descendants` carries one **own-only** row per descendant session
+  (never pooled, so a parent's calls are never double-counted into a child).
+- **Per-call prompt input.** A call's prompt input is
+  `uncached_input + cached_input + cache_write`.
+- **Observability, not zeros.** A call is *observable* when at least one of the
+  three prompt-input categories is non-NULL; a missing category within an
+  observable call then counts as `0`, and a call with all three NULL is excluded
+  from every figure. `observedCalls` is the count of observable calls.
+- **Metrics.** `promptInput` is the total; `avgPromptInput = promptInput /
+  observedCalls`; `p95PromptInput` is nearest-rank — the value at 1-based rank
+  `ceil(0.95 * observedCalls)` of the ascending per-call prompt values;
+  `peakPromptInput` is the maximum; `cacheReadShare` is the weighted
+  `sum(cachedInput) / sum(promptInput)` over observable calls.
+- **Nulls are distinct from zero.** Every metric field is `null` when
+  `observedCalls` is `0`; `cacheReadShare` is additionally `null` when the
+  prompt-input denominator is `0`.
+- **Ordering.** `descendants` preserves depth-first, parent-before-child order,
+  with siblings by `startedAt` ASC (NULL first) then id; `relativeDepth` is `1`
+  for a direct child, `2` for a grandchild, and so on.
+- **Unpaginated by design.** The whole subtree returns in one response, the same
+  tradeoff as `/profile/models`; the comparison table is a bounded per-session
+  view, not a global list.
+- **Empty is not an error.** A session with no observable calls still returns
+  `200`; a leaf session returns `descendants: []`.
+- **Metadata only.** Counts, ratios and duration/cost only — no prompts, source
+  paths, args, or tool output.
+
+---
+
 ## Route integration (`/sessions/{id}`)
 
 - The header stays **privacy-gated**: `title` is shown only when present and
@@ -155,7 +192,20 @@ profile.
   table renders 10 rows per page by default; the API's own `limit` default stays 50.
   Each panel owns its state and re-fetches only its own TanStack query when it changes.
 - An explicit **Refresh** bumps a refresh token that re-fetches every panel
-  (spawns, signals, timeline, merged).
+  (spawns, signals, timeline, merged, models, context).
+- The header's first card carries a **Context pressure** block (between the token
+  stack and the model charts): avg / p95 / peak prompt per call, cache read share
+  and the observed-call count. It renders the `tree` figure as primary and the
+  `own` figure as a secondary line only when the session actually has
+  descendants; a null metric renders an em dash. It loads and errors in isolation
+  with its own Retry.
+- A **Subagent context** table mounts after the agent graph and before the token
+  chart, only when `descendants` is non-empty. It preserves the endpoint's
+  depth-first order and relative-depth indentation, renders one row per
+  descendant (Agent, Duration, Model, Calls, Avg prompt, P95 prompt, Peak prompt,
+  Cache read, Prompt input, Cost; `agentType` falls back to the id's last segment
+  and unknown values are em dashes), overflows horizontally on mobile, and each
+  row links to that descendant's profile.
 - A failed profile section never hides the header; each panel surfaces its own
   error + Retry.
 - A missing session (`404`) shows `Session not found.` with a **back to

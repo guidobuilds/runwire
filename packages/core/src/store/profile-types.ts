@@ -262,3 +262,51 @@ export type ModelsResponse = {
   session: ModelUsageGroup;
   descendants: ModelUsageGroup;
 };
+
+/**
+ * Prompt-context pressure for one scope. A call is *observable* when at least
+ * one of its prompt-input categories (`uncachedInput`/`cachedInput`/
+ * `cacheWrite`) is present; a missing category then counts as `0`. Every field
+ * is `null` when `observedCalls` is `0` (the source never reported prompt
+ * input), never a fabricated zero. `cacheReadShare` is additionally `null` when
+ * the observed prompt-input total is `0`.
+ */
+export type ContextMetrics = {
+  observedCalls: number;
+  /** Sum of the per-call prompt input (`uncachedInput + cachedInput + cacheWrite`). */
+  promptInput: number | null;
+  /** `promptInput / observedCalls`. */
+  avgPromptInput: number | null;
+  /** Nearest-rank p95: the value at `ceil(0.95 * observedCalls)` in ascending order. */
+  p95PromptInput: number | null;
+  peakPromptInput: number | null;
+  /** Weighted `sum(cachedInput) / sum(promptInput)` over observable calls. */
+  cacheReadShare: number | null;
+};
+
+/** One descendant session's own-only context metrics, for the comparison table. */
+export type ProfileContextDescendant = {
+  id: string;
+  parentId: string | null;
+  /** 1 for a direct child of the requested session, 2 for a grandchild, etc. */
+  relativeDepth: number;
+  agentType: string | null;
+  startedAt: string | null;
+  durationMs: number | null;
+  modelPrimary: string | null;
+  costUsd: number | null;
+  metrics: ContextMetrics;
+};
+
+/**
+ * Context pressure for a requested session: its own scope, the pooled tree
+ * scope, and one own-only row per descendant. `descendants` is empty when the
+ * session has none, and is ordered depth-first, parent before child, siblings
+ * by `startedAt` ASC (null first) then id.
+ */
+export type ProfileContextResponse = {
+  sessionId: string;
+  own: ContextMetrics;
+  tree: ContextMetrics;
+  descendants: readonly ProfileContextDescendant[];
+};

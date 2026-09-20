@@ -7,6 +7,7 @@ import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { mockChildSummary, mockSessionDetail } from '@/mocks/handlers';
 import { server } from '@/mocks/node';
+import { mockProfileContextTree } from '@/mocks/session-profile';
 import { routeTree } from '@/routeTree.gen';
 
 function renderAt(path: string) {
@@ -225,5 +226,35 @@ describe('/sessions/$id route (session profile)', () => {
 
     expect(await screen.findByRole('heading', { name: 'Slash Agent' })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe(`/sessions/${encodeURIComponent(SLASH_ID)}`);
+  });
+
+  it('mounts the subagent context table after the agent graph and before the token chart', async () => {
+    renderAt(`/sessions/${mockSessionDetail.id}`);
+
+    await screen.findByText('Harness signals');
+    await screen.findByText('Subagent context');
+
+    const text = document.body.textContent ?? '';
+    const iGraph = text.indexOf('Agents');
+    const iContext = text.indexOf('Subagent context');
+    const iChart = text.indexOf('Token usage');
+    expect(iGraph).toBeGreaterThanOrEqual(0);
+    expect(iContext).toBeGreaterThan(iGraph);
+    expect(iChart).toBeGreaterThan(iContext);
+  });
+
+  it('omits the context table when the subtree has no descendants', async () => {
+    let calls = 0;
+    server.use(
+      http.get('/api/sessions/:id/profile/context', () => {
+        calls += 1;
+        return HttpResponse.json({ ...mockProfileContextTree, descendants: [] });
+      }),
+    );
+
+    renderAt(`/sessions/${mockSessionDetail.id}`);
+    await screen.findByText('Harness signals');
+    await waitFor(() => expect(calls).toBeGreaterThanOrEqual(1));
+    expect(screen.queryByText('Subagent context')).not.toBeInTheDocument();
   });
 });

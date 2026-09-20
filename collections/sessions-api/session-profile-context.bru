@@ -1,0 +1,35 @@
+meta {
+  name: Get session profile context
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/sessions/:id/profile/context
+  body: none
+  auth: none
+}
+
+params:path {
+  id: claude-code:<rootUuid>
+}
+
+docs {
+  Prompt-context pressure for a session. Accepts NO query parameters (any
+  parameter, `scope` included, is a `400` naming it).
+
+  Returns `{ view: "context", sessionId, own, tree, descendants }`. `own` covers
+  the session's own `kind='call'` steps; `tree` pools the same rows across the
+  whole recursive subtree. Each metric object is
+  `{ observedCalls, promptInput, avgPromptInput, p95PromptInput, peakPromptInput,
+  cacheReadShare }`.
+
+  A call is observable when at least one of `uncached_input` / `cached_input` /
+  `cache_write` is present; missing categories then count as 0, and an all-NULL
+  prompt-input call is excluded. Every metric field is `null` when `observedCalls`
+  is 0; `cacheReadShare` is additionally `null` at a zero prompt-input denominator.
+
+  `descendants` carries one own-only row per descendant, ordered depth-first
+  parent-before-child (siblings by `startedAt` ASC, NULL first, then id). A
+  missing session is `404`; a malformed id is `400`.
+}

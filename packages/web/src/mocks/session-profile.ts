@@ -10,6 +10,7 @@ import type {
 } from '@runwire/core';
 import { HttpResponse, http } from 'msw';
 import type {
+  SessionProfileContext,
   SessionProfileMergedEvents,
   SessionProfileModels,
   SessionProfileSignals,
@@ -23,6 +24,7 @@ import type {
 
 export const PROFILE_ROOT_ID = 'sess-1';
 export const PROFILE_CHILD_ID = 'sess-1-child';
+export const PROFILE_GRANDCHILD_ID = 'sess-1-child/grand';
 
 function node(
   id: string,
@@ -281,6 +283,72 @@ function modelsResponse(): SessionProfileModels {
   };
 }
 
+/**
+ * Context pressure fixture: the root keeps 4 observable calls, its direct child
+ * 3, and a depth-2 grandchild 2 (an own-only row, with absent metadata rendered
+ * as null so the table's em-dash/fallback paths are exercised).
+ */
+function contextResponse(): SessionProfileContext {
+  return {
+    view: 'context',
+    sessionId: PROFILE_ROOT_ID,
+    own: {
+      observedCalls: 4,
+      promptInput: 4000,
+      avgPromptInput: 1000,
+      p95PromptInput: 1200,
+      peakPromptInput: 1500,
+      cacheReadShare: 0.25,
+    },
+    tree: {
+      observedCalls: 9,
+      promptInput: 9000,
+      avgPromptInput: 1000,
+      p95PromptInput: 1500,
+      peakPromptInput: 2000,
+      cacheReadShare: 0.3,
+    },
+    descendants: [
+      {
+        id: PROFILE_CHILD_ID,
+        parentId: PROFILE_ROOT_ID,
+        relativeDepth: 1,
+        agentType: 'worker',
+        startedAt: '2026-09-01T10:05:00.000Z',
+        durationMs: 600000,
+        modelPrimary: 'claude-sonnet-5',
+        costUsd: 0.12,
+        metrics: {
+          observedCalls: 3,
+          promptInput: 3000,
+          avgPromptInput: 1000,
+          p95PromptInput: 1200,
+          peakPromptInput: 1400,
+          cacheReadShare: 0.2,
+        },
+      },
+      {
+        id: PROFILE_GRANDCHILD_ID,
+        parentId: PROFILE_CHILD_ID,
+        relativeDepth: 2,
+        agentType: null,
+        startedAt: '2026-09-01T10:07:00.000Z',
+        durationMs: 120000,
+        modelPrimary: null,
+        costUsd: null,
+        metrics: {
+          observedCalls: 2,
+          promptInput: 2000,
+          avgPromptInput: 1000,
+          p95PromptInput: 1100,
+          peakPromptInput: 1100,
+          cacheReadShare: 0.4,
+        },
+      },
+    ],
+  };
+}
+
 function isTokenField(value: string | null): value is TokenField {
   return (
     value === 'uncachedInput' ||
@@ -346,6 +414,13 @@ export const sessionProfileHandlers = [
       return HttpResponse.json({ error: 'invalid request' }, { status: 400 });
     }
   }),
+  http.get('/api/sessions/:id/profile/context', () => {
+    try {
+      return HttpResponse.json(contextResponse());
+    } catch {
+      return HttpResponse.json({ error: 'invalid request' }, { status: 400 });
+    }
+  }),
 ];
 
 /** Convenience accessors used by the route and the leaf components in tests. */
@@ -355,3 +430,4 @@ export const mockProfileSignalsTree = signalsResponse('tree');
 export const mockProfileTimelineTree = timelineResponse('tree', 'output');
 export const mockProfileMergedEventsTree = mergedEventsResponse('tree', 'signals', 50, 0);
 export const mockProfileModelsTree = modelsResponse();
+export const mockProfileContextTree = contextResponse();
