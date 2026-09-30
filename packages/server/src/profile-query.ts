@@ -1,9 +1,13 @@
 import type {
-  EventFilter,
+  EventAction,
+  EventKind,
+  EventSortField,
+  EventStatus,
   MergedEventsQuery,
   ProfileSpawnsQuery,
   Scope,
   SignalsQuery,
+  SortDirection,
   TimelineQuery,
   TokenField,
 } from '@runwire/core';
@@ -16,25 +20,52 @@ const TOKEN_FIELDS = new Set<TokenField>([
   'output',
   'reasoningOutput',
 ]);
-const EVENT_FILTERS = new Set<EventFilter>([
-  'relevant',
-  'signals',
-  'all',
-  'mcp',
-  'skill',
-  'hook',
+const EVENT_SORTS = new Set<EventSortField>([
+  'time',
+  'agent',
+  'kind',
+  'action',
+  'subject',
+  'model',
+  'status',
+]);
+const SORT_DIRECTIONS = new Set<SortDirection>(['asc', 'desc']);
+const EVENT_STATUSES = new Set<EventStatus>(['ok', 'error']);
+const EVENT_KINDS = new Set<EventKind>([
+  'call',
+  'tool',
+  'turn',
+  'harness',
+  'compaction',
+  'model-change',
+  'mode-change',
+]);
+/** Tool categories plus non-tool step kinds, mirroring core's EventAction. */
+const EVENT_ACTIONS = new Set<EventAction>([
+  'call',
+  'tool',
+  'turn',
+  'harness',
+  'compaction',
+  'model-change',
+  'mode-change',
   'read',
   'write',
   'exec',
+  'search',
+  'plan',
   'agent',
-  'error',
+  'web',
+  'mcp',
+  'skill',
+  'other',
 ]);
 
 export type ParsedProfileQuery =
   | { view: 'spawns'; query: ProfileSpawnsQuery }
   | { view: 'signals'; query: SignalsQuery }
   | { view: 'timeline'; field: TokenField; query: TimelineQuery }
-  | { view: 'merged'; filter: EventFilter; query: MergedEventsQuery }
+  | { view: 'merged'; query: MergedEventsQuery }
   | { view: 'models' }
   | { view: 'context' };
 
@@ -46,7 +77,18 @@ const VIEW_KEYS = {
   spawns: new Set(['scope', 'limit', 'offset']),
   signals: new Set(['scope']),
   timeline: new Set(['scope', 'field']),
-  merged: new Set(['scope', 'filter', 'limit', 'offset']),
+  merged: new Set([
+    'scope',
+    'limit',
+    'offset',
+    'sort',
+    'dir',
+    'kind',
+    'action',
+    'status',
+    'model',
+    'q',
+  ]),
   models: new Set<string>(),
   context: new Set<string>(),
 } as const;
@@ -59,6 +101,22 @@ function integer(value: string, min: number, max: number): number | null {
 
 function invalid(parameter: string): ProfileQueryParseResult {
   return { ok: false, parameter };
+}
+
+/**
+ * Splits a comma-separated allow-list param. Every segment must be non-empty
+ * and a member of `allowed`; the result is de-duped and order-stable. A bare
+ * blank, `a,,b`, or an unknown value returns null so the caller 400s naming the
+ * param. Duplicate query params themselves are already rejected upstream.
+ */
+function csvAllowList<T extends string>(raw: string, allowed: ReadonlySet<T>): readonly T[] | null {
+  const seen = new Set<T>();
+  for (const segment of raw.split(',')) {
+    const value = segment.trim();
+    if (value === '' || !allowed.has(value as T)) return null;
+    seen.add(value as T);
+  }
+  return [...seen];
 }
 
 /** Strict, view-specific parser. Nothing reaches a core reader before every
@@ -121,9 +179,45 @@ export function parseProfileQuery(
     };
   }
 
-  const filterRaw = params.get('filter') ?? 'signals';
-  if (!EVENT_FILTERS.has(filterRaw as EventFilter)) return invalid('filter');
-  const query: MergedEventsQuery = { scope, filter: filterRaw as EventFilter };
+  const query: MergedEventsQuery = { scope };
+
+  const sortRaw = params.get('sort') ?? 'time';
+  if (!EVENT_SORTS.has(sortRaw as EventSortField)) return invalid('sort');
+  query.sort = sortRaw as EventSortField;
+
+  const dirRaw = params.get('dir') ?? 'asc';
+  if (!SORT_DIRECTIONS.has(dirRaw as SortDirection)) return invalid('dir');
+  query.dir = dirRaw as SortDirection;
+
+  const kindRaw = params.get('kind');
+  if (kindRaw !== null) {
+    const kinds = csvAllowList(kindRaw, EVENT_KINDS);
+    if (kinds === null) return invalid('kind');
+    query.kind = kinds;
+  }
+  const actionRaw = params.get('action');
+  if (actionRaw !== null) {
+    const actions = csvAllowList(actionRaw, EVENT_ACTIONS);
+    if (actions === null) return invalid('action');
+    query.action = actions;
+  }
+  const statusRaw = params.get('status');
+  if (statusRaw !== null) {
+    if (!EVENT_STATUSES.has(statusRaw as EventStatus)) return invalid('status');
+    query.status = statusRaw as EventStatus;
+  }
+  const modelRaw = params.get('model');
+  if (modelRaw !== null) {
+    if (modelRaw.trim() === '') return invalid('model');
+    query.model = modelRaw;
+  }
+  const qRaw = params.get('q');
+  if (qRaw !== null) {
+    // Non-empty after trim, but passed verbatim (see parseFilterParams).
+    if (qRaw.trim() === '') return invalid('q');
+    query.q = qRaw;
+  }
+
   const limitRaw = params.get('limit');
   if (limitRaw !== null) {
     const limit = integer(limitRaw, 1, 200);
@@ -136,5 +230,5 @@ export function parseProfileQuery(
     if (offset === null) return invalid('offset');
     query.offset = offset;
   }
-  return { ok: true, value: { view: 'merged', filter: filterRaw as EventFilter, query } };
+  return { ok: true, value: { view: 'merged', query } };
 }

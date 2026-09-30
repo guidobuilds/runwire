@@ -36,7 +36,8 @@ profile.
   any unknown, duplicate, empty, non-integer,
   unsafe or out-of-range value, is rejected (400) with the parameter named.
   `limit`/`offset` (spawns, merged) reject out-of-range integers at the HTTP
-  boundary.
+  boundary; the merged events endpoint additionally validates its `sort`,
+  `dir`, `kind`, `action`, and `status` enums and its non-empty `model`/`q`.
 - A missing root returns `404 {error:'session not found'}`; a malformed id
   returns `400`.
 - The response is **metadata-only**: no `title`, `cwd`, `git_*`, prompt/response,
@@ -105,21 +106,30 @@ profile.
 
 ## Merged events (`/profile/events`)
 
-- **True chronology across the whole scope.** Ordered by `at` ASC, then
-  `sessionId`, then `seq` — the one place this resource merges by timestamp
-  instead of keeping streams separate.
-- **`filter=signals` is the default**: `error OR compaction OR model-change OR
-  tool.category IN (mcp, skill, agent)` — no `hook`/`harness`/`mode-change`
-  (those would flood a globally merged table). Other values: `relevant`, `all`,
-  `mcp`, `skill`, `hook`, `read`, `write`, `exec`, `agent`, `error`.
+- **A server-driven datatable.** Filtering, sorting, and pagination are all
+  resolved in SQL; the table holds only the controls' state.
+- **True chronology across the whole scope** is the default order: `at` ASC,
+  then `sessionId`, then `seq`. Sorting can instead be requested with
+  `sort` (`time` default | `agent` | `kind` | `action` | `subject` | `model` |
+  `status`) and `dir` (`asc` default | `desc`); every order ends with a stable
+  `at`/`sessionId`/`seq` tie-break so pages never reorder. `agent` orders by the
+  session identity (the scope node id), not the display label.
+- **Filters** (all optional, strict enums, ANDed): `kind` and `action` are
+  comma-separated allow-lists (duplicate query params are rejected, so CSV is
+  the multi-value form); `status` is `ok` or `error` (`error` = `error = 1`,
+  `ok` = `error IS NULL OR error = 0`); `model` is an exact model-name match;
+  `q` is a metadata-only substring search over action, subject, and model.
+- **`action`/`subject` are server-owned presentation fields.** `action` is the
+  recorded tool category for a `tool` step (falling back to `tool`), otherwise
+  the step kind. `subject` is the metadata-only subject (model, tool name,
+  compaction trigger, or `from → to`); a turn has no subject.
 - **Nulls are excluded and counted.** Events without a usable `at` are never
   interleaved into `items`; they are counted in `excludedNullAtCount`.
 - **Pagination.** `limit` (default 50, clamped [1, 200]) / `offset` (default 0,
   clamped >= 0).
-- **Metadata only.** Rows carry kind, timestamp, and kind-specific fields
-  (`model`, `category · toolName`, `durationMs`, `trigger`, `from → to`). Tool
-  rows carry `model` like call rows (em-dash / NULL before a `runwire import --force`
-  backfill). They never render args, paths, or tool output.
+- **Metadata only.** Rows carry kind, action, subject, timestamp, and
+  kind-specific metadata (`model`, `category`, `toolName`, `durationMs`,
+  `trigger`, `from`/`to`). They never render args, paths, or tool output.
 
 ---
 
@@ -188,7 +198,8 @@ profile.
   per-field own/inclusive token totals are shown from `ApiSessionDetail`. No
   tool-call, turn, or API-call fields, and no summed token KPI.
 - Route search params do not control profile panel state. Token field defaults to
-  `output`; events filter defaults to `signals` and page to `1`. The merged-events
+  `output`; the events datatable defaults to `sort=time`, `dir=asc`, no filters,
+  and page 1. The merged-events
   table renders 10 rows per page by default; the API's own `limit` default stays 50.
   Each panel owns its state and re-fetches only its own TanStack query when it changes.
 - An explicit **Refresh** bumps a refresh token that re-fetches every panel

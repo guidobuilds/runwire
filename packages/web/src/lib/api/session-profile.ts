@@ -1,7 +1,8 @@
 import type {
   ContextMetrics,
   Event,
-  EventFilter,
+  EventAction,
+  EventSortField,
   MergedEventsQuery,
   MergedEventsResponse,
   ModelsResponse,
@@ -14,6 +15,7 @@ import type {
   Scope,
   SignalsQuery,
   SignalsResponse,
+  SortDirection,
   TimelinePoint,
   TimelineQuery,
   TimelineResponse,
@@ -68,23 +70,48 @@ function isTokenField(value: unknown): value is TokenField {
   );
 }
 
-function isEventFilter(value: unknown): value is EventFilter {
+function isEventAction(value: unknown): value is EventAction {
   switch (value) {
-    case 'relevant':
-    case 'signals':
-    case 'all':
-    case 'mcp':
-    case 'skill':
-    case 'hook':
+    case 'call':
+    case 'tool':
+    case 'turn':
+    case 'harness':
+    case 'compaction':
+    case 'model-change':
+    case 'mode-change':
     case 'read':
     case 'write':
     case 'exec':
+    case 'search':
+    case 'plan':
     case 'agent':
-    case 'error':
+    case 'web':
+    case 'mcp':
+    case 'skill':
+    case 'other':
       return true;
     default:
       return false;
   }
+}
+
+function isEventSortField(value: unknown): value is EventSortField {
+  switch (value) {
+    case 'time':
+    case 'agent':
+    case 'kind':
+    case 'action':
+    case 'subject':
+    case 'model':
+    case 'status':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isSortDirection(value: unknown): value is SortDirection {
+  return value === 'asc' || value === 'desc';
 }
 
 function isStringArray(value: unknown): value is readonly string[] {
@@ -241,7 +268,9 @@ function normalizeMergedEvent(value: unknown): Event {
     typeof value.sessionId !== 'string' ||
     typeof value.seq !== 'number' ||
     (typeof value.at !== 'string' && value.at !== null) ||
-    (typeof value.error !== 'boolean' && value.error !== null)
+    (typeof value.error !== 'boolean' && value.error !== null) ||
+    !isEventAction(value.action) ||
+    (typeof value.subject !== 'string' && value.subject !== null)
   ) {
     throw new TypeError('invalid session profile merged event');
   }
@@ -251,6 +280,8 @@ function normalizeMergedEvent(value: unknown): Event {
     seq: value.seq,
     at: value.at,
     error: value.error,
+    action: value.action,
+    subject: value.subject,
   };
   switch (value.kind) {
     case 'call':
@@ -308,7 +339,8 @@ function normalizeMergedEvents(value: unknown): SessionProfileMergedEvents {
     !isRecord(value) ||
     typeof value.sessionId !== 'string' ||
     !isScope(value.scope) ||
-    !isEventFilter(value.filter) ||
+    !isEventSortField(value.sort) ||
+    !isSortDirection(value.dir) ||
     !Array.isArray(value.items) ||
     typeof value.total !== 'number' ||
     typeof value.limit !== 'number' ||
@@ -321,7 +353,8 @@ function normalizeMergedEvents(value: unknown): SessionProfileMergedEvents {
     view: 'merged',
     sessionId: value.sessionId,
     scope: value.scope,
-    filter: value.filter,
+    sort: value.sort,
+    dir: value.dir,
     nodes: Array.isArray(value.nodes) ? value.nodes.map(normalizeMergedEventNode) : [],
     items: value.items.map(normalizeMergedEvent),
     total: value.total,
@@ -483,7 +516,14 @@ export async function fetchSessionProfileMergedEvents(
   const response = await apiFetch<unknown>(
     `${path(id, 'events')}${search({
       scope: request.scope,
-      filter: request.filter,
+      sort: request.sort,
+      dir: request.dir,
+      // Multi-value params are CSV (duplicate query params are rejected).
+      kind: request.kind && request.kind.length > 0 ? request.kind.join(',') : undefined,
+      action: request.action && request.action.length > 0 ? request.action.join(',') : undefined,
+      status: request.status,
+      model: request.model,
+      q: request.q,
       limit: request.limit,
       offset: request.offset,
     })}`,

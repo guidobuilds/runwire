@@ -120,7 +120,7 @@ describe('GET /api/sessions/{id}/profile/{projection}', () => {
       const merged = await body(base, '/api/sessions/root/profile/events');
       expect(merged.response.status).toBe(200);
       expect(merged.json.view).toBe('merged');
-      expect(merged.json.filter).toBe('signals');
+      expect(merged.json.sort).toBe('time');
     });
   });
 
@@ -140,10 +140,10 @@ describe('GET /api/sessions/{id}/profile/{projection}', () => {
       expect(timeline.json.view).toBe('timeline');
       expect(timeline.json.field).toBe('cacheWrite');
 
-      const events = await body(base, '/api/sessions/root/profile/events?filter=all&limit=5');
+      const events = await body(base, '/api/sessions/root/profile/events?kind=tool&limit=5');
       expect(events.response.status).toBe(200);
       expect(events.json.view).toBe('merged');
-      expect(events.json.filter).toBe('all');
+      expect(events.json.kind).toBeUndefined();
       expect(events.json.limit).toBe(5);
     });
   });
@@ -233,8 +233,10 @@ describe('session profile query strictness', () => {
         ['/profile/timeline', '?field=', 'field'],
         ['/profile/timeline', '?field=madeUp', 'field'],
         ['/profile/events', '?field=output', 'field'],
-        ['/profile/events', '?filter=', 'filter'],
-        ['/profile/events', '?filter=madeUp', 'filter'],
+        ['/profile/events', '?kind=', 'kind'],
+        ['/profile/events', '?kind=madeUp', 'kind'],
+        ['/profile/events', '?sort=madeUp', 'sort'],
+        ['/profile/events', '?dir=up', 'dir'],
         ['/profile/events', '?limit=0', 'limit'],
         ['/profile/events', '?limit=201', 'limit'],
       ];
@@ -252,25 +254,21 @@ describe('session profile query strictness', () => {
         '/api/sessions/root/profile/spawns?limit=1&offset=9007199254740991',
         '/api/sessions/root/profile/spawns?limit=200&offset=0',
         '/api/sessions/root/profile/timeline?field=reasoningOutput',
-        '/api/sessions/root/profile/events?filter=all&limit=200',
+        '/api/sessions/root/profile/events?kind=tool&limit=200',
       ]) {
         expect((await body(base, path)).response.status, path).toBe(200);
       }
-      for (const filter of [
-        'relevant',
-        'signals',
-        'all',
-        'mcp',
-        'skill',
-        'hook',
-        'read',
-        'write',
-        'exec',
-        'agent',
-        'error',
+      for (const kind of [
+        'call',
+        'tool',
+        'turn',
+        'harness',
+        'compaction',
+        'model-change',
+        'mode-change',
       ]) {
         expect(
-          (await body(base, `/api/sessions/root/profile/events?filter=${filter}`)).response.status,
+          (await body(base, `/api/sessions/root/profile/events?kind=${kind}`)).response.status,
         ).toBe(200);
       }
     });

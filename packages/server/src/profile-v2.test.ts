@@ -298,41 +298,25 @@ describe('GET /api/sessions/{id}/profile/timeline', () => {
 });
 
 describe('GET /api/sessions/{id}/profile/events', () => {
-  test('happy path: signals is the default filter, chronological merge across sessions', async () => {
+  test('happy path: chronological merge across sessions with sort/dir and semantic action/subject', async () => {
     await withServer(async (base) => {
       const { response, json } = await body(base, '/api/sessions/root/profile/events');
       expect(response.status).toBe(200);
       expect(json.view).toBe('merged');
       expect(json.scope).toBe('tree');
-      expect(json.filter).toBe('signals');
+      expect(json.sort).toBe('time');
+      expect(json.dir).toBe('asc');
       expect(json.sessionId).toBe('root');
       expect(json.limit).toBe(50);
       expect(json.offset).toBe(0);
-      // signals = error OR compaction OR model-change OR tool in (mcp, skill, agent):
-      // root has 3 compactions + 1 model-change + agent + mcp + skill = 7 rows, all timed.
-      expect(json.items).toHaveLength(7);
-      expect(json.total).toBe(7);
-      expect(json.excludedNullAtCount).toBe(0);
-      const streamIds = json.items.map((item: { streamId: string }) => item.streamId);
-      expect(streamIds).toEqual(['root', 'root', 'root', 'root', 'root', 'root', 'root']);
-      // items ordered by `at` ASC
-      const ats = json.items.map((item: { at: string }) => item.at);
-      expect([...ats].sort()).toEqual(ats);
-      assertEventsMetadataOnly(json);
-    });
-  });
-
-  test('all filter merges chronologically across sessions with a null-at excluded and counted', async () => {
-    await withServer(async (base) => {
-      const { json } = await body(base, '/api/sessions/root/profile/events?filter=all');
       // root: 9 rows, root/child: 3 rows (1 with at IS NULL) => 11 timed + 1 excluded.
       expect(json.items).toHaveLength(11);
       expect(json.total).toBe(11);
       expect(json.excludedNullAtCount).toBe(1);
       const ats = json.items.map((item: { at: string }) => item.at);
       expect([...ats].sort()).toEqual(ats);
-      // Confirm true cross-session interleaving: root/child's read at :03.5
-      // sits between root's compaction(auto) at :03 and compaction(manual) at :04.
+      // True cross-session interleaving: root/child's read at :03.5 sits between
+      // root's compaction(auto) at :03 and compaction(manual) at :04.
       const idxChildRead = json.items.findIndex(
         (item: { streamId: string; kind: string }) =>
           item.streamId === 'root/child' && item.kind === 'tool',
@@ -347,12 +331,24 @@ describe('GET /api/sessions/{id}/profile/events', () => {
       );
       expect(idxAuto).toBeLessThan(idxChildRead);
       expect(idxChildRead).toBeLessThan(idxManual);
+      // Semantic action/subject: tool rows carry the category action + tool name
+      // subject; non-tool rows carry the kind action.
+      expect(json.items).toContainEqual(
+        expect.objectContaining({ kind: 'tool', action: 'read', subject: 'Read' }),
+      );
+      expect(json.items).toContainEqual(
+        expect.objectContaining({ kind: 'compaction', action: 'compaction', subject: 'auto' }),
+      );
+      expect(json.items).toContainEqual(
+        expect.objectContaining({ kind: 'call', action: 'call', subject: 'model-a' }),
+      );
+      assertEventsMetadataOnly(json);
     });
   });
 
-  test('tool rows carry the source step model under filter=all (value and null)', async () => {
+  test('tool rows carry the source step model (value and null)', async () => {
     await withServer(async (base) => {
-      const { json } = await body(base, '/api/sessions/root/profile/events?filter=all');
+      const { json } = await body(base, '/api/sessions/root/profile/events');
       const tools = json.items.filter((item: { kind: string }) => item.kind === 'tool');
       const childRead = tools.find(
         (item: { streamId: string; toolName: string }) =>
@@ -367,17 +363,72 @@ describe('GET /api/sessions/{id}/profile/events', () => {
     });
   });
 
+  test('kind and action filters are CSV allow-lists', async () => {
+    await withServer(async (base) => {
+      const tools = await body(base, '/api/sessions/root/profile/events?kind=tool');
+      expect(tools.json.items).toHaveLength(5);
+      expect(tools.json.items.every((item: { kind: string }) => item.kind === 'tool')).toBe(true);
+
+      const callsAndCompactions = await body(
+        base,
+        '/api/sessions/root/profile/events?kind=call,compaction',
+      );
+      expect(callsAndCompactions.json.items).toHaveLength(5);
+
+      const readActions = await body(base, '/api/sessions/root/profile/events?action=read');
+      expect(readActions.json.items).toHaveLength(2);
+      expect(
+        readActions.json.items.every((item: { action: string }) => item.action === 'read'),
+      ).toBe(true);
+
+      const twoActions = await body(base, '/api/sessions/root/profile/events?action=mcp,agent');
+      expect(twoActions.json.items).toHaveLength(2);
+    });
+  });
+
+  test('status error matches error=1 and ok matches rows without an error', async () => {
+    await withServer(async (base, db) => {
+      db.run(
+        "INSERT INTO steps (session_id, seq, kind, tool_category, tool_name, error, at) VALUES ('root', 10, 'tool', 'exec', 'bash', 1, '2024-01-01T00:00:10.000Z')",
+      );
+      const errors = await body(base, '/api/sessions/root/profile/events?status=error');
+      expect(errors.json.items).toHaveLength(1);
+      expect(errors.json.items[0].toolName).toBe('bash');
+      const oks = await body(base, '/api/sessions/root/profile/events?status=ok');
+      expect(oks.json.items).toHaveLength(11);
+      expect(oks.json.total).toBe(11);
+    });
+  });
+
+  test('model filters to an exact name and q searches action/subject/model metadata', async () => {
+    await withServer(async (base) => {
+      const modelB = await body(base, '/api/sessions/root/profile/events?model=model-b');
+      expect(modelB.json.items).toHaveLength(2);
+      // `outside` is not in the tree scope, so its model never matches.
+      const outside = await body(base, '/api/sessions/root/profile/events?model=outside-model');
+      expect(outside.json.items).toHaveLength(0);
+
+      const needle = await body(base, '/api/sessions/root/profile/events?q=mem_save');
+      expect(needle.json.items).toHaveLength(1);
+      const read = await body(base, '/api/sessions/root/profile/events?q=Read');
+      expect(read.json.items).toHaveLength(2);
+    });
+  });
+
+  test('sort=time&dir=desc reverses chronology and echoes the applied sort', async () => {
+    await withServer(async (base) => {
+      const { json } = await body(base, '/api/sessions/root/profile/events?sort=time&dir=desc');
+      expect(json.sort).toBe('time');
+      expect(json.dir).toBe('desc');
+      expect(json.items[0].at).toBe('2024-01-01T00:00:09.000Z');
+    });
+  });
+
   test('pagination via limit/offset', async () => {
     await withServer(async (base) => {
-      const page1 = await body(
-        base,
-        '/api/sessions/root/profile/events?filter=all&limit=5&offset=0',
-      );
+      const page1 = await body(base, '/api/sessions/root/profile/events?limit=5&offset=0');
       expect(page1.json.items).toHaveLength(5);
-      const page2 = await body(
-        base,
-        '/api/sessions/root/profile/events?filter=all&limit=5&offset=5',
-      );
+      const page2 = await body(base, '/api/sessions/root/profile/events?limit=5&offset=5');
       expect(page2.json.items).toHaveLength(5);
       expect(page1.json.items[0].seq).not.toBe(page2.json.items[0].seq);
     });
@@ -395,9 +446,25 @@ describe('GET /api/sessions/{id}/profile/events', () => {
     await withServer(async (base) => {
       const cases: Array<[string, string]> = [
         ['?wat=1', 'wat'],
+        // `filter` was removed in the clean cut: it is now an unknown param.
+        ['?filter=all', 'filter'],
         ['?field=output', 'field'],
-        ['?filter=', 'filter'],
-        ['?filter=madeUp', 'filter'],
+        ['?sort=', 'sort'],
+        ['?sort=madeUp', 'sort'],
+        ['?dir=', 'dir'],
+        ['?dir=up', 'dir'],
+        ['?kind=', 'kind'],
+        ['?kind=madeUp', 'kind'],
+        ['?kind=tool,,call', 'kind'],
+        ['?action=', 'action'],
+        ['?action=madeUp', 'action'],
+        ['?status=', 'status'],
+        ['?status=madeUp', 'status'],
+        ['?model=', 'model'],
+        ['?q=', 'q'],
+        ['?kind=tool&kind=call', 'kind'],
+        ['?action=read&action=write', 'action'],
+        ['?status=ok&status=error', 'status'],
         ['?limit=limit&limit=1', 'limit'],
         ['?limit=0', 'limit'],
         ['?limit=201', 'limit'],
@@ -415,7 +482,7 @@ describe('GET /api/sessions/{id}/profile/events', () => {
     });
   });
 
-  test('accepts exact boundaries and every EventFilter enum', async () => {
+  test('accepts exact boundaries and every sort/kind/action/status enum', async () => {
     await withServer(async (base) => {
       for (const path of [
         '/api/sessions/root/profile/events?limit=1&offset=9007199254740991',
@@ -423,21 +490,47 @@ describe('GET /api/sessions/{id}/profile/events', () => {
       ]) {
         expect((await body(base, path)).response.status, path).toBe(200);
       }
-      for (const filter of [
-        'relevant',
-        'signals',
-        'all',
-        'mcp',
-        'skill',
-        'hook',
+      for (const sort of ['time', 'agent', 'kind', 'action', 'subject', 'model', 'status']) {
+        const { response } = await body(base, `/api/sessions/root/profile/events?sort=${sort}`);
+        expect(response.status, sort).toBe(200);
+      }
+      for (const kind of [
+        'call',
+        'tool',
+        'turn',
+        'harness',
+        'compaction',
+        'model-change',
+        'mode-change',
+      ]) {
+        const { response } = await body(base, `/api/sessions/root/profile/events?kind=${kind}`);
+        expect(response.status, kind).toBe(200);
+      }
+      for (const action of [
+        'call',
+        'tool',
+        'turn',
+        'harness',
+        'compaction',
+        'model-change',
+        'mode-change',
         'read',
         'write',
         'exec',
+        'search',
+        'plan',
         'agent',
-        'error',
+        'web',
+        'mcp',
+        'skill',
+        'other',
       ]) {
-        const { response } = await body(base, `/api/sessions/root/profile/events?filter=${filter}`);
-        expect(response.status, filter).toBe(200);
+        const { response } = await body(base, `/api/sessions/root/profile/events?action=${action}`);
+        expect(response.status, action).toBe(200);
+      }
+      for (const status of ['ok', 'error']) {
+        const { response } = await body(base, `/api/sessions/root/profile/events?status=${status}`);
+        expect(response.status, status).toBe(200);
       }
     });
   });

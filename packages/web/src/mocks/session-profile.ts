@@ -1,10 +1,14 @@
 import type {
   CausalStatus,
   Event,
-  EventFilter,
+  EventAction,
+  EventKind,
+  EventSortField,
+  EventStatus,
   ProfileNode,
   ProfileSpawnsResponse,
   Scope,
+  SortDirection,
   TokenField,
   UsageSeries,
 } from '@runwire/core';
@@ -169,20 +173,6 @@ function timelineResponse(scope: Scope, field: TokenField): SessionProfileTimeli
   };
 }
 
-const MERGED_EVENT_FILTERS: readonly EventFilter[] = [
-  'signals',
-  'relevant',
-  'all',
-  'mcp',
-  'skill',
-  'hook',
-  'read',
-  'write',
-  'exec',
-  'agent',
-  'error',
-];
-
 const MERGED_ITEMS: readonly Event[] = [
   {
     streamId: PROFILE_ROOT_ID,
@@ -192,6 +182,8 @@ const MERGED_ITEMS: readonly Event[] = [
     error: null,
     kind: 'compaction',
     trigger: 'auto',
+    action: 'compaction',
+    subject: 'auto',
   },
   {
     streamId: PROFILE_CHILD_ID,
@@ -203,6 +195,8 @@ const MERGED_ITEMS: readonly Event[] = [
     category: 'mcp',
     toolName: 'mcp__plugin_engram_engram__mem_save',
     model: 'claude-sonnet-5',
+    action: 'mcp',
+    subject: 'mcp__plugin_engram_engram__mem_save',
   },
   {
     streamId: PROFILE_ROOT_ID,
@@ -214,31 +208,95 @@ const MERGED_ITEMS: readonly Event[] = [
     category: 'exec',
     toolName: 'bash',
     model: null,
+    action: 'exec',
+    subject: 'bash',
   },
 ];
 
-function mergedEventsResponse(
-  scope: Scope,
-  filter: EventFilter,
-  limit: number,
-  offset: number,
-): SessionProfileMergedEvents {
-  const scoped =
+export type MergedEventsParams = {
+  scope: Scope;
+  sort?: EventSortField;
+  dir?: SortDirection;
+  kind?: readonly EventKind[];
+  action?: readonly EventAction[];
+  status?: EventStatus;
+  model?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+};
+
+function eventModel(item: Event): string | null {
+  return item.kind === 'call' || item.kind === 'tool' ? item.model : null;
+}
+
+function compareNullable(a: string | number | null, b: string | number | null): number {
+  if (a === b) return 0;
+  if (a === null) return -1;
+  if (b === null) return 1;
+  return a < b ? -1 : 1;
+}
+
+/** In-memory mirror of the server's SQL filter/sort, for MSW only. */
+function mergedEventsResponse(params: MergedEventsParams): SessionProfileMergedEvents {
+  const { scope, sort = 'time', dir = 'asc', limit = 50, offset = 0 } = params;
+  let items =
     scope === 'own'
       ? MERGED_ITEMS.filter((item) => item.sessionId === PROFILE_ROOT_ID)
-      : MERGED_ITEMS;
-  const filtered =
-    filter === 'all'
-      ? scoped
-      : filter === 'signals' || filter === 'relevant'
-        ? scoped.filter(
-            (item) =>
-              item.kind === 'compaction' || (item.kind === 'tool' && item.category === 'mcp'),
-          )
-        : filter === 'error'
-          ? scoped.filter((item) => item.error === true)
-          : scoped.filter((item) => item.kind === 'tool' && item.category === filter);
-  const page = filtered.slice(offset, offset + limit);
+      : [...MERGED_ITEMS];
+
+  if (params.kind && params.kind.length > 0) {
+    items = items.filter((item) => params.kind?.includes(item.kind));
+  }
+  if (params.action && params.action.length > 0) {
+    items = items.filter((item) => params.action?.includes(item.action));
+  }
+  if (params.status === 'error') items = items.filter((item) => item.error === true);
+  else if (params.status === 'ok') items = items.filter((item) => item.error !== true);
+  if (params.model !== undefined) {
+    items = items.filter((item) => eventModel(item) === params.model);
+  }
+  if (params.q !== undefined) {
+    const needle = params.q.toLowerCase();
+    items = items.filter(
+      (item) =>
+        item.action.toLowerCase().includes(needle) ||
+        (item.subject ?? '').toLowerCase().includes(needle) ||
+        (eventModel(item) ?? '').toLowerCase().includes(needle),
+    );
+  }
+
+  const direction = dir === 'desc' ? -1 : 1;
+  const key = (item: Event): string | number | null => {
+    switch (sort) {
+      case 'time':
+        return item.at;
+      case 'agent':
+        return item.streamId;
+      case 'kind':
+        return item.kind;
+      case 'action':
+        return item.action;
+      case 'subject':
+        return item.subject;
+      case 'model':
+        return eventModel(item);
+      case 'status':
+        return item.error === true ? 1 : 0;
+    }
+  };
+  items.sort((a, b) => {
+    const primary = compareNullable(key(a), key(b)) * direction;
+    if (primary !== 0) return primary;
+    return (
+      compareNullable(a.at, b.at) * direction ||
+      a.streamId.localeCompare(b.streamId) ||
+      a.seq - b.seq
+    );
+  });
+
+  const total = items.length;
+  const page = items.slice(offset, offset + limit);
   const nodes =
     scope === 'own'
       ? [{ id: mockRootNode.id, agentType: mockRootNode.agentType }]
@@ -250,10 +308,11 @@ function mergedEventsResponse(
     view: 'merged',
     sessionId: PROFILE_ROOT_ID,
     scope,
-    filter,
+    sort,
+    dir,
     nodes,
     items: page,
-    total: filtered.length,
+    total,
     limit,
     offset,
     excludedNullAtCount: 2,
@@ -359,8 +418,21 @@ function isTokenField(value: string | null): value is TokenField {
   );
 }
 
-function isEventFilter(value: string | null): value is EventFilter {
-  return MERGED_EVENT_FILTERS.includes(value as EventFilter);
+function csvParam(value: string | null): string[] | undefined {
+  if (value === null || value.trim() === '') return undefined;
+  return value.split(',').map((segment) => segment.trim());
+}
+
+function isEventSortField(value: string | null): value is EventSortField {
+  return (
+    value === 'time' ||
+    value === 'agent' ||
+    value === 'kind' ||
+    value === 'action' ||
+    value === 'subject' ||
+    value === 'model' ||
+    value === 'status'
+  );
 }
 
 /** MSW handlers for the distinct session-scoped profile endpoints. */
@@ -398,11 +470,28 @@ export const sessionProfileHandlers = [
     try {
       const url = new URL(request.url);
       const scope: Scope = url.searchParams.get('scope') === 'own' ? 'own' : 'tree';
-      const filterParam = url.searchParams.get('filter');
-      const filter: EventFilter = isEventFilter(filterParam) ? filterParam : 'signals';
+      const sortParam = url.searchParams.get('sort');
+      const sort: EventSortField = isEventSortField(sortParam) ? sortParam : 'time';
+      const dir: SortDirection = url.searchParams.get('dir') === 'desc' ? 'desc' : 'asc';
+      const statusParam = url.searchParams.get('status');
+      const status: EventStatus | undefined =
+        statusParam === 'ok' || statusParam === 'error' ? statusParam : undefined;
       const limit = Number(url.searchParams.get('limit') ?? '50');
       const offset = Number(url.searchParams.get('offset') ?? '0');
-      return HttpResponse.json(mergedEventsResponse(scope, filter, limit, offset));
+      return HttpResponse.json(
+        mergedEventsResponse({
+          scope,
+          sort,
+          dir,
+          kind: csvParam(url.searchParams.get('kind')) as EventKind[] | undefined,
+          action: csvParam(url.searchParams.get('action')) as EventAction[] | undefined,
+          status,
+          model: url.searchParams.get('model') ?? undefined,
+          q: url.searchParams.get('q') ?? undefined,
+          limit,
+          offset,
+        }),
+      );
     } catch {
       return HttpResponse.json({ error: 'invalid request' }, { status: 400 });
     }
@@ -428,6 +517,6 @@ export const mockProfileSpawnsTree = spawnsResponse('tree');
 export const mockProfileSpawnsOwn = spawnsResponse('own');
 export const mockProfileSignalsTree = signalsResponse('tree');
 export const mockProfileTimelineTree = timelineResponse('tree', 'output');
-export const mockProfileMergedEventsTree = mergedEventsResponse('tree', 'signals', 50, 0);
+export const mockProfileMergedEventsTree = mergedEventsResponse({ scope: 'tree' });
 export const mockProfileModelsTree = modelsResponse();
 export const mockProfileContextTree = contextResponse();

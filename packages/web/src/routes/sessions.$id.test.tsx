@@ -78,7 +78,9 @@ describe('/sessions/$id route (session profile)', () => {
 
     const mergedReqs = requests.filter((url) => url.pathname.endsWith('/profile/events'));
     const tableReq = mergedReqs.find((url) => url.searchParams.get('limit') === '10');
-    expect(tableReq?.searchParams.get('filter')).toBe('signals');
+    expect(tableReq?.searchParams.get('sort')).toBe('time');
+    expect(tableReq?.searchParams.get('dir')).toBe('asc');
+    expect(tableReq?.searchParams.get('filter')).toBeNull();
     expect(tableReq?.searchParams.get('offset')).toBe('0');
   });
 
@@ -118,7 +120,8 @@ describe('/sessions/$id route (session profile)', () => {
         const offset = Number(url.searchParams.get('offset') ?? '0');
         return HttpResponse.json({
           excludedNullAtCount: 0,
-          filter: url.searchParams.get('filter') ?? 'signals',
+          sort: url.searchParams.get('sort') ?? 'time',
+          dir: url.searchParams.get('dir') === 'desc' ? 'desc' : 'asc',
           items: [],
           limit,
           offset,
@@ -141,7 +144,7 @@ describe('/sessions/$id route (session profile)', () => {
     });
   });
 
-  it('changing the events filter leaves the URL stable and re-fetches only events', async () => {
+  it('changing the events kind filter leaves the URL stable and re-fetches only events', async () => {
     const user = userEvent.setup();
     const requests = captureProfileRequests();
     const { router, history } = renderAt(`/sessions/${mockSessionDetail.id}?page=3`);
@@ -150,8 +153,8 @@ describe('/sessions/$id route (session profile)', () => {
     const lengthBefore = history.length;
     const countBefore = requests.length;
 
-    await user.click(screen.getByRole('combobox', { name: 'Event filter' }));
-    await user.click(await screen.findByRole('option', { name: 'All events' }));
+    await user.click(screen.getByRole('combobox', { name: 'Event kind' }));
+    await user.click(await screen.findByRole('option', { name: 'Tool' }));
 
     await waitFor(() => {
       expect(
@@ -160,7 +163,7 @@ describe('/sessions/$id route (session profile)', () => {
           .some(
             (url) =>
               url.pathname.endsWith('/profile/events') &&
-              url.searchParams.get('filter') === 'all' &&
+              url.searchParams.get('kind') === 'tool' &&
               url.searchParams.get('offset') === '0',
           ),
       ).toBe(true);

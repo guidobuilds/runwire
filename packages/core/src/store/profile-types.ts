@@ -1,4 +1,5 @@
 import type { Capability } from '../contract/capabilities';
+import type { ToolCategory } from '../contract/types';
 
 /** The scope selector shared by every profile reader. */
 export type Scope = 'own' | 'tree';
@@ -68,19 +69,6 @@ export type TimeDomain = {
   end: string | null;
 };
 
-export type EventFilter =
-  | 'relevant'
-  | 'signals'
-  | 'all'
-  | 'mcp'
-  | 'skill'
-  | 'hook'
-  | 'read'
-  | 'write'
-  | 'exec'
-  | 'agent'
-  | 'error';
-
 export type EventKind =
   | 'call'
   | 'tool'
@@ -90,12 +78,31 @@ export type EventKind =
   | 'model-change'
   | 'mode-change';
 
+/** A stable, machine-readable semantic action: the recorded tool category for a
+ * `tool` step, otherwise the step kind. A `tool` step with no category falls
+ * back to `'tool'`. This is a filter/sort token, never a display label. */
+export type EventAction = ToolCategory | EventKind;
+
+/** `error` matches rows with `error = 1`; `ok` matches every row without an
+ * error (`error IS NULL OR error = 0`), matching how the UI decides status. */
+export type EventStatus = 'ok' | 'error';
+
+export type EventSortField = 'time' | 'agent' | 'kind' | 'action' | 'subject' | 'model' | 'status';
+
+export type SortDirection = 'asc' | 'desc';
+
 export type EventBase = {
   streamId: string;
   sessionId: string;
   seq: number;
   at: string | null;
   error: boolean | null;
+  /** Stable semantic action token (see {@link EventAction}). */
+  action: EventAction;
+  /** Metadata-only presentation subject: the call/tool model, tool name,
+   * compaction trigger, or `from → to`; null for a turn. Never args, paths,
+   * prompt text, or tool output. */
+  subject: string | null;
 };
 
 /** Seven source-step variants; payloads are metadata-only. */
@@ -115,12 +122,23 @@ export type Event =
 
 export type MergedEventsQuery = {
   scope?: Scope;
-  /** Vocabulary: relevant/signals/all/mcp/skill/hook/read/write/exec/agent/error; default 'signals'. */
-  filter?: EventFilter;
   /** Default 50, clamped [1, 200]. */
   limit?: number;
   /** Default 0, clamped >= 0. */
   offset?: number;
+  /** Default 'time'. */
+  sort?: EventSortField;
+  /** Default 'asc'. */
+  dir?: SortDirection;
+  /** Restrict to these step kinds (AND with the other filters). */
+  kind?: readonly EventKind[];
+  /** Restrict to these semantic actions (AND with the other filters). */
+  action?: readonly EventAction[];
+  status?: EventStatus;
+  /** Exact model name match. */
+  model?: string;
+  /** Metadata-only substring search over action, subject, and model. */
+  q?: string;
 };
 
 /** Slim scope-node projection: enough to label an event's agent without the full ProfileNode. */
@@ -129,10 +147,13 @@ export type MergedEventNode = { id: string; agentType: string | null };
 export type MergedEventsResponse = {
   sessionId: string;
   scope: Scope;
-  filter: EventFilter;
+  /** The applied sort field and direction (echoed so the table can render it). */
+  sort: EventSortField;
+  dir: SortDirection;
   /** Every session node in scope (id → agentType), for agent labelling in the table. */
   nodes: readonly MergedEventNode[];
-  /** Merged across the whole scope, ordered by at ASC, then sessionId, then seq. */
+  /** Merged across the whole scope, ordered by the requested sort (default: at
+   * ASC, then sessionId, then seq) with a stable tie-break. */
   items: readonly Event[];
   /** Count of in-scope, filtered, at-NOT-NULL rows. */
   total: number;

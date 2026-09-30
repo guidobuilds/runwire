@@ -1,4 +1,11 @@
-import type { Event, EventFilter } from '@runwire/core';
+import type {
+  Event,
+  EventAction,
+  EventKind,
+  EventSortField,
+  EventStatus,
+  SortDirection,
+} from '@runwire/core';
 import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,42 +42,26 @@ const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200] as const;
 export type EventsTableProps = {
   sessionId: string;
   /** Optional initial state for isolated component tests. */
-  initialFilter?: EventFilter;
-  /** Optional initial state for isolated component tests; 1-based. */
+  initialSort?: EventSortField;
+  initialDir?: SortDirection;
+  initialKind?: EventKind;
+  initialStatus?: EventStatus;
   initialPage?: number;
   pageSize?: number;
   refresh?: number;
 };
 
-const EVENT_FILTERS: readonly EventFilter[] = [
-  'signals',
-  'relevant',
-  'all',
-  'mcp',
-  'skill',
-  'hook',
-  'read',
-  'write',
-  'exec',
-  'agent',
-  'error',
+const EVENT_KINDS: readonly EventKind[] = [
+  'call',
+  'tool',
+  'turn',
+  'harness',
+  'compaction',
+  'model-change',
+  'mode-change',
 ];
 
-const EVENT_FILTER_LABELS: Record<EventFilter, string> = {
-  signals: 'Harness signals',
-  relevant: 'Relevant events',
-  all: 'All events',
-  mcp: 'MCP',
-  skill: 'Skill',
-  hook: 'Hook',
-  read: 'Read',
-  write: 'Write',
-  exec: 'Exec',
-  agent: 'Agent',
-  error: 'Error',
-};
-
-const KIND_LABELS: Record<Event['kind'], string> = {
+const KIND_LABELS: Record<EventKind, string> = {
   call: 'Call',
   tool: 'Tool',
   turn: 'Turn',
@@ -80,7 +71,7 @@ const KIND_LABELS: Record<Event['kind'], string> = {
   'mode-change': 'Mode change',
 };
 
-const KIND_BADGE_VARIANT: Record<Event['kind'], 'default' | 'secondary' | 'outline' | 'ghost'> = {
+const KIND_BADGE_VARIANT: Record<EventKind, 'default' | 'secondary' | 'outline' | 'ghost'> = {
   call: 'secondary',
   tool: 'outline',
   turn: 'ghost',
@@ -88,6 +79,26 @@ const KIND_BADGE_VARIANT: Record<Event['kind'], 'default' | 'secondary' | 'outli
   compaction: 'default',
   'model-change': 'default',
   'mode-change': 'default',
+};
+
+const ACTION_LABELS: Record<EventAction, string> = {
+  call: 'Model call',
+  tool: 'Tool',
+  turn: 'Turn',
+  harness: 'Harness',
+  compaction: 'Compaction',
+  'model-change': 'Model change',
+  'mode-change': 'Mode change',
+  read: 'Read',
+  write: 'Write',
+  exec: 'Execute',
+  search: 'Search',
+  plan: 'Plan',
+  agent: 'Agent',
+  web: 'Web',
+  mcp: 'MCP',
+  skill: 'Skill',
+  other: 'Other',
 };
 
 /** Never the raw full session id in a cell (merged events span the whole
@@ -110,23 +121,13 @@ function modelCell(event: Event): string {
   return event.model ? readableModel(event.model) : EM_DASH;
 }
 
-/** Metadata-only: only the fields already on the Event union, never args/paths/output. */
-function eventDetail(event: Event): string {
-  switch (event.kind) {
-    case 'call':
-      return event.model ?? 'no model';
-    case 'tool':
-      return [event.category, event.toolName].filter(Boolean).join(' · ') || 'tool';
-    case 'turn':
-      return event.durationMs === null ? 'no duration' : `${formatNumber(event.durationMs)} ms`;
-    case 'harness':
-      return event.toolName ?? 'harness';
-    case 'compaction':
-      return event.trigger ?? 'compaction';
-    case 'model-change':
-    case 'mode-change':
-      return `${event.from ?? '?'} → ${event.to ?? '?'}`;
-  }
+/** Server-owned metadata-only subject; a turn has none, so its duration is the
+ * fallback so no row loses its only detail. */
+function subjectCell(event: Event): string {
+  if (event.subject !== null) return event.subject;
+  if (event.kind === 'turn' && event.durationMs !== null)
+    return `${formatNumber(event.durationMs)} ms`;
+  return EM_DASH;
 }
 
 const SKELETON_ROW_KEYS = ['row-0', 'row-1', 'row-2', 'row-3', 'row-4'] as const;
@@ -135,22 +136,61 @@ function pageCount(total: number, pageSize: number): number {
   return Math.max(1, Math.ceil(total / pageSize));
 }
 
-/** Merged, paginated, filterable events table (G8). Always scope=tree — the
- * merged reader has no per-lane view, it covers the whole session tree. */
+function SortHead({
+  field,
+  label,
+  sort,
+  dir,
+  onSort,
+}: {
+  field: EventSortField;
+  label: string;
+  sort: EventSortField;
+  dir: SortDirection;
+  onSort: (field: EventSortField) => void;
+}) {
+  const active = sort === field;
+  return (
+    <TableHead aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button
+        className="inline-flex items-center gap-1 font-medium"
+        onClick={() => onSort(field)}
+        type="button"
+      >
+        {label}
+        {active ? <span aria-hidden="true">{dir === 'asc' ? '↑' : '↓'}</span> : null}
+      </button>
+    </TableHead>
+  );
+}
+
+/** Server-driven merged events datatable (G8). Filtering, sorting, and
+ * pagination are all owned by `/api/sessions/:id/profile/events`; the table
+ * only holds the controls' state. Always scope=tree — the merged reader has no
+ * per-lane view, it covers the whole session tree. */
 export function EventsTable({
   sessionId,
-  initialFilter = 'signals',
+  initialSort = 'time',
+  initialDir = 'asc',
+  initialKind,
+  initialStatus,
   initialPage = 1,
   pageSize: initialPageSize = 10,
   refresh = 0,
 }: EventsTableProps) {
-  const [filter, setFilter] = useState<EventFilter>(initialFilter);
+  const [sort, setSort] = useState<EventSortField>(initialSort);
+  const [dir, setDir] = useState<SortDirection>(initialDir);
+  const [kind, setKind] = useState<EventKind | 'all'>(initialKind ?? 'all');
+  const [status, setStatus] = useState<EventStatus | 'all'>(initialStatus ?? 'all');
   const [page, setPage] = useState(initialPage);
   const [pageSize, setPageSize] = useState(initialPageSize);
   const offset = (page - 1) * pageSize;
   const query = useSessionProfileMergedEvents(sessionId, {
     scope: 'tree',
-    filter,
+    sort,
+    dir,
+    kind: kind === 'all' ? undefined : [kind],
+    status: status === 'all' ? undefined : status,
     limit: pageSize,
     offset,
     refresh,
@@ -164,30 +204,59 @@ export function EventsTable({
 
   const pages = query.data ? pageCount(query.data.total, pageSize) : 1;
 
+  function toggleSort(field: EventSortField) {
+    if (sort === field) {
+      setDir(dir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSort(field);
+      setDir('asc');
+    }
+    setPage(1);
+  }
+
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
         <CardTitle>
           <h2 className="font-semibold text-lg">Events</h2>
         </CardTitle>
-        <Select
-          onValueChange={(value) => {
-            setFilter(value as EventFilter);
-            setPage(1);
-          }}
-          value={filter}
-        >
-          <SelectTrigger aria-label="Event filter">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {EVENT_FILTERS.map((item) => (
-              <SelectItem key={item} value={item}>
-                {EVENT_FILTER_LABELS[item]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            onValueChange={(value) => {
+              setKind(value as EventKind | 'all');
+              setPage(1);
+            }}
+            value={kind}
+          >
+            <SelectTrigger aria-label="Event kind">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All kinds</SelectItem>
+              {EVENT_KINDS.map((item) => (
+                <SelectItem key={item} value={item}>
+                  {KIND_LABELS[item]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            onValueChange={(value) => {
+              setStatus(value as EventStatus | 'all');
+              setPage(1);
+            }}
+            value={status}
+          >
+            <SelectTrigger aria-label="Event status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="ok">OK</SelectItem>
+              <SelectItem value="error">Error</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {query.isLoading ? (
@@ -215,17 +284,37 @@ export function EventsTable({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Agent</TableHead>
-                  <TableHead>Kind</TableHead>
-                  <TableHead>Model</TableHead>
-                  <TableHead>Detail</TableHead>
+                  <SortHead dir={dir} field="time" label="Time" onSort={toggleSort} sort={sort} />
+                  <SortHead dir={dir} field="agent" label="Agent" onSort={toggleSort} sort={sort} />
+                  <SortHead dir={dir} field="kind" label="Kind" onSort={toggleSort} sort={sort} />
+                  <SortHead
+                    dir={dir}
+                    field="action"
+                    label="Action"
+                    onSort={toggleSort}
+                    sort={sort}
+                  />
+                  <SortHead
+                    dir={dir}
+                    field="subject"
+                    label="Subject"
+                    onSort={toggleSort}
+                    sort={sort}
+                  />
+                  <SortHead dir={dir} field="model" label="Model" onSort={toggleSort} sort={sort} />
+                  <SortHead
+                    dir={dir}
+                    field="status"
+                    label="Status"
+                    onSort={toggleSort}
+                    sort={sort}
+                  />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {query.data.items.length === 0 ? (
                   <TableRow>
-                    <TableCell className="text-muted-foreground" colSpan={5}>
+                    <TableCell className="text-muted-foreground" colSpan={7}>
                       No events for this filter
                     </TableCell>
                   </TableRow>
@@ -241,14 +330,17 @@ export function EventsTable({
                           {KIND_LABELS[event.kind]}
                         </Badge>
                       </TableCell>
-                      <TableCell className="font-mono text-xs">{modelCell(event)}</TableCell>
+                      <TableCell className="text-xs">{ACTION_LABELS[event.action]}</TableCell>
                       <TableCell className="max-w-xs truncate text-muted-foreground text-xs">
-                        {eventDetail(event)}
+                        {subjectCell(event)}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{modelCell(event)}</TableCell>
+                      <TableCell>
                         {event.error ? (
-                          <Badge className="ml-2" variant="destructive">
-                            error
-                          </Badge>
-                        ) : null}
+                          <Badge variant="destructive">Error</Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">OK</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))

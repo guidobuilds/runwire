@@ -134,15 +134,19 @@ function singleNodeSpawnsPage(): ProfileSpawnsResponse & { view: 'spawns' } {
   };
 }
 
-const SIGNAL_EVENTS: readonly Event[] = [
+const AGENT_MARKER_EVENTS: readonly Event[] = [
   {
     streamId: ROOT.id,
     sessionId: ROOT.id,
     seq: 1,
-    at: '2026-09-01T10:02:00.000Z',
+    at: '2026-09-01T10:04:30.000Z',
     error: null,
-    kind: 'compaction',
-    trigger: 'auto',
+    kind: 'tool',
+    category: 'agent',
+    toolName: 'Task',
+    model: null,
+    action: 'agent',
+    subject: 'Task',
   },
   {
     streamId: CHILD_A.id,
@@ -151,31 +155,36 @@ const SIGNAL_EVENTS: readonly Event[] = [
     at: '2026-09-01T10:06:00.000Z',
     error: null,
     kind: 'tool',
-    category: 'mcp',
-    toolName: 'mcp__plugin_engram_engram__mem_save',
+    category: 'agent',
+    toolName: 'Task',
     model: null,
+    action: 'agent',
+    subject: 'Task',
   },
   {
     streamId: ROOT.id,
     sessionId: ROOT.id,
     seq: 2,
-    at: '2026-09-01T10:25:00.000Z',
-    error: true,
+    at: '2026-09-01T10:19:30.000Z',
+    error: null,
     kind: 'tool',
-    category: 'exec',
-    toolName: 'bash',
+    category: 'agent',
+    toolName: 'Task',
     model: null,
+    action: 'agent',
+    subject: 'Task',
   },
 ];
 
-function mergedEventsResponse(total = SIGNAL_EVENTS.length): SessionProfileMergedEvents {
+function mergedEventsResponse(total = AGENT_MARKER_EVENTS.length): SessionProfileMergedEvents {
   return {
     view: 'merged',
     sessionId: ROOT.id,
     scope: 'tree',
-    filter: 'signals',
+    sort: 'time',
+    dir: 'asc',
     nodes: [],
-    items: SIGNAL_EVENTS,
+    items: AGENT_MARKER_EVENTS,
     total,
     limit: 200,
     offset: 0,
@@ -272,35 +281,39 @@ describe('AgentGraph — rows and connectors', () => {
   });
 });
 
-describe('AgentGraph — signal markers', () => {
-  it('renders one marker per signal event with a non-null at', async () => {
+describe('AgentGraph — agent invocation markers', () => {
+  it('renders one agent marker per event with a non-null at', async () => {
     installHandlers();
     const { container } = render(
       <AgentGraph onOpenNode={() => {}} rootSession={ROOT} sessionId={ROOT.id} />,
       { wrapper },
     );
     await waitFor(() => {
-      expect(container.querySelectorAll('.agent-graph-marker').length).toBe(SIGNAL_EVENTS.length);
+      expect(container.querySelectorAll('.agent-graph-marker').length).toBe(
+        AGENT_MARKER_EVENTS.length,
+      );
     });
+    for (const marker of container.querySelectorAll('.agent-graph-marker')) {
+      expect(marker.getAttribute('data-marker-kind')).toBe('agent');
+    }
   });
 
-  it('shows metadata-only marker titles (kind, detail, timestamp — never free text)', async () => {
+  it('shows metadata-only marker titles (agent call, detail, timestamp — never free text)', async () => {
     installHandlers();
     const { container } = render(
       <AgentGraph onOpenNode={() => {}} rootSession={ROOT} sessionId={ROOT.id} />,
       { wrapper },
     );
     await waitFor(() => {
-      expect(container.querySelectorAll('.agent-graph-marker').length).toBe(SIGNAL_EVENTS.length);
+      expect(container.querySelectorAll('.agent-graph-marker').length).toBe(
+        AGENT_MARKER_EVENTS.length,
+      );
     });
     const titles = Array.from(container.querySelectorAll('.agent-graph-marker title')).map(
       (title) => title.textContent,
     );
-    expect(titles).toContain('Compaction — trigger: auto — 2026-09-01T10:02:00.000Z');
-    expect(titles).toContain(
-      'MCP call — mcp__plugin_engram_engram__mem_save — 2026-09-01T10:06:00.000Z',
-    );
-    expect(titles).toContain('Error — bash — 2026-09-01T10:25:00.000Z');
+    expect(titles).toContain('Agent call — Task — 2026-09-01T10:04:30.000Z');
+    expect(titles.every((title) => title?.startsWith('Agent call — Task — '))).toBe(true);
   });
 
   it('does not render signal counters below the graph', async () => {
@@ -310,18 +323,20 @@ describe('AgentGraph — signal markers', () => {
       { wrapper },
     );
     await waitFor(() => {
-      expect(container.querySelectorAll('.agent-graph-marker').length).toBe(SIGNAL_EVENTS.length);
+      expect(container.querySelectorAll('.agent-graph-marker').length).toBe(
+        AGENT_MARKER_EVENTS.length,
+      );
     });
     expect(screen.queryByRole('list', { name: 'Signal filters' })).not.toBeInTheDocument();
   });
 
-  it('notes when only the first page of signals is shown', async () => {
+  it('notes when only the first page of agent calls is shown', async () => {
     installHandlers({ merged: mergedEventsResponse(500) });
     render(<AgentGraph onOpenNode={() => {}} rootSession={ROOT} sessionId={ROOT.id} />, {
       wrapper,
     });
     await waitFor(() => {
-      expect(screen.getByText('Showing the first 200 signals of 500.')).toBeInTheDocument();
+      expect(screen.getByText('Showing the first 200 agent calls of 500.')).toBeInTheDocument();
     });
   });
 });
@@ -486,7 +501,8 @@ describe('AgentGraph — depth-2 and orphan rows (f4-t2 repair)', () => {
       view: 'merged',
       sessionId,
       scope: 'tree',
-      filter: 'signals',
+      sort: 'time',
+      dir: 'asc',
       nodes: [],
       items: [],
       total: 0,
@@ -705,7 +721,8 @@ describe('AgentGraph — onNodeCount (f5-t1 repair)', () => {
           view: 'merged',
           sessionId: D_ROOT.id,
           scope: 'tree',
-          filter: 'signals',
+          sort: 'time',
+          dir: 'asc',
           items: [],
           total: 0,
           limit: 200,
@@ -817,7 +834,8 @@ describe('AgentGraph — scale (F-11)', () => {
           view: 'merged',
           sessionId: S_ROOT.id,
           scope: 'tree',
-          filter: 'signals',
+          sort: 'time',
+          dir: 'asc',
           items: [],
           total: 0,
           limit: 200,
