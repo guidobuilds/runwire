@@ -28,18 +28,8 @@ import {
 import * as React from 'react';
 import { HarnessIcon, HarnessIdentity } from '@/components/harness-identity';
 import { Badge } from '@/components/ui/badge';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerDescription,
-  DrawerFooter,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerTrigger,
-} from '@/components/ui/drawer';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -68,7 +58,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useIsMobile } from '@/hooks/use-mobile';
 import {
   PAGE_SIZES,
   type SessionsFilters,
@@ -270,7 +259,15 @@ export function DataTable({
               onToggle={() => onSortChange(cycleSort(sort, 'name'))}
             />
           ),
-          cell: ({ row }) => <TableCellViewer item={row.original} />,
+          cell: ({ row }) => (
+            <Link
+              to="/sessions/$id"
+              params={{ id: row.original.id }}
+              className="text-foreground underline-offset-4 hover:underline"
+            >
+              {row.original.name}
+            </Link>
+          ),
           enableHiding: false,
         }),
         columnHelper.accessor((row) => row.harness.id, {
@@ -632,70 +629,5 @@ export function DataTable({
         </div>
       </div>
     </div>
-  );
-}
-
-function SummaryField({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium">{value}</span>
-    </div>
-  );
-}
-
-function TableCellViewer({ item }: { item: ApiSessionSummary }) {
-  const isMobile = useIsMobile();
-  const tokensOwnTotal = sumTokens(item.tokensOwn);
-  const tokensInclusiveTotal = sumTokens(item.tokensInclusive);
-  return (
-    <Drawer swipeDirection={isMobile ? 'down' : 'right'}>
-      <DrawerTrigger
-        render={<Button variant="link" className="w-fit px-0 text-left text-foreground" />}
-      >
-        {item.name}
-      </DrawerTrigger>
-      <DrawerContent>
-        <DrawerHeader className="gap-1">
-          <DrawerTitle>{item.name}</DrawerTitle>
-          <DrawerDescription>
-            {item.harness.displayName}
-            {item.project ? ` · ${item.project.name}` : ''}
-          </DrawerDescription>
-        </DrawerHeader>
-        <div className="flex flex-col gap-4 overflow-y-auto px-4 text-sm">
-          <div className="grid grid-cols-2 gap-4">
-            <SummaryField label="Harness" value={<HarnessIdentity harness={item.harness} />} />
-            <SummaryField label="Project" value={item.project?.name ?? '—'} />
-            <SummaryField label="Started" value={formatDateTime(item.startedAt)} />
-            <SummaryField label="Ended" value={formatDateTime(item.endedAt)} />
-            <SummaryField label="Duration" value={formatDuration(item.durationMs)} />
-            <SummaryField label="Cost" value={formatCurrency(item.costUsd)} />
-            <SummaryField label="Turns (own)" value={String(item.turnsOwn)} />
-            <SummaryField
-              label="Tool calls (own / incl.)"
-              value={`${item.toolCallsOwn} / ${item.toolCallsInclusive}`}
-            />
-            <SummaryField label="Tokens (own)" value={formatCompactNumber(tokensOwnTotal)} />
-            <SummaryField
-              label="Tokens (incl. descendants)"
-              value={formatCompactNumber(tokensInclusiveTotal)}
-            />
-            <SummaryField label="Children" value={String(item.childCount)} />
-            <SummaryField label="Descendants" value={String(item.descendantCount)} />
-          </div>
-        </div>
-        <DrawerFooter>
-          <Link
-            to="/sessions/$id"
-            params={{ id: item.id }}
-            className={buttonVariants({ variant: 'outline', className: 'w-full' })}
-          >
-            View details
-          </Link>
-          <DrawerClose render={<Button variant="outline" />}>Close</DrawerClose>
-        </DrawerFooter>
-      </DrawerContent>
-    </Drawer>
   );
 }
