@@ -53,6 +53,8 @@ const sessionA: ApiSessionSummary = {
   costUsd: null,
   childCount: 0,
   descendantCount: 0,
+  subagentChildCount: 7,
+  subagentDescendantCount: 12,
 };
 
 const sessionB: ApiSessionSummary = { ...sessionA, id: 'b', name: 'Session B', title: 'Session B' };
@@ -171,6 +173,43 @@ describe('DataTable session name navigation (UX-1)', () => {
     expect(screen.getByText('Session B')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'View details' })).not.toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});
+
+describe('DataTable subagent count columns (UX-2)', () => {
+  it('shows Direct/Full tree headers and their DTO values by default, without a sort button', () => {
+    renderTable({ data: [sessionA] });
+
+    expect(screen.getByRole('columnheader', { name: 'Direct' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Full tree' })).toBeInTheDocument();
+    expect(screen.getByText('7')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
+    // Display-only: the headers are plain text, never the server-sort button.
+    expect(screen.queryByRole('button', { name: 'Direct' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Full tree' })).not.toBeInTheDocument();
+  });
+
+  it('lists human labels (not raw DTO ids) in the Columns menu and can hide a column', async () => {
+    const user = userEvent.setup();
+    renderTable({ data: [sessionA] });
+
+    await user.click(toolbarMenuTrigger(/Columns/));
+
+    // Human labels for the new columns, and the pre-existing ones too.
+    expect(await screen.findByRole('menuitemcheckbox', { name: 'Direct' })).toBeInTheDocument();
+    expect(await screen.findByRole('menuitemcheckbox', { name: 'Full tree' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Started At' })).toBeInTheDocument();
+    // Raw DTO ids never leak into the menu.
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'subagentChildCount' })).toBeNull();
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'subagentDescendantCount' })).toBeNull();
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'startedAt' })).toBeNull();
+
+    // Hiding Direct removes its header and value, leaving Full tree visible.
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Direct' }));
+    expect(screen.queryByRole('columnheader', { name: 'Direct' })).toBeNull();
+    expect(screen.getByRole('columnheader', { name: 'Full tree' })).toBeInTheDocument();
+    expect(screen.queryByText('7')).toBeNull();
+    expect(screen.getByText('12')).toBeInTheDocument();
   });
 });
 

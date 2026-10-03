@@ -101,6 +101,19 @@ function costLabel(value: CostPreset): string {
   return COST_OPTIONS.find((option) => option.value === value)?.label ?? 'All';
 }
 
+/** Human labels for the column-visibility menu, keyed by column id. Keeps the
+ * menu readable instead of leaking raw DTO field ids (`startedAt`, …). */
+const COLUMN_LABELS: Record<string, string> = {
+  name: 'Name',
+  harness: 'Harness',
+  startedAt: 'Started At',
+  duration: 'Duration',
+  tokens: 'Tokens',
+  cost: 'Cost',
+  subagentChildCount: 'Direct',
+  subagentDescendantCount: 'Full tree',
+};
+
 /** The sorted state to display for a column (server-owned sort). */
 function toSortedState(sort: SessionsSortState, id: SortField): false | 'asc' | 'desc' {
   if (!sort || sort.id !== id) return false;
@@ -330,6 +343,18 @@ export function DataTable({
           ),
           cell: ({ getValue }) => <div className="text-right">{formatCurrency(getValue())}</div>,
         }),
+        // Display-only subagent counters (server computed). Plain-string headers,
+        // so they never become a sort button; hideable via the Columns menu.
+        columnHelper.accessor('subagentChildCount', {
+          id: 'subagentChildCount',
+          header: 'Direct',
+          cell: ({ getValue }) => <div className="text-right">{getValue()}</div>,
+        }),
+        columnHelper.accessor('subagentDescendantCount', {
+          id: 'subagentDescendantCount',
+          header: 'Full tree',
+          cell: ({ getValue }) => <div className="text-right">{getValue()}</div>,
+        }),
       ]),
     [sort, onSortChange],
   );
@@ -494,11 +519,10 @@ export function DataTable({
                   return (
                     <DropdownMenuCheckboxItem
                       key={column.id}
-                      className="capitalize"
                       checked={column.getIsVisible()}
                       onCheckedChange={(value) => column.toggleVisibility(!!value)}
                     >
-                      {column.id}
+                      {COLUMN_LABELS[column.id] ?? column.id}
                     </DropdownMenuCheckboxItem>
                   );
                 })}

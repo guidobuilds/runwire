@@ -83,6 +83,8 @@ const baseSummary: ApiSessionSummary = {
   costUsd: 0.42,
   childCount: 0,
   descendantCount: 0,
+  subagentChildCount: 0,
+  subagentDescendantCount: 0,
 };
 
 const childSummary: ApiSessionSummary = {

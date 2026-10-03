@@ -95,6 +95,23 @@ describe('/sessions route (sessions dashboard)', () => {
     expect(within(avgDurationCard as HTMLElement).getByText('22m 30s')).toBeInTheDocument();
   });
 
+  it('renders the Direct and Full tree subagent count columns from the DTO', async () => {
+    server.use(
+      http.get('/api/sessions', () => HttpResponse.json(mockPagedSessionsMulti)),
+      http.get('/api/sessions/stats', () => HttpResponse.json(mockSessionsStatsMulti)),
+    );
+
+    renderDashboard();
+
+    await screen.findByText(mockSessionSummary2.name);
+    expect(screen.getByRole('columnheader', { name: 'Direct' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Full tree' })).toBeInTheDocument();
+    // mockSessionSummary carries 4 direct / 11 full-tree subagents; the DTO
+    // values must reach the visible cells.
+    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getByText('11')).toBeInTheDocument();
+  });
+
   it('shows a loading state before sessions resolve', async () => {
     // Hold the request pending indefinitely so the loading state is
     // deterministic instead of racing the mocked fetch's own resolution.

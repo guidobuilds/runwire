@@ -45,6 +45,8 @@ export const mockSessionSummary: ApiSessionSummary = {
   costUsd: 0.42,
   childCount: 1,
   descendantCount: 1,
+  subagentChildCount: 4,
+  subagentDescendantCount: 11,
 };
 
 export const mockChildSummary: ApiSessionSummary = {
@@ -57,6 +59,8 @@ export const mockChildSummary: ApiSessionSummary = {
   relation: 'subagent',
   childCount: 0,
   descendantCount: 0,
+  subagentChildCount: 0,
+  subagentDescendantCount: 0,
 };
 
 export const mockPagedSessions: PagedSessions = {
@@ -81,6 +85,8 @@ export const mockSessionSummary2: ApiSessionSummary = {
   costUsd: 0.18,
   childCount: 0,
   descendantCount: 0,
+  subagentChildCount: 0,
+  subagentDescendantCount: 0,
 };
 
 export const mockPagedSessionsMulti: PagedSessions = {

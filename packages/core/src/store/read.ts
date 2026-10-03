@@ -51,10 +51,18 @@ export type ApiSessionSummary = {
   compactionsInclusive: number;
   /** Harness-reported only, never computed. */
   costUsd: number | null;
-  /** Direct children count. */
+  /** Direct children count (every immediate child regardless of `relation`). */
   childCount: number;
-  /** All descendants count (`rollups.descendants`), >= 0. */
+  /** All descendants count (`rollups.descendants`, every relation), >= 0. */
   descendantCount: number;
+  /** Immediate children whose `relation = 'subagent'`. */
+  subagentChildCount: number;
+  /**
+   * Descendants whose `relation = 'subagent'`, self excluded. Traversal follows
+   * every `parent_id` edge regardless of a node's `relation`, so a teammate/fork
+   * branch neither counts itself nor prunes the walk to its own subagent children.
+   */
+  subagentDescendantCount: number;
 };
 
 export type ApiSessionDetail = ApiSessionSummary & {
@@ -195,9 +203,17 @@ function itemRows(
   return db.query(`${ITEM_SQL} WHERE ${where} ${orderBy}`).all(...params) as SessionRow[];
 }
 
+/** Batched tree-count maps for the rows of one request; grouped so `toSummary`
+ * stays a single lookup per count field. */
+type SummaryCounts = {
+  childCounts: Map<string, number>;
+  subagentChildCounts: Map<string, number>;
+  subagentDescendantCounts: Map<string, number>;
+};
+
 function toSummary(
   row: SessionRow,
-  childCounts: Map<string, number>,
+  counts: SummaryCounts,
   modelsOwn: Map<string, Set<string>>,
   modelsDescendants: Map<string, Set<string>>,
 ): ApiSessionSummary {
@@ -246,8 +262,10 @@ function toSummary(
     compactionsOwn: row.compactions ?? 0,
     compactionsInclusive: row.r_compactions ?? 0,
     costUsd: row.cost_usd,
-    childCount: childCounts.get(row.id) ?? 0,
+    childCount: counts.childCounts.get(row.id) ?? 0,
     descendantCount: row.r_descendants ?? 0,
+    subagentChildCount: counts.subagentChildCounts.get(row.id) ?? 0,
+    subagentDescendantCount: counts.subagentDescendantCounts.get(row.id) ?? 0,
   };
 }
 
@@ -346,6 +364,65 @@ function collectChildCounts(db: Database, parentIds: string[]): Map<string, numb
     )
     .all(...parentIds) as { parent_id: string; child_count: number }[];
   for (const r of rows) map.set(r.parent_id, r.child_count);
+  return map;
+}
+
+/**
+ * Direct subagent-children count map: one grouped query over `parentIds`
+ * counting only children whose relation is `'subagent'` (teammate/fork are
+ * excluded). Never one query per row.
+ */
+function collectSubagentChildCounts(db: Database, parentIds: string[]): Map<string, number> {
+  const map = new Map<string, number>();
+  if (parentIds.length === 0) return map;
+  const placeholders = parentIds.map(() => '?').join(',');
+  const rows = db
+    .query(
+      `SELECT parent_id, COUNT(*) AS child_count FROM sessions
+       WHERE parent_id IN (${placeholders}) AND relation = 'subagent' GROUP BY parent_id`,
+    )
+    .all(...parentIds) as { parent_id: string; child_count: number }[];
+  for (const r of rows) map.set(r.parent_id, r.child_count);
+  return map;
+}
+
+/**
+ * Subagent-descendant count map: one cycle-guarded recursive CTE seeded by
+ * `seedWhere` (a constant from this module). The recursion joins every child
+ * edge with no relation predicate, so traversal continues THROUGH teammate/fork
+ * nodes to their own subagent children; only `relation = 'subagent'` nodes are
+ * counted. The `t.id <> t.ancestor_id` predicate excludes each seed's own row,
+ * and the visited-path guard terminates hand-made parent cycles. Batched: never
+ * one query per row.
+ *
+ * Delimiter safety: session ids are unrestricted text, so a comma-joined path
+ * mis-reads an id that looks like a substring of the joined path (e.g. ancestor
+ * `a,b` -> child `b`). The path stores each id as `hex(id)` (alphabet `[0-9A-F]`)
+ * wrapped in `.` delimiters; `.` is outside the hex alphabet, so `.hex(id).`
+ * matches exactly one full encoded segment and can never bridge two ids. `hex()`
+ * operates on UTF-8 bytes, so any SQLite text id is covered.
+ */
+function collectSubagentDescendantCounts(
+  db: Database,
+  seedWhere: string,
+  seedParams: SQLQueryBindings[],
+): Map<string, number> {
+  const sql = `
+    WITH RECURSIVE tree(ancestor_id, id, path) AS (
+      SELECT id, id, '.' || hex(id) || '.' FROM sessions WHERE ${seedWhere}
+      UNION ALL
+      SELECT t.ancestor_id, s.id, t.path || hex(s.id) || '.'
+      FROM tree t JOIN sessions s ON s.parent_id = t.id
+      WHERE instr(t.path, '.' || hex(s.id) || '.') = 0
+    )
+    SELECT t.ancestor_id AS ancestor_id, COUNT(*) AS c
+    FROM tree t JOIN sessions s ON s.id = t.id
+    WHERE s.relation = 'subagent' AND t.id <> t.ancestor_id
+    GROUP BY t.ancestor_id
+  `;
+  const rows = db.query(sql).all(...seedParams) as { ancestor_id: string; c: number }[];
+  const map = new Map<string, number>();
+  for (const r of rows) map.set(r.ancestor_id, r.c);
   return map;
 }
 
@@ -546,11 +623,18 @@ export function listSessions(db: Database, query: ListSessionsQuery = {}): Paged
     return { items: [], total, limit, offset };
   }
   const childCounts = collectChildCounts(db, sliceIds);
+  const subagentChildCounts = collectSubagentChildCounts(db, sliceIds);
   const modelsOwn = collectModelsOwn(db, sliceIds);
   const placeholders = sliceIds.map(() => '?').join(',');
   const modelsDescendants = collectModelsDescendants(db, `id IN (${placeholders})`, sliceIds);
+  const subagentDescendantCounts = collectSubagentDescendantCounts(
+    db,
+    `id IN (${placeholders})`,
+    sliceIds,
+  );
 
-  const items = rows.map((r) => toSummary(r, childCounts, modelsOwn, modelsDescendants));
+  const counts: SummaryCounts = { childCounts, subagentChildCounts, subagentDescendantCounts };
+  const items = rows.map((r) => toSummary(r, counts, modelsOwn, modelsDescendants));
   return { items, total, limit, offset };
 }
 
@@ -639,11 +723,13 @@ export function getSession(db: Database, id: string): ApiSessionDetail | null {
 
   const childRows = itemRows(db, 's.parent_id = ?', [sessionId]);
   const childIds = childRows.map((r) => r.id);
+  const allIds = [sessionId, ...childIds];
 
-  const childCounts = collectChildCounts(db, [sessionId, ...childIds]);
+  const childCounts = collectChildCounts(db, allIds);
   childCounts.set(sessionId, childRows.length);
+  const subagentChildCounts = collectSubagentChildCounts(db, allIds);
 
-  const modelsOwn = collectModelsOwn(db, [sessionId, ...childIds]);
+  const modelsOwn = collectModelsOwn(db, allIds);
   const modelsDescendants = collectModelsDescendants(db, 'id = ?', [sessionId]);
   if (childIds.length > 0) {
     const childModels = collectModelsDescendants(db, 'parent_id = ?', [sessionId]);
@@ -656,25 +742,33 @@ export function getSession(db: Database, id: string): ApiSessionDetail | null {
       for (const m of set) existing.add(m);
     }
   }
+  const placeholders = allIds.map(() => '?').join(',');
+  const subagentDescendantCounts = collectSubagentDescendantCounts(
+    db,
+    `id IN (${placeholders})`,
+    allIds,
+  );
 
-  const summary = toSummary(row, childCounts, modelsOwn, modelsDescendants);
+  const counts: SummaryCounts = { childCounts, subagentChildCounts, subagentDescendantCounts };
+  const summary = toSummary(row, counts, modelsOwn, modelsDescendants);
 
   let parent: ApiSessionSummary | null = null;
   if (row.parent_id !== null) {
     const parentRows = itemRows(db, 's.id = ?', [row.parent_id]);
     const pRow = parentRows[0];
     if (pRow) {
-      const pChildCounts = new Map<string, number>();
-      const pCount = db
-        .query('SELECT COUNT(*) AS c FROM sessions WHERE parent_id = ?')
-        .get(row.parent_id) as { c: number } | undefined;
-      pChildCounts.set(row.parent_id, pCount?.c ?? 0);
-      const pModelsOwn = collectModelsOwn(db, [row.parent_id]);
-      const pModelsDescendants = collectModelsDescendants(db, 'id = ?', [row.parent_id]);
-      parent = toSummary(pRow, pChildCounts, pModelsOwn, pModelsDescendants);
+      const parentIds = [row.parent_id];
+      const parentCounts: SummaryCounts = {
+        childCounts: collectChildCounts(db, parentIds),
+        subagentChildCounts: collectSubagentChildCounts(db, parentIds),
+        subagentDescendantCounts: collectSubagentDescendantCounts(db, 'id = ?', parentIds),
+      };
+      const pModelsOwn = collectModelsOwn(db, parentIds);
+      const pModelsDescendants = collectModelsDescendants(db, 'id = ?', parentIds);
+      parent = toSummary(pRow, parentCounts, pModelsOwn, pModelsDescendants);
     }
   }
 
-  const children = childRows.map((r) => toSummary(r, childCounts, modelsOwn, modelsDescendants));
+  const children = childRows.map((r) => toSummary(r, counts, modelsOwn, modelsDescendants));
   return { ...summary, parent, children };
 }

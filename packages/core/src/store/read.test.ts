@@ -24,6 +24,7 @@ function modelId(db: Database, name: string): number {
 
 type SessionSeed = {
   parentId?: string;
+  relation?: 'subagent' | 'teammate' | 'fork' | null;
   projectKey?: string | null;
   title?: string | null;
   modelPrimary?: string | null;
@@ -45,16 +46,17 @@ type SessionSeed = {
 function insertSession(db: Database, id: string, opts: SessionSeed = {}) {
   db.run(
     `INSERT INTO sessions (
-       id, harness_id, project_key, parent_id, depth, title, model_primary_id,
+       id, harness_id, project_key, parent_id, depth, relation, title, model_primary_id,
        started_at, duration_ms, turns, api_calls, tool_calls, compactions, cost_usd,
        uncached_input, cached_input, cache_write, output, reasoning_output,
        source_path, source_size, source_mtime
-     ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+     ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
     [
       id,
       opts.harnessId ?? 'fake',
       opts.projectKey === undefined ? 'p1' : opts.projectKey,
       opts.parentId ?? null,
+      opts.relation ?? null,
       opts.title ?? null,
       opts.modelPrimary == null ? null : modelId(db, opts.modelPrimary),
       opts.startedAt ?? null,
@@ -81,6 +83,25 @@ function insertCallStep(db: Database, sessionId: string, seq: number, model: str
     'call',
     modelId(db, model),
   ]);
+}
+
+/**
+ * Runs `run` with `db.query` shadowed by a counter, restoring it afterwards.
+ * Batching proof: a per-row implementation issues strictly more queries as the
+ * row count grows, a batched one issues the same fixed number. */
+function countQueries<T>(db: Database, run: (db: Database) => T): { result: T; queries: number } {
+  let queries = 0;
+  const original = db.query.bind(db);
+  const patched = ((sql: string) => {
+    queries += 1;
+    return original(sql);
+  }) as Database['query'];
+  Object.assign(db, { query: patched });
+  try {
+    return { result: run(db), queries };
+  } finally {
+    Object.assign(db, { query: original });
+  }
 }
 
 describe('listSessions', () => {
@@ -405,6 +426,223 @@ describe('listSessions pagination (limit / offset / total-before-pagination)', (
     expect(page1.items.find((s) => s.id === 'fake:r2')!.modelsDescendants).toEqual(['m2-child']);
     // Page-2 root (r3) is NOT in the response; its subtree model is not computed.
     expect(page1.items.find((s) => s.id === 'fake:r3')).toBeUndefined();
+    db.close();
+  });
+});
+
+describe('listSessions/getSession subagent counts (Direct / Full tree)', () => {
+  /**
+   * root
+   * ├─ sub        (subagent)
+   * │  └─ subsub  (subagent)
+   * │     └─ leaf (subagent)
+   * ├─ team       (teammate)  <- not counted, but MUST NOT prune the walk
+   * │  └─ tchild  (subagent)
+   * └─ fork       (fork)      <- not counted, but MUST NOT prune the walk
+   *    └─ fchild  (subagent)
+   */
+  function seedMixedTree(db: Database) {
+    seed(db);
+    insertSession(db, 'fake:root', { startedAt: '2024-01-01T00:00:00Z' });
+    insertSession(db, 'fake:sub', { parentId: 'fake:root', relation: 'subagent' });
+    insertSession(db, 'fake:sub/subsub', { parentId: 'fake:sub', relation: 'subagent' });
+    insertSession(db, 'fake:sub/subsub/leaf', {
+      parentId: 'fake:sub/subsub',
+      relation: 'subagent',
+    });
+    insertSession(db, 'fake:team', { parentId: 'fake:root', relation: 'teammate' });
+    insertSession(db, 'fake:team/tchild', { parentId: 'fake:team', relation: 'subagent' });
+    insertSession(db, 'fake:fork', { parentId: 'fake:root', relation: 'fork' });
+    insertSession(db, 'fake:fork/fchild', { parentId: 'fake:fork', relation: 'subagent' });
+    recomputeRollups(db);
+  }
+
+  test('Direct counts only immediate subagent children; Full tree walks mixed branches', () => {
+    const { db } = openStore(':memory:');
+    seedMixedTree(db);
+
+    const root = listSessions(db).items.find((s) => s.id === 'fake:root')!;
+    // Direct: only `sub` — team and fork are excluded.
+    expect(root.subagentChildCount).toBe(1);
+    // Full tree: sub, subsub, leaf, team/tchild, fork/fchild = 5.
+    // Traversal passes THROUGH the teammate/fork nodes to their subagent children.
+    expect(root.subagentDescendantCount).toBe(5);
+    // The pre-existing counts are unchanged: 3 immediate children, 7 descendants.
+    expect(root.childCount).toBe(3);
+    expect(root.descendantCount).toBe(7);
+    db.close();
+  });
+
+  test('list and detail agree, intermediate nodes count, and leaves report 0/0', () => {
+    const { db } = openStore(':memory:');
+    seedMixedTree(db);
+
+    const root = listSessions(db).items.find((s) => s.id === 'fake:root')!;
+    const detail = getSession(db, 'fake:root')!;
+    // list/get parity for the root summary.
+    expect(detail.subagentChildCount).toBe(root.subagentChildCount);
+    expect(detail.subagentDescendantCount).toBe(root.subagentDescendantCount);
+
+    const byId = new Map(detail.children.map((c) => [c.id, c]));
+    // sub -> subsub -> leaf.
+    expect(byId.get('fake:sub')!.subagentChildCount).toBe(1);
+    expect(byId.get('fake:sub')!.subagentDescendantCount).toBe(2);
+    // teammate counts its own subagent child in the full tree.
+    expect(byId.get('fake:team')!.subagentChildCount).toBe(1);
+    expect(byId.get('fake:team')!.subagentDescendantCount).toBe(1);
+    // fork likewise.
+    expect(byId.get('fake:fork')!.subagentChildCount).toBe(1);
+    expect(byId.get('fake:fork')!.subagentDescendantCount).toBe(1);
+
+    const subsub = getSession(db, 'fake:sub/subsub')!;
+    expect(subsub.subagentChildCount).toBe(1);
+    expect(subsub.subagentDescendantCount).toBe(1);
+    // A leaf: no subagent children, no subagent descendants.
+    const leaf = getSession(db, 'fake:sub/subsub/leaf')!;
+    expect(leaf.subagentChildCount).toBe(0);
+    expect(leaf.subagentDescendantCount).toBe(0);
+    // Its parent summary (subsub) is the full subtree including this leaf.
+    expect(leaf.parent!.id).toBe('fake:sub/subsub');
+    expect(leaf.parent!.subagentDescendantCount).toBe(1);
+    db.close();
+  });
+
+  test('a subagent never counts itself (orphan self-exclusion)', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    // An orphan subagent root (parent_id NULL) with one subagent child.
+    insertSession(db, 'fake:orphan', { relation: 'subagent', startedAt: '2024-01-01T00:00:00Z' });
+    insertSession(db, 'fake:orphan/kid', { parentId: 'fake:orphan', relation: 'subagent' });
+    recomputeRollups(db);
+
+    const orphan = listSessions(db).items.find((s) => s.id === 'fake:orphan')!;
+    expect(orphan.subagentChildCount).toBe(1);
+    expect(orphan.subagentDescendantCount).toBe(1); // kid only, never self
+    expect(orphan.childCount).toBe(1);
+    expect(orphan.descendantCount).toBe(1);
+
+    // A lone subagent with no descendants reports 0, not 1.
+    insertSession(db, 'fake:solo', {
+      relation: 'subagent',
+      startedAt: '2024-01-02T00:00:00Z',
+    });
+    recomputeRollups(db);
+    const solo = listSessions(db).items.find((s) => s.id === 'fake:solo')!;
+    expect(solo.subagentChildCount).toBe(0);
+    expect(solo.subagentDescendantCount).toBe(0);
+    db.close();
+  });
+
+  test('a hand-made parent cycle terminates without counting the seed as its own descendant', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    // a <-> b: a.parent = b, b.parent = a. Neither is a root, so this is
+    // exercised through getSession (the list only seeds roots).
+    insertSession(db, 'fake:a', { parentId: 'fake:b', relation: 'subagent' });
+    insertSession(db, 'fake:b', { parentId: 'fake:a', relation: 'subagent' });
+    recomputeRollups(db);
+
+    const a = getSession(db, 'fake:a')!;
+    expect(a.subagentChildCount).toBe(1); // b
+    expect(a.subagentDescendantCount).toBe(1); // b; a excluded, walk terminates
+    const b = getSession(db, 'fake:b')!;
+    expect(b.subagentChildCount).toBe(1); // a
+    expect(b.subagentDescendantCount).toBe(1);
+    db.close();
+  });
+
+  test('comma-containing IDs: a substring-matching child is not mistaken for visited', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    // The ancestor id contains a comma and its child id is a suffix-looking
+    // substring of the ancestor path (`,fake:a,fake:b,` contains `,fake:b,`). A
+    // comma-delimited visited test wrongly treats `fake:b` as already visited
+    // and silently drops it and its whole subtree.
+    insertSession(db, 'fake:root', { startedAt: '2024-01-01T00:00:00Z' });
+    insertSession(db, 'fake:a,fake:b', { parentId: 'fake:root', relation: 'subagent' });
+    insertSession(db, 'fake:b', { parentId: 'fake:a,fake:b', relation: 'subagent' });
+    insertSession(db, 'fake:b/kid', { parentId: 'fake:b', relation: 'subagent' });
+    recomputeRollups(db);
+
+    const root = listSessions(db).items.find((s) => s.id === 'fake:root')!;
+    expect(root.subagentChildCount).toBe(1);
+    // 'fake:a,fake:b', 'fake:b' and 'fake:b/kid' -> 3 (the buggy guard yields 1).
+    expect(root.subagentDescendantCount).toBe(3);
+    // The direct child count is grouped, not path-based, so it is unaffected.
+    expect(root.childCount).toBe(1);
+    // NOTE: `descendantCount` comes from `rollups`, whose own comma-delimited
+    // traversal is pre-existing and explicitly out of scope for this fix.
+
+    const ancestor = getSession(db, 'fake:a,fake:b')!;
+    expect(ancestor.subagentChildCount).toBe(1);
+    expect(ancestor.subagentDescendantCount).toBe(2);
+    db.close();
+  });
+
+  test('comma-containing cycle terminates and traverses a mixed teammate branch', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    // c,a <-> c,a,b is a true cycle between two comma-containing ids.
+    insertSession(db, 'c,a', { parentId: 'c,a,b', relation: 'subagent' });
+    insertSession(db, 'c,a,b', { parentId: 'c,a', relation: 'subagent' });
+    // A teammate branch (not counted) whose comma-id subagent child MUST still be walked.
+    insertSession(db, 'c,a,t', { parentId: 'c,a', relation: 'teammate' });
+    insertSession(db, 'c,a,b,t', { parentId: 'c,a,t', relation: 'subagent' });
+    recomputeRollups(db);
+
+    const a = getSession(db, 'c,a')!;
+    // Direct counts only the immediate subagent child; c,a,t is a teammate.
+    expect(a.subagentChildCount).toBe(1);
+    // Descendants: c,a,b (subagent), c,a,t (teammate), c,a,b,t (subagent) = 2 counted.
+    expect(a.subagentDescendantCount).toBe(2);
+
+    const b = getSession(db, 'c,a,b')!;
+    expect(b.subagentChildCount).toBe(1); // c,a
+    // Walk c,a,b -> c,a -> {c,a,b cycle stop, c,a,t -> c,a,b,t}; counted: c,a + c,a,b,t = 2.
+    expect(b.subagentDescendantCount).toBe(2);
+    db.close();
+  });
+
+  test('counts are computed for the whole page with a fixed number of queries (no N+1)', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    // Five roots, each with one subagent child, so a per-row implementation
+    // would issue visibly more queries as the page grows.
+    for (let i = 0; i < 5; i++) {
+      insertSession(db, `fake:r${i}`, { startedAt: `2024-01-0${i + 1}T00:00:00Z` });
+      insertSession(db, `fake:r${i}/sub`, { parentId: `fake:r${i}`, relation: 'subagent' });
+    }
+    recomputeRollups(db);
+
+    const one = countQueries(db, (d) => listSessions(d, { limit: 1 }));
+    const five = countQueries(db, (d) => listSessions(d, { limit: 5 }));
+    // Same fixed statement count regardless of page size => batched, not per-row.
+    expect(five.queries).toBe(one.queries);
+    expect(five.result.items).toHaveLength(5);
+
+    // Page isolation: only the requested slice is returned and computed.
+    const page1 = listSessions(db, { limit: 1, offset: 0 }).items;
+    expect(page1.map((s) => s.id)).toEqual(['fake:r4']);
+    expect(page1[0]!.subagentChildCount).toBe(1);
+    expect(page1[0]!.subagentDescendantCount).toBe(1);
+    expect(page1.find((s) => s.id === 'fake:r0')).toBeUndefined();
+    db.close();
+  });
+
+  test('getSession query count is independent of the number of children', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:root1', {});
+    insertSession(db, 'fake:root1/c1', { parentId: 'fake:root1', relation: 'subagent' });
+    recomputeRollups(db);
+    const narrow = countQueries(db, (d) => getSession(d, 'fake:root1'));
+
+    insertSession(db, 'fake:root1/c2', { parentId: 'fake:root1', relation: 'subagent' });
+    insertSession(db, 'fake:root1/c3', { parentId: 'fake:root1', relation: 'subagent' });
+    recomputeRollups(db);
+    const wide = countQueries(db, (d) => getSession(d, 'fake:root1'));
+    expect(wide.queries).toBe(narrow.queries);
+    expect(wide.result!.children).toHaveLength(3);
     db.close();
   });
 });

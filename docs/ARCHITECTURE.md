@@ -189,6 +189,23 @@ rollups(session_id PK → sessions, uncached_input, cached_input, cache_write, o
 - Model identity is normalized: `models.name` is the exact raw harness model string (the canonical key; reserved names such as `unknown`/`other` are stored as-is), and `steps.model_id` / `sessions.model_primary_id` are hard FKs to `models(id)`. The legacy text columns (`steps.model`, `sessions.model_primary`) no longer exist; a NULL model stays a NULL id.
 - NULL is the empty state (D72).
 
+### Session summary counts
+
+The session-summary DTO (`ApiSessionSummary`, read layer) exposes four
+read-time tree counts. None is stored; all are computed per request and
+batched over the requested page/slice — never one query per row.
+
+| DTO field | Meaning |
+|---|---|
+| `childCount` | Every immediate child regardless of `relation`. |
+| `subagentChildCount` | Immediate children with `relation = 'subagent'`. |
+| `descendantCount` | Every descendant (`rollups.descendants`, all relations). |
+| `subagentDescendantCount` | Descendants with `relation = 'subagent'`, self excluded. Traversal follows every `parent_id` edge regardless of `relation`, so a teammate/fork branch neither counts itself nor prunes the walk to its own subagent children. Cycle-guarded. |
+
+`childCount`/`descendantCount` are unchanged; the two subagent counters are
+additive. The web sessions table surfaces them as the display-only (not
+sortable) `Direct` and `Full tree` columns.
+
 ## 6. Import flow
 
 ```text
