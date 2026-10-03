@@ -6,10 +6,19 @@ import type {
   EventStatus,
   SortDirection,
 } from '@runwire/core';
+import { ChevronDownIcon, CircleDotIcon, ListFilterIcon, SearchIcon, XIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
 import {
   Pagination,
   PaginationContent,
@@ -69,6 +78,11 @@ const KIND_LABELS: Record<EventKind, string> = {
   compaction: 'Compaction',
   'model-change': 'Model change',
   'mode-change': 'Mode change',
+};
+
+const STATUS_LABELS: Record<EventStatus, string> = {
+  ok: 'OK',
+  error: 'Error',
 };
 
 const KIND_BADGE_VARIANT: Record<EventKind, 'default' | 'secondary' | 'outline' | 'ghost'> = {
@@ -182,6 +196,7 @@ export function EventsTable({
   const [dir, setDir] = useState<SortDirection>(initialDir);
   const [kind, setKind] = useState<EventKind | 'all'>(initialKind ?? 'all');
   const [status, setStatus] = useState<EventStatus | 'all'>(initialStatus ?? 'all');
+  const [q, setQ] = useState('');
   const [page, setPage] = useState(initialPage);
   const [pageSize, setPageSize] = useState(initialPageSize);
   const offset = (page - 1) * pageSize;
@@ -191,6 +206,7 @@ export function EventsTable({
     dir,
     kind: kind === 'all' ? undefined : [kind],
     status: status === 'all' ? undefined : status,
+    q: q.trim() === '' ? undefined : q.trim(),
     limit: pageSize,
     offset,
     refresh,
@@ -216,49 +232,106 @@ export function EventsTable({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
+      <CardHeader>
         <CardTitle>
           <h2 className="font-semibold text-lg">Events</h2>
         </CardTitle>
-        <div className="flex flex-wrap items-center gap-2">
-          <Select
-            onValueChange={(value) => {
-              setKind(value as EventKind | 'all');
-              setPage(1);
-            }}
-            value={kind}
-          >
-            <SelectTrigger aria-label="Event kind">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All kinds</SelectItem>
-              {EVENT_KINDS.map((item) => (
-                <SelectItem key={item} value={item}>
-                  {KIND_LABELS[item]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            onValueChange={(value) => {
-              setStatus(value as EventStatus | 'all');
-              setPage(1);
-            }}
-            value={status}
-          >
-            <SelectTrigger aria-label="Event status">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="ok">OK</SelectItem>
-              <SelectItem value="error">Error</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="relative w-full max-w-xs min-w-0">
+            <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              aria-label="Search events"
+              className="pr-8 pl-8"
+              placeholder="Search events…"
+              value={q}
+              onChange={(event) => {
+                setQ(event.target.value);
+                setPage(1);
+              }}
+            />
+            {q ? (
+              <button
+                type="button"
+                aria-label="Clear search"
+                className="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-0.5 text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setQ('');
+                  setPage(1);
+                }}
+              >
+                <XIcon className="size-4" />
+              </button>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button aria-label="Event kind" size="sm" variant="outline" />}
+              >
+                <ListFilterIcon data-icon="inline-start" />
+                Kind
+                {kind === 'all' ? (
+                  <ChevronDownIcon data-icon="inline-end" />
+                ) : (
+                  <Badge variant="secondary">{KIND_LABELS[kind]}</Badge>
+                )}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuRadioGroup
+                  onValueChange={(value) => {
+                    setKind(value as EventKind | 'all');
+                    setPage(1);
+                  }}
+                  value={kind}
+                >
+                  <DropdownMenuRadioItem closeOnClick value="all">
+                    All kinds
+                  </DropdownMenuRadioItem>
+                  {EVENT_KINDS.map((item) => (
+                    <DropdownMenuRadioItem closeOnClick key={item} value={item}>
+                      {KIND_LABELS[item]}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button aria-label="Event status" size="sm" variant="outline" />}
+              >
+                <CircleDotIcon data-icon="inline-start" />
+                Status
+                {status === 'all' ? (
+                  <ChevronDownIcon data-icon="inline-end" />
+                ) : (
+                  <Badge variant="secondary">{STATUS_LABELS[status]}</Badge>
+                )}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuRadioGroup
+                  onValueChange={(value) => {
+                    setStatus(value as EventStatus | 'all');
+                    setPage(1);
+                  }}
+                  value={status}
+                >
+                  <DropdownMenuRadioItem closeOnClick value="all">
+                    All statuses
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem closeOnClick value="ok">
+                    OK
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem closeOnClick value="error">
+                    Error
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
         {query.isLoading ? (
           <div className="flex flex-col gap-2">
             {SKELETON_ROW_KEYS.map((key) => (

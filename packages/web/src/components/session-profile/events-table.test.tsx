@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse, http } from 'msw';
 import type { ReactNode } from 'react';
@@ -59,7 +59,7 @@ describe('EventsTable — request shape', () => {
     expect(capturedUrl?.searchParams.get('filter')).toBeNull();
   });
 
-  it('sends a kind CSV filter and resets to page 1 when the kind select changes', async () => {
+  it('sends a kind CSV filter and resets to page 1 when the kind filter changes', async () => {
     const user = userEvent.setup();
     const requests: URL[] = [];
     server.use(
@@ -71,9 +71,8 @@ describe('EventsTable — request shape', () => {
 
     renderTable({ initialPage: 2, pageSize: 1 });
 
-    await screen.findByRole('combobox', { name: 'Event kind' });
-    await user.click(screen.getByRole('combobox', { name: 'Event kind' }));
-    await user.click(await screen.findByRole('option', { name: 'Tool' }));
+    await user.click(screen.getByRole('button', { name: 'Event kind' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Tool' }));
 
     await screen.findByRole('row', { name: /mcp/i });
     expect(
@@ -83,7 +82,7 @@ describe('EventsTable — request shape', () => {
     ).toBe(true);
   });
 
-  it('sends a status filter and resets to page 1 when the status select changes', async () => {
+  it('sends a status filter and resets to page 1 when the status filter changes', async () => {
     const user = userEvent.setup();
     const requests: URL[] = [];
     server.use(
@@ -95,9 +94,8 @@ describe('EventsTable — request shape', () => {
 
     renderTable({ initialPage: 2, pageSize: 1 });
 
-    await screen.findByRole('combobox', { name: 'Event status' });
-    await user.click(screen.getByRole('combobox', { name: 'Event status' }));
-    await user.click(await screen.findByRole('option', { name: 'Error' }));
+    await user.click(screen.getByRole('button', { name: 'Event status' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Error' }));
 
     await screen.findByRole('row', { name: /bash/i });
     expect(
@@ -106,6 +104,50 @@ describe('EventsTable — request shape', () => {
           url.searchParams.get('status') === 'error' && url.searchParams.get('offset') === '0',
       ),
     ).toBe(true);
+  });
+
+  it('sends a search query and resets to page 1 when the search changes', async () => {
+    const user = userEvent.setup();
+    const requests: URL[] = [];
+    server.use(
+      http.get('/api/sessions/:id/profile/events', ({ request }) => {
+        requests.push(new URL(request.url));
+        return undefined;
+      }),
+    );
+
+    renderTable({ initialPage: 2, pageSize: 1 });
+
+    await user.type(screen.getByRole('textbox', { name: 'Search events' }), 'mcp');
+
+    await screen.findByRole('row', { name: /mcp/i });
+    expect(
+      requests.some(
+        (url) => url.searchParams.get('q') === 'mcp' && url.searchParams.get('offset') === '0',
+      ),
+    ).toBe(true);
+  });
+
+  it('clears the search query through the clear action', async () => {
+    const user = userEvent.setup();
+    const requests: URL[] = [];
+    server.use(
+      http.get('/api/sessions/:id/profile/events', ({ request }) => {
+        requests.push(new URL(request.url));
+        return undefined;
+      }),
+    );
+
+    renderTable();
+
+    const input = screen.getByRole('textbox', { name: 'Search events' });
+    await user.type(input, 'mcp');
+    await user.click(await screen.findByRole('button', { name: 'Clear search' }));
+
+    expect(input).toHaveValue('');
+    await waitFor(() => {
+      expect(requests.at(-1)?.searchParams.get('q')).toBeNull();
+    });
   });
 
   it('sorts by a clicked column header and toggles direction on the second click', async () => {
