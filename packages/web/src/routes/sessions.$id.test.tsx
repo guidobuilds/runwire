@@ -153,8 +153,8 @@ describe('/sessions/$id route (session profile)', () => {
     const lengthBefore = history.length;
     const countBefore = requests.length;
 
-    await user.click(screen.getByRole('combobox', { name: 'Event kind' }));
-    await user.click(await screen.findByRole('option', { name: 'Tool' }));
+    await user.click(screen.getByRole('button', { name: 'Event kind' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Tool' }));
 
     await waitFor(() => {
       expect(
