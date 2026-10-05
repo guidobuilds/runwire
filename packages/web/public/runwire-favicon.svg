@@ -1,15 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
-  <title id="title">Runwire</title>
-  <desc id="desc">Runwire execution trace on a dark blue rounded square.</desc>
-  <rect x="4" y="4" width="56" height="56" rx="10" fill="#1C385E"/>
-  <g transform="translate(-35 -14) scale(.115)">
-    <g fill="none" stroke="#FFFFFF" stroke-linecap="square" stroke-linejoin="miter">
-      <path d="M395 285 L485 355 L395 425" stroke-width="34"/>
-    </g>
-    <g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M430 490 H555 C585 490 598 478 608 452 L650 342 C659 318 674 305 700 305 H748" stroke-width="34"/>
-    </g>
-    <circle cx="430" cy="490" r="34" fill="#FFFFFF"/>
-    <circle cx="755" cy="305" r="40" fill="#FFFFFF"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img">
+  <title>Runwire</title>
+  <style>
+    rect { fill: #000; }
+    @media (prefers-color-scheme: dark) {
+      rect { fill: #fff; }
+    }
+  </style>
+  <rect x="8" y="11" width="48" height="10" rx="5"/>
+  <rect x="20" y="27" width="22" height="10" rx="5"/>
+  <rect x="34" y="43" width="22" height="10" rx="5"/>
 </svg>
