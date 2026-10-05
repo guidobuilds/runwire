@@ -61,7 +61,8 @@ const timelineResponse = {
 const mergedEventsResponse = {
   sessionId: 'root',
   scope: 'tree',
-  filter: 'signals',
+  sort: 'time',
+  dir: 'asc',
   items: [
     {
       streamId: 'root',
@@ -71,6 +72,8 @@ const mergedEventsResponse = {
       error: null,
       kind: 'compaction',
       trigger: 'auto',
+      action: 'compaction',
+      subject: 'auto',
     },
     {
       streamId: 'root',
@@ -82,6 +85,8 @@ const mergedEventsResponse = {
       category: 'mcp',
       toolName: 'mcp__engram__mem_save',
       model: 'claude-sonnet-5',
+      action: 'mcp',
+      subject: 'mcp__engram__mem_save',
     },
     {
       streamId: 'root',
@@ -92,6 +97,9 @@ const mergedEventsResponse = {
       kind: 'tool',
       category: 'exec',
       toolName: 'bash',
+      action: 'exec',
+      subject: 'bash',
+      model: null,
     },
   ],
   total: 3,
@@ -200,16 +208,41 @@ describe('session profile API', () => {
     vi.stubGlobal('fetch', fetch);
     const result = await fetchSessionProfileMergedEvents('root', {
       scope: 'tree',
-      filter: 'signals',
+      sort: 'time',
+      dir: 'asc',
       limit: 50,
       offset: 0,
     });
     expect(fetch).toHaveBeenCalledWith(
-      '/api/sessions/root/profile/events?scope=tree&filter=signals&limit=50&offset=0',
+      '/api/sessions/root/profile/events?scope=tree&sort=time&dir=asc&limit=50&offset=0',
       expect.any(Object),
     );
-    expect(result.items[0]).toMatchObject({ kind: 'compaction', trigger: 'auto' });
+    expect(result.items[0]).toMatchObject({
+      kind: 'compaction',
+      trigger: 'auto',
+      action: 'compaction',
+      subject: 'auto',
+    });
     expect(result.excludedNullAtCount).toBe(3);
+  });
+
+  it('serializes kind/action filters as CSV, plus status/model/q', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(mergedEventsResponse), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    await fetchSessionProfileMergedEvents('root', {
+      scope: 'tree',
+      kind: ['tool', 'call'],
+      action: ['read'],
+      status: 'error',
+      model: 'claude-sonnet-5',
+      q: 'ne edle',
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/sessions/root/profile/events?scope=tree&kind=tool%2Ccall&action=read&status=error&model=claude-sonnet-5&q=ne+edle',
+      expect.any(Object),
+    );
   });
 
   it('passes tool model through as a string and defaults an absent model to null', async () => {
@@ -217,10 +250,7 @@ describe('session profile API', () => {
       .fn()
       .mockResolvedValue(new Response(JSON.stringify(mergedEventsResponse), { status: 200 }));
     vi.stubGlobal('fetch', fetch);
-    const result = await fetchSessionProfileMergedEvents('root', {
-      scope: 'tree',
-      filter: 'signals',
-    });
+    const result = await fetchSessionProfileMergedEvents('root', { scope: 'tree' });
     // Tool row whose source carried a model: it survives normalization verbatim.
     expect(result.items[1]).toMatchObject({ kind: 'tool', model: 'claude-sonnet-5' });
     // Tool row whose source omitted `model`: additive-with-default → null, never a throw.
@@ -231,7 +261,20 @@ describe('session profile API', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ ...mergedEventsResponse, filter: 'nope' }), {
+        new Response(JSON.stringify({ ...mergedEventsResponse, sort: 'nope' }), {
+          status: 200,
+        }),
+      ),
+    );
+    await expect(fetchSessionProfileMergedEvents('root')).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it('rejects a merged event missing its semantic action/subject', async () => {
+    const { action: _action, ...withoutAction } = mergedEventsResponse.items[0];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ ...mergedEventsResponse, items: [withoutAction] }), {
           status: 200,
         }),
       ),

@@ -4,6 +4,7 @@ dist/
 .DS_Store
 *.log
 coverage/
+.vitest/
 fixtures/*/canary/output/
 .runwire/
 .forge/
@@ -12,4 +13,8 @@ fixtures/*/canary/output/
 .grok/
 .claude/
 .agents/
+odd/
 skills-lock.json
+
+# Bun-only workspace (bun.lock is the source of truth): ignore other package managers' lockfiles
+pnpm-lock.yaml

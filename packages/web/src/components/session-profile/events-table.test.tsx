@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse, http } from 'msw';
 import type { ReactNode } from 'react';
@@ -22,23 +22,26 @@ function renderTable(props: Partial<React.ComponentProps<typeof EventsTable>> = 
   return render(<EventsTable sessionId={PROFILE_ROOT_ID} {...props} />, { wrapper });
 }
 
+const emptyResponse = {
+  view: 'merged',
+  sessionId: PROFILE_ROOT_ID,
+  scope: 'tree',
+  sort: 'time',
+  dir: 'asc',
+  items: [],
+  total: 0,
+  limit: 10,
+  offset: 0,
+  excludedNullAtCount: 0,
+};
+
 describe('EventsTable — request shape', () => {
-  it('requests scope=tree, filter=signals, limit=10, offset=0 by default, via the real handlers', async () => {
+  it('requests the default sort/scope/pagination (no legacy filter) via the real handlers', async () => {
     let capturedUrl: URL | undefined;
     server.use(
       http.get('/api/sessions/:id/profile/events', ({ request }) => {
         capturedUrl = new URL(request.url);
-        return HttpResponse.json({
-          view: 'merged',
-          sessionId: PROFILE_ROOT_ID,
-          scope: 'tree',
-          filter: 'signals',
-          items: [],
-          total: 0,
-          limit: 10,
-          offset: 0,
-          excludedNullAtCount: 0,
-        });
+        return HttpResponse.json(emptyResponse);
       }),
     );
 
@@ -48,11 +51,133 @@ describe('EventsTable — request shape', () => {
     expect(capturedUrl?.pathname).toBe(
       `/api/sessions/${encodeURIComponent(PROFILE_ROOT_ID)}/profile/events`,
     );
-    expect(capturedUrl?.searchParams.get('view')).toBeNull();
     expect(capturedUrl?.searchParams.get('scope')).toBe('tree');
-    expect(capturedUrl?.searchParams.get('filter')).toBe('signals');
+    expect(capturedUrl?.searchParams.get('sort')).toBe('time');
+    expect(capturedUrl?.searchParams.get('dir')).toBe('asc');
     expect(capturedUrl?.searchParams.get('limit')).toBe('10');
     expect(capturedUrl?.searchParams.get('offset')).toBe('0');
+    expect(capturedUrl?.searchParams.get('filter')).toBeNull();
+  });
+
+  it('sends a kind CSV filter and resets to page 1 when the kind filter changes', async () => {
+    const user = userEvent.setup();
+    const requests: URL[] = [];
+    server.use(
+      http.get('/api/sessions/:id/profile/events', ({ request }) => {
+        requests.push(new URL(request.url));
+        return undefined;
+      }),
+    );
+
+    renderTable({ initialPage: 2, pageSize: 1 });
+
+    await user.click(screen.getByRole('button', { name: 'Event kind' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Tool' }));
+
+    await screen.findByRole('row', { name: /mcp/i });
+    expect(
+      requests.some(
+        (url) => url.searchParams.get('kind') === 'tool' && url.searchParams.get('offset') === '0',
+      ),
+    ).toBe(true);
+  });
+
+  it('sends a status filter and resets to page 1 when the status filter changes', async () => {
+    const user = userEvent.setup();
+    const requests: URL[] = [];
+    server.use(
+      http.get('/api/sessions/:id/profile/events', ({ request }) => {
+        requests.push(new URL(request.url));
+        return undefined;
+      }),
+    );
+
+    renderTable({ initialPage: 2, pageSize: 1 });
+
+    await user.click(screen.getByRole('button', { name: 'Event status' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Error' }));
+
+    await screen.findByRole('row', { name: /bash/i });
+    expect(
+      requests.some(
+        (url) =>
+          url.searchParams.get('status') === 'error' && url.searchParams.get('offset') === '0',
+      ),
+    ).toBe(true);
+  });
+
+  it('sends a search query and resets to page 1 when the search changes', async () => {
+    const user = userEvent.setup();
+    const requests: URL[] = [];
+    server.use(
+      http.get('/api/sessions/:id/profile/events', ({ request }) => {
+        requests.push(new URL(request.url));
+        return undefined;
+      }),
+    );
+
+    renderTable({ initialPage: 2, pageSize: 1 });
+
+    await user.type(screen.getByRole('textbox', { name: 'Search events' }), 'mcp');
+
+    await screen.findByRole('row', { name: /mcp/i });
+    expect(
+      requests.some(
+        (url) => url.searchParams.get('q') === 'mcp' && url.searchParams.get('offset') === '0',
+      ),
+    ).toBe(true);
+  });
+
+  it('clears the search query through the clear action', async () => {
+    const user = userEvent.setup();
+    const requests: URL[] = [];
+    server.use(
+      http.get('/api/sessions/:id/profile/events', ({ request }) => {
+        requests.push(new URL(request.url));
+        return undefined;
+      }),
+    );
+
+    renderTable();
+
+    const input = screen.getByRole('textbox', { name: 'Search events' });
+    await user.type(input, 'mcp');
+    await user.click(await screen.findByRole('button', { name: 'Clear search' }));
+
+    expect(input).toHaveValue('');
+    await waitFor(() => {
+      expect(requests.at(-1)?.searchParams.get('q')).toBeNull();
+    });
+  });
+
+  it('sorts by a clicked column header and toggles direction on the second click', async () => {
+    const user = userEvent.setup();
+    const requests: URL[] = [];
+    server.use(
+      http.get('/api/sessions/:id/profile/events', ({ request }) => {
+        requests.push(new URL(request.url));
+        return undefined;
+      }),
+    );
+
+    renderTable();
+    await screen.findByRole('row', { name: /compaction/i });
+
+    await user.click(screen.getByRole('button', { name: 'Kind' }));
+    await screen.findByRole('row', { name: /compaction/i });
+    expect(
+      requests.some(
+        (url) => url.searchParams.get('sort') === 'kind' && url.searchParams.get('dir') === 'asc',
+      ),
+    ).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: 'Kind' }));
+    await screen.findByRole('row', { name: /compaction/i });
+    expect(
+      requests.some(
+        (url) => url.searchParams.get('sort') === 'kind' && url.searchParams.get('dir') === 'desc',
+      ),
+    ).toBe(true);
   });
 });
 
@@ -65,55 +190,42 @@ describe('EventsTable — loaded state', () => {
     expect(screen.getByText(/events without timestamp not shown/)).toBeInTheDocument();
   });
 
-  it('renders detail as metadata only (category · toolName), never args/paths', async () => {
+  it('renders the server-owned action label and subject for tool rows', async () => {
     renderTable();
 
     const row = await screen.findByRole('row', { name: /mcp/i });
-    expect(within(row).getByText('mcp · mcp__plugin_engram_engram__mem_save')).toBeInTheDocument();
+    expect(within(row).getByText('MCP')).toBeInTheDocument();
+    expect(within(row).getByText('mcp__plugin_engram_engram__mem_save')).toBeInTheDocument();
+    // The legacy "category · toolName" concatenation is gone.
+    expect(
+      within(row).queryByText('mcp · mcp__plugin_engram_engram__mem_save'),
+    ).not.toBeInTheDocument();
   });
 
   it('shows an error badge only on the error-flagged row', async () => {
-    renderTable({ initialFilter: 'all' });
-
-    await screen.findByRole('row', { name: /compaction/i });
-    const rows = screen.getAllByRole('row');
-    const errorRows = rows.filter((row) => within(row).queryByText('error'));
-    expect(errorRows).toHaveLength(1);
-  });
-
-  it('renders the mcp tool row model in the Model column', async () => {
     renderTable();
 
-    const row = await screen.findByRole('row', { name: /mcp/i });
-    const cells = within(row).getAllByRole('cell');
-    expect(cells[3]).toHaveTextContent('claude-sonnet-5');
+    const row = await screen.findByRole('row', { name: /bash/i });
+    expect(within(row).getByText('Error')).toBeInTheDocument();
+    const compaction = screen.getByRole('row', { name: /compaction/i });
+    expect(within(compaction).queryByText('Error')).not.toBeInTheDocument();
+    expect(within(compaction).getByText('OK')).toBeInTheDocument();
   });
 
-  it('renders the em dash in the Model column for a tool row with a null model', async () => {
-    renderTable({ initialFilter: 'all' });
+  it('renders the model column for a tool row (value and em dash)', async () => {
+    renderTable();
 
-    const row = await screen.findByRole('row', { name: /bash/i });
-    const cells = within(row).getAllByRole('cell');
-    expect(cells[3]).toHaveTextContent('—');
+    const mcpRow = await screen.findByRole('row', { name: /mcp/i });
+    expect(within(mcpRow).getAllByRole('cell')[5]).toHaveTextContent('claude-sonnet-5');
+    const bashRow = screen.getByRole('row', { name: /bash/i });
+    expect(within(bashRow).getAllByRole('cell')[5]).toHaveTextContent('—');
   });
 });
 
 describe('EventsTable — empty state', () => {
   it('shows a single "No events for this filter" row when items is empty', async () => {
     server.use(
-      http.get('/api/sessions/:id/profile/events', () =>
-        HttpResponse.json({
-          view: 'merged',
-          sessionId: PROFILE_ROOT_ID,
-          scope: 'tree',
-          filter: 'signals',
-          items: [],
-          total: 0,
-          limit: 50,
-          offset: 0,
-          excludedNullAtCount: 0,
-        }),
-      ),
+      http.get('/api/sessions/:id/profile/events', () => HttpResponse.json(emptyResponse)),
     );
 
     renderTable();
@@ -131,17 +243,7 @@ describe('EventsTable — error + retry', () => {
           failNext = false;
           return HttpResponse.json({ error: 'internal error' }, { status: 500 });
         }
-        return HttpResponse.json({
-          view: 'merged',
-          sessionId: PROFILE_ROOT_ID,
-          scope: 'tree',
-          filter: 'signals',
-          items: [],
-          total: 0,
-          limit: 50,
-          offset: 0,
-          excludedNullAtCount: 0,
-        });
+        return HttpResponse.json(emptyResponse);
       }),
     );
 
@@ -154,7 +256,7 @@ describe('EventsTable — error + retry', () => {
 });
 
 describe('EventsTable — pagination', () => {
-  it('changing the local page changes the offset requested (via limit=1 against the 2-item signals fixture)', async () => {
+  it('changing the local page changes the offset requested (limit=1 against the 3-item fixture)', async () => {
     const user = userEvent.setup();
     renderTable({ initialPage: 1, pageSize: 1 });
 
@@ -165,31 +267,5 @@ describe('EventsTable — pagination', () => {
 
     await screen.findByRole('row', { name: /mcp/i });
     expect(screen.queryByRole('row', { name: /compaction/i })).not.toBeInTheDocument();
-  });
-});
-
-describe('EventsTable — filter change', () => {
-  it('resets to page 1 and requests the new filter when the select changes', async () => {
-    const user = userEvent.setup();
-    const requests: URL[] = [];
-    server.use(
-      http.get('/api/sessions/:id/profile/events', ({ request }) => {
-        requests.push(new URL(request.url));
-        return undefined;
-      }),
-    );
-
-    renderTable({ initialPage: 2, pageSize: 1 });
-
-    await screen.findByRole('combobox', { name: 'Event filter' });
-    await user.click(screen.getByRole('combobox', { name: 'Event filter' }));
-    await user.click(await screen.findByRole('option', { name: 'All events' }));
-
-    await screen.findByRole('row', { name: /compaction/i });
-    expect(
-      requests.some(
-        (url) => url.searchParams.get('filter') === 'all' && url.searchParams.get('offset') === '0',
-      ),
-    ).toBe(true);
   });
 });

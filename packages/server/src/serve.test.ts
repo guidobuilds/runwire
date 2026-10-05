@@ -222,6 +222,50 @@ describe('createServer', () => {
     }
   });
 
+  test('list and detail expose subagent Direct/Full tree counts over HTTP', async () => {
+    const { store, server, base } = await startServer();
+    try {
+      type Summary = {
+        id: string;
+        childCount: number;
+        subagentChildCount: number;
+        subagentDescendantCount: number;
+      };
+      // seed() links root1 -> child; make that child a subagent and add a
+      // subagent grandchild so Direct (1) and Full tree (2) differ from zero.
+      store.db.run("UPDATE sessions SET relation = 'subagent' WHERE id = 'fake:root1/child'");
+      store.db.run(
+        `INSERT INTO sessions (
+           id, harness_id, project_key, parent_id, relation, depth,
+           source_path, source_size, source_mtime
+         ) VALUES ('fake:root1/child/grand', 'fake', 'p1', 'fake:root1/child', 'subagent', 2,
+           '/fake/root1-grand.jsonl', 1, 1)`,
+      );
+
+      const listRes = await fetch(`${base}/api/sessions`);
+      expect(listRes.status).toBe(200);
+      const listBody = (await listRes.json()) as { items: Summary[] };
+      const root1 = listBody.items.find((s) => s.id === 'fake:root1')!;
+      expect(root1.childCount).toBe(1);
+      expect(root1.subagentChildCount).toBe(1);
+      expect(root1.subagentDescendantCount).toBe(2); // child + grandchild
+
+      const detailRes = await fetch(`${base}/api/sessions/fake:root1`);
+      const detailBody = (await detailRes.json()) as { session: Summary };
+      expect(detailBody.session.subagentChildCount).toBe(1);
+      expect(detailBody.session.subagentDescendantCount).toBe(2);
+
+      // A /-containing subagent id resolves and carries its own counts.
+      const childRes = await fetch(`${base}/api/sessions/fake:root1/child`);
+      const childBody = (await childRes.json()) as { session: Summary };
+      expect(childBody.session.subagentChildCount).toBe(1);
+      expect(childBody.session.subagentDescendantCount).toBe(1);
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
   test('GET /api/sessions/{id} serves a /-containing subagent id (whole remainder)', async () => {
     const { store, server, base } = await startServer();
     try {

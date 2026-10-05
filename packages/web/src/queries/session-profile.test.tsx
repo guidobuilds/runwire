@@ -28,7 +28,8 @@ function mergedBody(offset: number, itemAt: string) {
   return {
     sessionId: 'root',
     scope: 'tree',
-    filter: 'signals',
+    sort: 'time',
+    dir: 'asc',
     items: [
       {
         streamId: 'root',
@@ -38,6 +39,8 @@ function mergedBody(offset: number, itemAt: string) {
         error: null,
         kind: 'compaction',
         trigger: 'auto',
+        action: 'compaction',
+        subject: 'auto',
       },
     ],
     total: 10,
@@ -64,13 +67,29 @@ describe('session profile query keys', () => {
       sessionProfileKeys.timeline('a', { scope: 'tree', field: 'cacheWrite' }),
     );
     expect(
-      sessionProfileKeys.mergedEvents('a', { scope: 'tree', filter: 'signals', offset: 0 }),
+      sessionProfileKeys.mergedEvents('a', { scope: 'tree', sort: 'time', offset: 0 }),
     ).not.toEqual(
-      sessionProfileKeys.mergedEvents('a', { scope: 'tree', filter: 'signals', offset: 50 }),
+      sessionProfileKeys.mergedEvents('a', { scope: 'tree', sort: 'time', offset: 50 }),
     );
     expect(
-      sessionProfileKeys.mergedEvents('a', { scope: 'tree', filter: 'signals', refresh: 1 }),
-    ).not.toEqual(sessionProfileKeys.mergedEvents('a', { scope: 'tree', filter: 'signals' }));
+      sessionProfileKeys.mergedEvents('a', { scope: 'tree', sort: 'time', refresh: 1 }),
+    ).not.toEqual(sessionProfileKeys.mergedEvents('a', { scope: 'tree', sort: 'time' }));
+    expect(
+      sessionProfileKeys.mergedEvents('a', { scope: 'tree', sort: 'kind', kind: ['tool'] }),
+    ).not.toEqual(
+      sessionProfileKeys.mergedEvents('a', { scope: 'tree', sort: 'kind', kind: ['call'] }),
+    );
+    expect(
+      sessionProfileKeys.mergedEvents('a', {
+        scope: 'tree',
+        action: ['mcp', 'agent'],
+      }),
+    ).toEqual(
+      sessionProfileKeys.mergedEvents('a', {
+        scope: 'tree',
+        action: ['agent', 'mcp', 'mcp'],
+      }),
+    );
   });
 
   it('keys model usage by refresh and separately from the other views', () => {
@@ -85,7 +104,7 @@ describe('session profile query keys', () => {
       sessionProfileKeys.timeline('a', { scope: 'tree', field: 'output' }),
     );
     expect(sessionProfileKeys.models('a', {})).not.toEqual(
-      sessionProfileKeys.mergedEvents('a', { scope: 'tree', filter: 'signals' }),
+      sessionProfileKeys.mergedEvents('a', { scope: 'tree', sort: 'time' }),
     );
   });
 
@@ -141,7 +160,7 @@ describe('session profile query keys', () => {
       ({ offset }) =>
         useSessionProfileMergedEvents('root', {
           scope: 'tree',
-          filter: 'signals',
+          sort: 'time',
           limit: 1,
           offset,
         }),

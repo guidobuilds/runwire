@@ -64,7 +64,7 @@ type Row = {
   isRoot: boolean;
 };
 
-const SIGNALS_LIMIT = 200;
+const AGENT_MARKER_LIMIT = 200;
 
 function shortId(id: string): string {
   const tail = id.split(/[/:]/).pop() ?? id;
@@ -279,42 +279,8 @@ const tooltipDateTime = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'medium',
 });
 
-type MarkerKind = 'error' | 'compaction' | 'model-change' | 'mcp' | 'skill' | 'agent' | 'other';
-
-const MARKER_COLOR: Record<MarkerKind, string> = {
-  error: 'var(--destructive)',
-  compaction: 'var(--chart-1)',
-  'model-change': 'var(--chart-2)',
-  mcp: 'var(--chart-3)',
-  skill: 'var(--chart-4)',
-  agent: 'var(--chart-5)',
-  other: 'var(--muted-foreground)',
-};
-
-const MARKER_LABEL: Record<MarkerKind, string> = {
-  error: 'Error',
-  compaction: 'Compaction',
-  'model-change': 'Model change',
-  mcp: 'MCP call',
-  skill: 'Skill call',
-  agent: 'Agent call',
-  other: 'Other',
-};
-
-function markerKind(event: Event): MarkerKind {
-  if (event.error === true) return 'error';
-  if (event.kind === 'compaction') return 'compaction';
-  if (event.kind === 'model-change') return 'model-change';
-  if (event.kind === 'tool') {
-    if (event.category === 'mcp') return 'mcp';
-    if (event.category === 'skill') return 'skill';
-    if (event.category === 'agent') return 'agent';
-  }
-  return 'other';
-}
-
-/** Metadata-only detail string — tool identity/category/trigger, never
- * tool input/output or free text. */
+/** Metadata-only detail string — tool identity/category, never tool
+ * input/output or free text. */
 function markerDetail(event: Event): string {
   switch (event.kind) {
     case 'compaction':
@@ -328,10 +294,12 @@ function markerDetail(event: Event): string {
   }
 }
 
+const AGENT_MARKER_COLOR = 'var(--chart-5)';
+
 /** Agent git-graph: one horizontal lifespan bar per agent on a shared
  * wall-clock axis, branches drawn from the parent row at the spawn call's
- * instant to the child row at its own start, and signal events as markers on
- * the owning row. */
+ * instant to the child row at its own start, and agent invocation events as
+ * markers on the owning row. */
 export function AgentGraph({
   sessionId,
   rootSession,
@@ -340,10 +308,12 @@ export function AgentGraph({
   onNodeCount,
 }: AgentGraphProps) {
   const spawns = useSessionProfileSpawns(sessionId, { scope: 'tree', refresh });
-  const signals = useSessionProfileMergedEvents(sessionId, {
+  // The graph draws only agent invocation markers: one per `tool` step whose
+  // category is `agent` (the subagent spawn call). Generic signals are gone.
+  const agentMarkers = useSessionProfileMergedEvents(sessionId, {
     scope: 'tree',
-    filter: 'signals',
-    limit: SIGNALS_LIMIT,
+    action: ['agent'],
+    limit: AGENT_MARKER_LIMIT,
     offset: 0,
     refresh,
   });
@@ -412,8 +382,8 @@ export function AgentGraph({
         ) : null}
         {!loading && !spawns.isError && spawns.data ? (
           <AgentGraphBody
-            markerEvents={signals.data?.items ?? []}
-            markerTotal={signals.data?.total ?? 0}
+            markerEvents={agentMarkers.data?.items ?? []}
+            markerTotal={agentMarkers.data?.total ?? 0}
             onOpenNode={onOpenNode}
             pages={spawns.data.pages}
             rootSession={rootSession}
@@ -465,7 +435,6 @@ function AgentGraphBody({
         key: `${event.streamId}-${event.seq}`,
         absoluteX: ms,
         y: event.sessionId,
-        kind: markerKind(event),
         detail: markerDetail(event),
         at: event.at as string,
       };
@@ -635,9 +604,9 @@ function AgentGraphBody({
           </RechartsComposedChart>
         </ChartContainer>
       </div>
-      {markerTotal > SIGNALS_LIMIT ? (
+      {markerTotal > AGENT_MARKER_LIMIT ? (
         <p className="text-muted-foreground text-xs">
-          Showing the first {SIGNALS_LIMIT} signals of {markerTotal}.
+          Showing the first {AGENT_MARKER_LIMIT} agent calls of {markerTotal}.
         </p>
       ) : null}
     </div>
@@ -742,15 +711,14 @@ type MarkerDatum = {
   key: string;
   x: number;
   y: string;
-  kind: MarkerKind;
   detail: string;
   at: string;
 };
 
-/** Signal markers, positioned with `useXAxisScale`/`useYAxisScale` rather
- * than Recharts' own `<Scatter>`: in this recharts@3.8.0 build, a `<Scatter>`
- * sibling of the stacked lifespan `Bar`s resets the categorical y-axis
- * domain to empty (reproduced in isolation — a static 3-row vertical
+/** Agent invocation markers, positioned with `useXAxisScale`/`useYAxisScale`
+ * rather than Recharts' own `<Scatter>`: in this recharts@3.8.0 build, a
+ * `<Scatter>` sibling of the stacked lifespan `Bar`s resets the categorical
+ * y-axis domain to empty (reproduced in isolation — a static 3-row vertical
  * ComposedChart with two stacked `Bar`s renders correctly, and stops
  * rendering any bar as soon as a `<Scatter>` is added, regardless of its
  * `data`/axis-id props), so markers use the same documented scale-hook
@@ -767,14 +735,14 @@ function AgentGraphMarkers({ markers }: { markers: readonly MarkerDatum[] }) {
         const cy = yScale(marker.y, { position: 'middle' });
         if (cx === undefined || cy === undefined) return null;
         return (
-          <g className="agent-graph-marker" data-marker-kind={marker.kind} key={marker.key}>
+          <g className="agent-graph-marker" data-marker-kind="agent" key={marker.key}>
             <title>
-              {MARKER_LABEL[marker.kind]} — {marker.detail} — {marker.at}
+              Agent call — {marker.detail} — {marker.at}
             </title>
             <circle
               cx={cx}
               cy={cy}
-              fill={MARKER_COLOR[marker.kind]}
+              fill={AGENT_MARKER_COLOR}
               r={4}
               stroke="var(--background)"
               strokeWidth={1}

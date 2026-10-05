@@ -1,5 +1,13 @@
 import type { ApiSessionSummary } from '@runwire/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterContextProvider,
+} from '@tanstack/react-router';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
@@ -45,20 +53,33 @@ const sessionA: ApiSessionSummary = {
   costUsd: null,
   childCount: 0,
   descendantCount: 0,
+  subagentChildCount: 7,
+  subagentDescendantCount: 12,
 };
 
 const sessionB: ApiSessionSummary = { ...sessionA, id: 'b', name: 'Session B', title: 'Session B' };
 
 type DataTableProps = React.ComponentProps<typeof DataTable>;
 
-function wrapper({ children }: { children: ReactNode }) {
-  return (
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
-      {children}
-    </QueryClientProvider>
-  );
+/** Minimal router tree so the name cell's `Link` can resolve a href and
+ * navigate: the dashboard route hosts the table, and the profile target route
+ * exists so a name click can actually land on `/sessions/$id`. */
+function createTestRouter() {
+  const rootRoute = createRootRoute({ component: Outlet });
+  const indexRoute = createRoute({
+    component: () => null,
+    getParentRoute: () => rootRoute,
+    path: '/',
+  });
+  const profileRoute = createRoute({
+    component: () => null,
+    getParentRoute: () => rootRoute,
+    path: '/sessions/$id',
+  });
+  return createRouter({
+    history: createMemoryHistory({ initialEntries: ['/'] }),
+    routeTree: rootRoute.addChildren([indexRoute, profileRoute]),
+  });
 }
 
 function makeProps(overrides: Partial<DataTableProps> = {}): DataTableProps {
@@ -78,7 +99,16 @@ function makeProps(overrides: Partial<DataTableProps> = {}): DataTableProps {
 }
 
 function renderTable(overrides: Partial<DataTableProps> = {}) {
-  return render(<DataTable {...makeProps(overrides)} />, { wrapper });
+  const router = createTestRouter();
+  const RoutedWrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <RouterContextProvider router={router}>{children}</RouterContextProvider>
+    </QueryClientProvider>
+  );
+  const result = render(<DataTable {...makeProps(overrides)} />, { wrapper: RoutedWrapper });
+  return { ...result, router };
 }
 
 /** The toolbar dropdown trigger for `name` (as opposed to the same-named
@@ -121,6 +151,65 @@ describe('DataTable token totals', () => {
     // (50) would render 275.
     expect(screen.getByText('225')).toBeInTheDocument();
     expect(screen.queryByText('275')).not.toBeInTheDocument();
+  });
+});
+
+describe('DataTable session name navigation (UX-1)', () => {
+  it('links the name to the full profile route and never opens a mini profile', async () => {
+    const user = userEvent.setup();
+    const { router } = renderTable();
+
+    // Per-row param binding: each name links to its own id, not a shared one.
+    expect(screen.getByRole('link', { name: 'Session A' })).toHaveAttribute('href', '/sessions/a');
+    const nameLink = screen.getByRole('link', { name: 'Session B' });
+    expect(nameLink).toHaveAttribute('href', '/sessions/b');
+
+    await user.click(nameLink);
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/sessions/b'));
+    // The dashboard row stays mounted (the router context does not swap the
+    // matched view here) and no mini-profile chrome appears: neither the old
+    // drawer's "View details" footer link nor a dialog.
+    expect(screen.getByText('Session B')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'View details' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});
+
+describe('DataTable subagent count columns (UX-2)', () => {
+  it('shows Direct/Full tree headers and their DTO values by default, without a sort button', () => {
+    renderTable({ data: [sessionA] });
+
+    expect(screen.getByRole('columnheader', { name: 'Direct' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Full tree' })).toBeInTheDocument();
+    expect(screen.getByText('7')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
+    // Display-only: the headers are plain text, never the server-sort button.
+    expect(screen.queryByRole('button', { name: 'Direct' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Full tree' })).not.toBeInTheDocument();
+  });
+
+  it('lists human labels (not raw DTO ids) in the Columns menu and can hide a column', async () => {
+    const user = userEvent.setup();
+    renderTable({ data: [sessionA] });
+
+    await user.click(toolbarMenuTrigger(/Columns/));
+
+    // Human labels for the new columns, and the pre-existing ones too.
+    expect(await screen.findByRole('menuitemcheckbox', { name: 'Direct' })).toBeInTheDocument();
+    expect(await screen.findByRole('menuitemcheckbox', { name: 'Full tree' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Started At' })).toBeInTheDocument();
+    // Raw DTO ids never leak into the menu.
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'subagentChildCount' })).toBeNull();
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'subagentDescendantCount' })).toBeNull();
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'startedAt' })).toBeNull();
+
+    // Hiding Direct removes its header and value, leaving Full tree visible.
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Direct' }));
+    expect(screen.queryByRole('columnheader', { name: 'Direct' })).toBeNull();
+    expect(screen.getByRole('columnheader', { name: 'Full tree' })).toBeInTheDocument();
+    expect(screen.queryByText('7')).toBeNull();
+    expect(screen.getByText('12')).toBeInTheDocument();
   });
 });
 

@@ -1,6 +1,13 @@
 import type { Database, SQLQueryBindings } from 'bun:sqlite';
 import { profileScopeCte, profileScopeParams, readProfileScopeNodes } from './profile-scope';
-import type { Event, EventFilter, MergedEventsQuery, MergedEventsResponse } from './profile-types';
+import type {
+  Event,
+  EventAction,
+  EventSortField,
+  MergedEventsQuery,
+  MergedEventsResponse,
+  SortDirection,
+} from './profile-types';
 
 type EventRow = {
   stream_id: string;
@@ -15,25 +22,9 @@ type EventRow = {
   trigger: string | null;
   from_value: string | null;
   to_value: string | null;
+  action: EventAction;
+  subject: string | null;
 };
-
-/* The exact, content-free definition of the curated default. `harness` steps
- * are hook evidence; `hook` also remains accepted if a future adapter maps it
- * as a tool category. Every arm is mutually exclusive at the source kind. */
-const RELEVANT_SQL = `(
-  error = 1
-  OR kind IN ('harness', 'compaction', 'model-change', 'mode-change')
-  OR (kind = 'tool' AND category IN ('mcp', 'skill', 'agent', 'hook'))
-)`;
-
-/* G8's merged-events default (session-profile-v2 design decision): unlike
- * `relevant`, `signals` deliberately drops hook/harness and mode-change —
- * hooks fire on every tool call and would flood a globally merged table. */
-const SIGNALS_SQL = `(
-  error = 1
-  OR kind IN ('compaction', 'model-change')
-  OR (kind = 'tool' AND category IN ('mcp', 'skill', 'agent'))
-)`;
 
 /* Seven source variants, with an explicit metadata-only column list for every
  * arm. No catch-all arm means an unknown future source kind cannot leak into
@@ -73,36 +64,84 @@ profile_events(stream_id, seq, at, kind, error, model, category, tool_name, dura
   FROM steps st JOIN profile_scope ps ON ps.id = st.session_id WHERE st.kind = 'mode-change'
 )`;
 
-function eventPredicate(filter: EventFilter): string {
-  switch (filter) {
-    case 'all':
-      return '1=1';
-    case 'relevant':
-      return RELEVANT_SQL;
-    case 'signals':
-      return SIGNALS_SQL;
-    case 'mcp':
-      return "kind = 'tool' AND category = 'mcp'";
-    case 'skill':
-      return "kind = 'tool' AND category = 'skill'";
-    case 'hook':
-      return "kind = 'harness' OR (kind = 'tool' AND category = 'hook')";
-    case 'read':
-    case 'write':
-    case 'exec':
-    case 'agent':
-      return "kind = 'tool' AND category = ?";
-    case 'error':
-      return 'error = 1';
-  }
+/* Semantic "what happened" token: the tool category for tool steps, the step
+ * kind otherwise. Never NULL, so it is directly filterable/sortable. */
+const ACTION_EXPR = 'COALESCE(category, kind)';
+
+/* Metadata-only "what it acted on": model / tool name / compaction trigger /
+ * `from → to`. A turn has no subject (NULL); it is never a content field. */
+const SUBJECT_EXPR = `(CASE
+  WHEN kind = 'call' THEN model
+  WHEN kind IN ('tool', 'harness') THEN tool_name
+  WHEN kind = 'compaction' THEN trigger
+  WHEN kind IN ('model-change', 'mode-change')
+    THEN COALESCE(from_value, '?') || ' → ' || COALESCE(to_value, '?')
+  ELSE NULL
+END)`;
+
+const SORT_EXPR: Record<EventSortField, string> = {
+  time: 'at',
+  // Agent identity is the stream/session id; the display label (agentType) is
+  // a scope-node attribute, so ordering groups a session's own rows.
+  agent: 'stream_id',
+  kind: 'kind',
+  action: ACTION_EXPR,
+  subject: SUBJECT_EXPR,
+  model: 'model',
+  status: 'CASE WHEN error = 1 THEN 1 ELSE 0 END',
+};
+
+type Conditions = { sql: string; params: SQLQueryBindings[] };
+
+/** Escapes `%`/`_`/`\` so user text matches literally (see listSessions' `q`). */
+function likePattern(text: string): string {
+  return `%${text.replace(/[\\%_]/g, '\\$&')}%`;
 }
 
-function filterParams(filter: EventFilter): { sql: string; params: SQLQueryBindings[] } {
-  const sql = ` AND (${eventPredicate(filter)})`;
-  const params: SQLQueryBindings[] = ['read', 'write', 'exec', 'agent'].includes(filter)
-    ? [filter]
-    : [];
-  return { sql, params };
+/** The filter predicate shared by the count, excluded-count, and page queries. */
+function filterConditions(query: MergedEventsQuery): Conditions {
+  const clauses: string[] = [];
+  const params: SQLQueryBindings[] = [];
+
+  if (query.kind !== undefined && query.kind.length > 0) {
+    clauses.push(`kind IN (${query.kind.map(() => '?').join(', ')})`);
+    params.push(...query.kind);
+  }
+  if (query.action !== undefined && query.action.length > 0) {
+    clauses.push(`${ACTION_EXPR} IN (${query.action.map(() => '?').join(', ')})`);
+    params.push(...query.action);
+  }
+  if (query.status === 'error') {
+    clauses.push('error = 1');
+  } else if (query.status === 'ok') {
+    clauses.push('(error IS NULL OR error = 0)');
+  }
+  if (query.model !== undefined) {
+    clauses.push('model = ?');
+    params.push(query.model);
+  }
+  if (query.q !== undefined) {
+    // Metadata-only presentation surface: action, subject, and model.
+    clauses.push(
+      `(COALESCE(${ACTION_EXPR}, '') LIKE ? ESCAPE '\\'` +
+        ` OR COALESCE(${SUBJECT_EXPR}, '') LIKE ? ESCAPE '\\'` +
+        ` OR COALESCE(model, '') LIKE ? ESCAPE '\\')`,
+    );
+    const pattern = likePattern(query.q);
+    params.push(pattern, pattern, pattern);
+  }
+
+  return { sql: clauses.length === 0 ? '' : ` AND ${clauses.join(' AND ')}`, params };
+}
+
+/** Requested primary sort plus a stable tie-break so equal keys never shuffle
+ * between pages. NULL keys sort first ASC and last DESC (SQLite default). */
+function orderSql(sort: EventSortField, dir: SortDirection): string {
+  const direction = dir === 'desc' ? 'DESC' : 'ASC';
+  const parts = [`${SORT_EXPR[sort]} ${direction}`];
+  if (sort !== 'time') parts.push(`at ${direction}`);
+  parts.push('stream_id COLLATE BINARY ASC', 'seq ASC');
+  return `ORDER BY ${parts.join(', ')}`;
 }
 
 function toEvent(row: EventRow): Event {
@@ -112,6 +151,8 @@ function toEvent(row: EventRow): Event {
     seq: row.seq,
     at: row.at,
     error: row.error === null ? null : row.error !== 0,
+    action: row.action,
+    subject: row.subject,
   };
   switch (row.kind) {
     case 'call':
@@ -138,9 +179,10 @@ function toEvent(row: EventRow): Event {
 }
 
 /**
- * Metadata-only, single page of events merged by true chronology across the
- * whole scope (G8). Events without a usable `at` are never interleaved; they
- * are excluded from `items` and reported in `excludedNullAtCount`.
+ * Metadata-only, server-driven page of events merged by true chronology across
+ * the whole scope. Filtering, sorting, and pagination are all resolved in SQL;
+ * events without a usable `at` are never interleaved into `items` and are
+ * reported in `excludedNullAtCount`.
  */
 export function readProfileMergedEvents(
   db: Database,
@@ -152,31 +194,27 @@ export function readProfileMergedEvents(
   if (nodes === null) return null;
   const prefix = `${profileScopeCte(scope)}${EVENTS_CTE}`;
   const scopeParams = profileScopeParams(sessionId);
-  const filter = query.filter ?? 'signals';
-  const where = filterParams(filter);
+  const sort = query.sort ?? 'time';
+  const dir = query.dir ?? 'asc';
+  const filter = filterConditions(query);
   const limit = Math.max(1, Math.min(200, Math.floor(query.limit ?? 50)));
   const offset = Math.max(0, Math.floor(query.offset ?? 0));
 
-  const totalRow = db
-    .query(
-      `${prefix} SELECT COUNT(*) AS n FROM profile_events WHERE 1=1${where.sql} AND at IS NOT NULL`,
-    )
-    .get(...scopeParams, ...where.params) as { n: number };
-  const excludedRow = db
-    .query(
-      `${prefix} SELECT COUNT(*) AS n FROM profile_events WHERE 1=1${where.sql} AND at IS NULL`,
-    )
-    .get(...scopeParams, ...where.params) as { n: number };
-  const rows = db
-    .query(
-      `${prefix} SELECT stream_id, seq, at, kind, error, model, category, tool_name, duration_ms, trigger, from_value, to_value FROM profile_events WHERE 1=1${where.sql} AND at IS NOT NULL ORDER BY at ASC, stream_id COLLATE BINARY, seq ASC LIMIT ? OFFSET ?`,
-    )
-    .all(...scopeParams, ...where.params, limit, offset) as EventRow[];
+  const countSql = `${prefix} SELECT COUNT(*) AS n FROM profile_events WHERE at IS NOT NULL${filter.sql}`;
+  const excludedSql = `${prefix} SELECT COUNT(*) AS n FROM profile_events WHERE at IS NULL${filter.sql}`;
+  const pageSql = `${prefix} SELECT stream_id, seq, at, kind, error, model, category, tool_name, duration_ms, trigger, from_value, to_value, ${ACTION_EXPR} AS action, ${SUBJECT_EXPR} AS subject FROM profile_events WHERE at IS NOT NULL${filter.sql} ${orderSql(sort, dir)} LIMIT ? OFFSET ?`;
+
+  const totalRow = db.query(countSql).get(...scopeParams, ...filter.params) as { n: number };
+  const excludedRow = db.query(excludedSql).get(...scopeParams, ...filter.params) as {
+    n: number;
+  };
+  const rows = db.query(pageSql).all(...scopeParams, ...filter.params, limit, offset) as EventRow[];
 
   return {
     sessionId,
     scope,
-    filter,
+    sort,
+    dir,
     nodes: nodes.map((node) => ({ id: node.id, agentType: node.agentType })),
     items: rows.map(toEvent),
     total: totalRow.n,

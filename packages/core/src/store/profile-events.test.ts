@@ -60,7 +60,7 @@ function step(
 }
 
 describe('readProfileMergedEvents', () => {
-  test('emits each of the seven exact metadata-only variants without duplication', () => {
+  test('emits every variant with a stable action token and metadata-only subject', () => {
     const { db } = openStore(':memory:');
     seed(db);
     step(db, 'root', 0, 'call', { model: 'm', at: '2025-01-01T00:00:00Z' });
@@ -75,7 +75,7 @@ describe('readProfileMergedEvents', () => {
     step(db, 'root', 4, 'compaction', { trigger: 'auto', at: '2025-01-01T00:00:04Z' });
     step(db, 'root', 5, 'model-change', { from: 'a', to: 'b', at: '2025-01-01T00:00:05Z' });
     step(db, 'root', 6, 'mode-change', { from: 'x', to: 'y', at: '2025-01-01T00:00:06Z' });
-    const items = readProfileMergedEvents(db, 'root', { scope: 'own', filter: 'all' })?.items ?? [];
+    const items = readProfileMergedEvents(db, 'root', { scope: 'own' })?.items ?? [];
     expect(items.map((event) => event.kind)).toEqual([
       'call',
       'tool',
@@ -86,18 +86,64 @@ describe('readProfileMergedEvents', () => {
       'mode-change',
     ]);
     expect(items).toEqual([
-      expect.objectContaining({ kind: 'call', model: 'm', error: null }),
-      expect.objectContaining({ kind: 'tool', category: 'read', toolName: 'Read', error: true }),
-      expect.objectContaining({ kind: 'turn', durationMs: 3 }),
-      expect.objectContaining({ kind: 'harness', toolName: 'PreToolUse:Bash' }),
-      expect.objectContaining({ kind: 'compaction', trigger: 'auto' }),
-      expect.objectContaining({ kind: 'model-change', from: 'a', to: 'b' }),
-      expect.objectContaining({ kind: 'mode-change', from: 'x', to: 'y' }),
+      expect.objectContaining({
+        kind: 'call',
+        model: 'm',
+        error: null,
+        action: 'call',
+        subject: 'm',
+      }),
+      expect.objectContaining({
+        kind: 'tool',
+        category: 'read',
+        toolName: 'Read',
+        error: true,
+        action: 'read',
+        subject: 'Read',
+      }),
+      expect.objectContaining({ kind: 'turn', durationMs: 3, action: 'turn', subject: null }),
+      expect.objectContaining({
+        kind: 'harness',
+        toolName: 'PreToolUse:Bash',
+        action: 'harness',
+        subject: 'PreToolUse:Bash',
+      }),
+      expect.objectContaining({
+        kind: 'compaction',
+        trigger: 'auto',
+        action: 'compaction',
+        subject: 'auto',
+      }),
+      expect.objectContaining({
+        kind: 'model-change',
+        from: 'a',
+        to: 'b',
+        action: 'model-change',
+        subject: 'a → b',
+      }),
+      expect.objectContaining({
+        kind: 'mode-change',
+        from: 'x',
+        to: 'y',
+        action: 'mode-change',
+        subject: 'x → y',
+      }),
     ]);
     db.close();
   });
 
-  test('relevant is exactly MCP/skill/agent/hooks/changes/compaction/errors and filters run in SQL', () => {
+  test('a tool step with no category falls back to the tool action token', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    step(db, 'root', 0, 'tool', { name: 'Mystery', at: '2025-01-01T00:00:00Z' });
+    const [item] = readProfileMergedEvents(db, 'root', { scope: 'own' })?.items ?? [];
+    expect(item).toEqual(
+      expect.objectContaining({ kind: 'tool', category: null, action: 'tool', subject: 'Mystery' }),
+    );
+    db.close();
+  });
+
+  test('kind and action filters are CSV-style allow-lists and AND together', () => {
     const { db } = openStore(':memory:');
     seed(db);
     for (const [seq, category] of ['read', 'write', 'exec', 'mcp', 'skill', 'agent'].entries())
@@ -105,60 +151,127 @@ describe('readProfileMergedEvents', () => {
         category,
         at: new Date(2025, 0, 1, 0, 0, seq).toISOString(),
       });
-    step(db, 'root', 6, 'harness', { at: '2025-01-01T00:00:06Z' });
-    step(db, 'root', 7, 'compaction', { at: '2025-01-01T00:00:07Z' });
-    step(db, 'root', 8, 'model-change', { at: '2025-01-01T00:00:08Z' });
-    step(db, 'root', 9, 'mode-change', { at: '2025-01-01T00:00:09Z' });
-    step(db, 'root', 10, 'tool', { category: 'read', error: 1, at: '2025-01-01T00:00:10Z' });
-    const relevant = readProfileMergedEvents(db, 'root', { scope: 'own', filter: 'relevant' });
-    expect(relevant?.total).toBe(8);
-    expect(relevant?.items.map((e) => e.seq)).toEqual([3, 4, 5, 6, 7, 8, 9, 10]);
-    expect(
-      readProfileMergedEvents(db, 'root', { scope: 'own', filter: 'read' })?.items.map(
-        (e) => e.seq,
-      ),
-    ).toEqual([0, 10]);
-    expect(
-      readProfileMergedEvents(db, 'root', { scope: 'own', filter: 'error' })?.items.map(
-        (e) => e.seq,
-      ),
-    ).toEqual([10]);
+    step(db, 'root', 6, 'compaction', { at: '2025-01-01T00:00:06Z' });
+    step(db, 'root', 7, 'model-change', { at: '2025-01-01T00:00:07Z' });
+
+    const tools = readProfileMergedEvents(db, 'root', { kind: ['tool'] });
+    expect(tools?.items.map((e) => e.action)).toEqual([
+      'read',
+      'write',
+      'exec',
+      'mcp',
+      'skill',
+      'agent',
+    ]);
+    const actions = readProfileMergedEvents(db, 'root', {
+      action: ['mcp', 'agent', 'compaction'],
+    });
+    expect(actions?.items.map((e) => e.action)).toEqual(['mcp', 'agent', 'compaction']);
+    expect(actions?.total).toBe(3);
     db.close();
   });
 
-  test('signals is a curated subset of relevant (no hook/harness/mode-change)', () => {
+  test('status ok treats null/0 as OK and error matches only error = 1', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    for (const [seq, category] of ['read', 'write', 'exec', 'mcp', 'skill', 'agent'].entries())
-      step(db, 'root', seq, 'tool', {
-        category,
-        at: new Date(2025, 0, 1, 0, 0, seq).toISOString(),
-      });
-    step(db, 'root', 6, 'harness', { at: '2025-01-01T00:00:06Z' });
-    step(db, 'root', 7, 'compaction', { at: '2025-01-01T00:00:07Z' });
-    step(db, 'root', 8, 'model-change', { at: '2025-01-01T00:00:08Z' });
-    step(db, 'root', 9, 'mode-change', { at: '2025-01-01T00:00:09Z' });
-    step(db, 'root', 10, 'tool', { category: 'read', error: 1, at: '2025-01-01T00:00:10Z' });
-    const relevant = readProfileMergedEvents(db, 'root', { scope: 'own', filter: 'relevant' });
-    const signals = readProfileMergedEvents(db, 'root', { scope: 'own', filter: 'signals' });
-    expect(relevant?.items.map((e) => e.seq)).toEqual([3, 4, 5, 6, 7, 8, 9, 10]);
-    expect(signals?.items.map((e) => e.seq)).toEqual([3, 4, 5, 7, 8, 10]);
-    expect(signals?.items.some((e) => e.kind === 'harness')).toBe(false);
-    expect(signals?.items.some((e) => e.kind === 'mode-change')).toBe(false);
+    step(db, 'root', 0, 'tool', { category: 'read', error: 0, at: '2025-01-01T00:00:00Z' });
+    step(db, 'root', 1, 'tool', { category: 'read', at: '2025-01-01T00:00:01Z' });
+    step(db, 'root', 2, 'tool', { category: 'read', error: 1, at: '2025-01-01T00:00:02Z' });
+    expect(readProfileMergedEvents(db, 'root', { status: 'ok' })?.items.map((e) => e.seq)).toEqual([
+      0, 1,
+    ]);
+    expect(
+      readProfileMergedEvents(db, 'root', { status: 'error' })?.items.map((e) => e.seq),
+    ).toEqual([2]);
     db.close();
   });
 
-  test('merges across sessions in true at-ASC chronological order with a (sessionId, seq) tie-break, excluding/counting null-at rows', () => {
+  test('model filters to an exact model name on call/tool rows only', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    step(db, 'root', 0, 'call', { model: 'model-a', at: '2025-01-01T00:00:00Z' });
+    step(db, 'root', 1, 'call', { model: 'model-b', at: '2025-01-01T00:00:01Z' });
+    step(db, 'root', 2, 'compaction', { trigger: 'auto', at: '2025-01-01T00:00:02Z' });
+    const filtered = readProfileMergedEvents(db, 'root', { model: 'model-a' });
+    expect(filtered?.items.map((e) => e.seq)).toEqual([0]);
+    db.close();
+  });
+
+  test('q searches action, subject and model metadata and escapes LIKE wildcards', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    step(db, 'root', 0, 'tool', {
+      category: 'read',
+      name: 'Needle%A',
+      at: '2025-01-01T00:00:00Z',
+    });
+    step(db, 'root', 1, 'tool', { category: 'exec', name: 'bash', at: '2025-01-01T00:00:01Z' });
+    step(db, 'root', 2, 'call', { model: 'model-x', at: '2025-01-01T00:00:02Z' });
+    expect(readProfileMergedEvents(db, 'root', { q: 'Needle%A' })?.items.map((e) => e.seq)).toEqual(
+      [0],
+    );
+    // A bare `%` must match literally, not act as a wildcard.
+    expect(readProfileMergedEvents(db, 'root', { q: '%' })?.items.map((e) => e.seq)).toEqual([0]);
+    expect(readProfileMergedEvents(db, 'root', { q: 'model-x' })?.items.map((e) => e.seq)).toEqual([
+      2,
+    ]);
+    expect(readProfileMergedEvents(db, 'root', { q: 'exec' })?.items.map((e) => e.seq)).toEqual([
+      1,
+    ]);
+    db.close();
+  });
+
+  test('sorts by a whitelisted field and direction with a stable tie-break', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    step(db, 'agent-b', 0, 'tool', { category: 'mcp', at: '2025-01-01T00:00:01Z' });
+    step(db, 'agent-a', 0, 'tool', { category: 'read', at: '2025-01-01T00:00:01Z' });
+    step(db, 'root', 0, 'compaction', { trigger: 'manual', at: '2025-01-01T00:00:03Z' });
+    step(db, 'root', 1, 'tool', { category: 'read', error: 1, at: '2025-01-01T00:00:02Z' });
+
+    const timeAsc = readProfileMergedEvents(db, 'root')!;
+    expect(timeAsc.sort).toBe('time');
+    expect(timeAsc.dir).toBe('asc');
+    expect(timeAsc.items.map((e) => [e.streamId, e.seq])).toEqual([
+      ['agent-a', 0],
+      ['agent-b', 0],
+      ['root', 1],
+      ['root', 0],
+    ]);
+
+    const timeDesc = readProfileMergedEvents(db, 'root', { sort: 'time', dir: 'desc' })!;
+    expect(timeDesc.items.map((e) => e.seq)).toEqual([0, 1, 0, 0]);
+
+    const byAction = readProfileMergedEvents(db, 'root', { sort: 'action' })!;
+    expect(byAction.items.map((e) => e.action)).toEqual(['compaction', 'mcp', 'read', 'read']);
+
+    const byStatus = readProfileMergedEvents(db, 'root', { sort: 'status', dir: 'desc' })!;
+    expect(byStatus.items[0]?.error).toBe(true);
+    db.close();
+  });
+
+  test('sorts by subject across kinds (null turn subject first ASC)', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    step(db, 'root', 0, 'turn', { at: '2025-01-01T00:00:00Z' });
+    step(db, 'root', 1, 'tool', { category: 'read', name: 'alpha', at: '2025-01-01T00:00:01Z' });
+    step(db, 'root', 2, 'compaction', { trigger: 'beta', at: '2025-01-01T00:00:02Z' });
+    const asc = readProfileMergedEvents(db, 'root', { sort: 'subject' })!;
+    expect(asc.items.map((e) => e.subject)).toEqual([null, 'alpha', 'beta']);
+    const desc = readProfileMergedEvents(db, 'root', { sort: 'subject', dir: 'desc' })!;
+    expect(desc.items.map((e) => e.subject)).toEqual(['beta', 'alpha', null]);
+    db.close();
+  });
+
+  test('merges across sessions and excludes/counts null-at rows without dropping timed rows', () => {
     const { db } = openStore(':memory:');
     seed(db);
     step(db, 'agent-a', 0, 'tool', { category: 'mcp', at: '2025-01-01T00:00:01Z' });
     step(db, 'agent-a', 1, 'tool', { category: 'mcp', at: '2025-01-01T00:00:01Z' });
     step(db, 'agent-b', 0, 'tool', { category: 'skill', at: '2025-01-01T00:00:01Z' });
     step(db, 'root', 0, 'compaction', { at: '2025-01-01T00:00:02Z' });
-    step(db, 'root', 1, 'tool', { category: 'read', at: '2025-01-01T00:00:03Z' });
     step(db, 'agent-a', 2, 'model-change', { at: null });
     const result = readProfileMergedEvents(db, 'root')!;
-    expect(result.filter).toBe('signals');
     expect(result.items.map((e) => [e.streamId, e.seq, e.at])).toEqual([
       ['agent-a', 0, '2025-01-01T00:00:01Z'],
       ['agent-a', 1, '2025-01-01T00:00:01Z'],
@@ -167,29 +280,10 @@ describe('readProfileMergedEvents', () => {
     ]);
     expect(result.total).toBe(4);
     expect(result.excludedNullAtCount).toBe(1);
-    const all = readProfileMergedEvents(db, 'root', { filter: 'all' })!;
-    expect(all.total).toBe(5); // signals' 4 plus the excluded (by signals) 'read' tool call
-    expect(all.excludedNullAtCount).toBe(1);
     db.close();
   });
 
-  test('excludes and counts null-at rows without inventing or dropping timed rows', () => {
-    const { db } = openStore(':memory:');
-    seed(db);
-    step(db, 'agent-a', 0, 'tool', { category: 'mcp', at: '2025-01-01T00:00:01Z' });
-    step(db, 'agent-b', 0, 'tool', { category: 'skill', at: '2025-01-01T00:00:02Z' });
-    step(db, 'agent-b', 1, 'tool', { category: 'skill', at: null });
-    step(db, 'root', 0, 'compaction', { at: '2025-01-01T00:00:03Z' });
-    step(db, 'root', 1, 'tool', { category: 'read', at: '2025-01-01T00:00:04Z' });
-    const merged = readProfileMergedEvents(db, 'root', { filter: 'signals' })!;
-    const fromMerged = merged.items.map((e) => `${e.streamId}:${e.seq}`).sort();
-    expect(fromMerged).toEqual(['agent-a:0', 'agent-b:0', 'root:0'].sort());
-    expect(fromMerged).toHaveLength(3);
-    expect(merged.excludedNullAtCount).toBe(1);
-    db.close();
-  });
-
-  test('limit defaults to 50 clamped to [1,200] and offset to >=0, and pages through in order', () => {
+  test('limit defaults to 50 clamped to [1,200] and offset to >=0, and pages in order', () => {
     const { db } = openStore(':memory:');
     seed(db);
     for (let i = 0; i < 5; i += 1)
@@ -200,10 +294,12 @@ describe('readProfileMergedEvents', () => {
     const page1 = readProfileMergedEvents(db, 'root', { limit: 2, offset: 0 })!;
     expect(page1.items.map((e) => e.seq)).toEqual([0, 1]);
     expect(page1.limit).toBe(2);
-    const page2 = readProfileMergedEvents(db, 'root', { limit: 2, offset: 2 })!;
-    expect(page2.items.map((e) => e.seq)).toEqual([2, 3]);
-    const page3 = readProfileMergedEvents(db, 'root', { limit: 2, offset: 4 })!;
-    expect(page3.items.map((e) => e.seq)).toEqual([4]);
+    expect(
+      readProfileMergedEvents(db, 'root', { limit: 2, offset: 2 })!.items.map((e) => e.seq),
+    ).toEqual([2, 3]);
+    expect(
+      readProfileMergedEvents(db, 'root', { limit: 2, offset: 4 })!.items.map((e) => e.seq),
+    ).toEqual([4]);
     expect(readProfileMergedEvents(db, 'root', { limit: 0 })!.limit).toBe(1);
     expect(readProfileMergedEvents(db, 'root', { limit: 9999 })!.limit).toBe(200);
     expect(readProfileMergedEvents(db, 'root', { offset: -5 })!.offset).toBe(0);
@@ -211,33 +307,18 @@ describe('readProfileMergedEvents', () => {
     db.close();
   });
 
-  test('tool rows carry the source step model (value when seeded, null when absent)', () => {
+  test('scope own isolates the root, tree covers descendants', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    step(db, 'root', 0, 'tool', {
-      category: 'read',
-      name: 'Read',
-      model: 'model-x',
-      at: '2025-01-01T00:00:00Z',
-    });
-    step(db, 'root', 1, 'tool', {
-      category: 'write',
-      name: 'Write',
-      at: '2025-01-01T00:00:01Z',
-    });
-    const items = readProfileMergedEvents(db, 'root', { scope: 'own', filter: 'all' })?.items ?? [];
-    expect(items).toHaveLength(2);
-    expect(items[0]).toEqual(
-      expect.objectContaining({
-        kind: 'tool',
-        category: 'read',
-        toolName: 'Read',
-        model: 'model-x',
-      }),
-    );
-    expect(items[1]).toEqual(
-      expect.objectContaining({ kind: 'tool', category: 'write', toolName: 'Write', model: null }),
-    );
+    step(db, 'root', 0, 'tool', { category: 'mcp', at: '2025-01-01T00:00:01Z' });
+    step(db, 'agent-a', 0, 'tool', { category: 'mcp', at: '2025-01-01T00:00:02Z' });
+    step(db, 'outside', 0, 'tool', { category: 'mcp', at: '2025-01-01T00:00:03Z' });
+    expect(
+      readProfileMergedEvents(db, 'root', { scope: 'own' })?.items.map((e) => e.streamId),
+    ).toEqual(['root']);
+    expect(
+      readProfileMergedEvents(db, 'root', { scope: 'tree' })?.items.map((e) => e.streamId),
+    ).toEqual(['root', 'agent-a']);
     db.close();
   });
 });

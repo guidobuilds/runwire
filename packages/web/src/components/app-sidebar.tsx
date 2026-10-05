@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { NavMain, type NavMainItem } from '@/components/nav-main';
 import { NavSecondary } from '@/components/nav-secondary';
+import { RunwireMark } from '@/components/runwire-mark';
 import { Button } from '@/components/ui/button';
 import {
   Sidebar,
@@ -154,13 +155,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               className="data-[slot=sidebar-menu-button]:p-1.5!"
               render={<a href="/sessions" />}
             >
-              <img
-                src="/runwire-logo.svg"
-                alt=""
-                aria-hidden="true"
-                className="h-4 w-auto shrink-0 dark:invert"
-              />
-              <span className="text-base font-semibold">runwire</span>
+              <RunwireMark className="size-5 shrink-0" />
+              <span className="text-base font-semibold tracking-tight">runwire</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

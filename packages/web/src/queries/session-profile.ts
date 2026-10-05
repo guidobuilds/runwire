@@ -1,4 +1,12 @@
-import type { EventFilter, Scope, TokenField } from '@runwire/core';
+import type {
+  EventAction,
+  EventKind,
+  EventSortField,
+  EventStatus,
+  Scope,
+  SortDirection,
+  TokenField,
+} from '@runwire/core';
 import {
   infiniteQueryOptions,
   keepPreviousData,
@@ -35,7 +43,13 @@ export type ProfileTimelineSelection = {
 
 export type ProfileMergedEventsSelection = {
   scope: Scope;
-  filter: EventFilter;
+  sort?: EventSortField;
+  dir?: SortDirection;
+  kind?: readonly EventKind[];
+  action?: readonly EventAction[];
+  status?: EventStatus;
+  model?: string;
+  q?: string;
   limit?: number;
   offset?: number;
   refresh?: number;
@@ -80,7 +94,13 @@ export const sessionProfileKeys = {
       id,
       'merged',
       selection.scope,
-      selection.filter,
+      selection.sort ?? null,
+      selection.dir ?? null,
+      stableIds(selection.kind),
+      stableIds(selection.action),
+      selection.status ?? null,
+      selection.model ?? null,
+      selection.q ?? null,
       selection.limit ?? null,
       selection.offset ?? null,
       selection.refresh ?? 0,
