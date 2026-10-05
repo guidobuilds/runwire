@@ -3,6 +3,7 @@ import {
   buildSessionsQuery,
   buildSessionsStatsQuery,
   DEFAULT_PAGE_SIZE,
+  DEFAULT_SORT,
   DURATION_MINUTES,
   EMPTY_FILTERS,
   PAGE_SIZES,
@@ -68,10 +69,18 @@ describe('buildSessionsQuery sort', () => {
     expect(buildSessionsQuery(EMPTY_FILTERS, null, pagination).sort).toBeUndefined();
   });
 
+  it('exposes the server default as newest lastActivity first', () => {
+    // A `null` client sort sends no `sort` param, so the UI must render this
+    // same field/direction as its default indicator.
+    expect(DEFAULT_SORT).toEqual({ id: 'lastActivity', desc: true });
+  });
+
   it.each([
     [{ id: 'name', desc: false }, 'name'],
     [{ id: 'name', desc: true }, '-name'],
     [{ id: 'startedAt', desc: false }, 'startedAt'],
+    [{ id: 'lastActivity', desc: false }, 'lastActivity'],
+    [{ id: 'lastActivity', desc: true }, '-lastActivity'],
     [{ id: 'cost', desc: true }, '-cost'],
   ] as const)('serializes %o as %s', (sort: SessionsSortState, expected: string) => {
     expect(buildSessionsQuery(EMPTY_FILTERS, sort, pagination).sort).toBe(expected);

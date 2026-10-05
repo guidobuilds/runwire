@@ -114,7 +114,7 @@ const VALID_STATS_QUERY_PARAMS = new Set([
 ]);
 
 /** A whitelisted `sort` field, optionally `-`-prefixed for DESC (design D-3). */
-const SORT_PATTERN = /^-?(name|harness|startedAt|duration|tokens|cost)$/;
+const SORT_PATTERN = /^-?(name|harness|startedAt|lastActivity|duration|tokens|cost)$/;
 
 /** A strict 400 for any unknown, duplicate, or invalid query parameter (D-3/D-13). */
 function invalidQueryParam(parameter: string): Response {

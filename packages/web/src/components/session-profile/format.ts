@@ -2,6 +2,10 @@ import type { TokenField } from '@runwire/core';
 
 // Shared, pure, locale-safe formatting helpers for the session profile page.
 // See .forge/session-profile-v2/design.md "Web layer files" and grill.md G10.
+// Date+time formatting is re-exported from the shared date module so the
+// dashboard and the profile header can never drift.
+
+export { formatDateTime } from '@/components/relative-date';
 
 export const TOKEN_FIELDS = [
   'uncachedInput',
@@ -35,16 +39,6 @@ export function formatNumber(value: number): string {
 /** `null` means the source never reported this field (not zero). */
 export function formatReported(value: number | null): string {
   return value === null ? 'Not reported' : formatNumber(value);
-}
-
-export function formatDateTime(iso: string | null): string {
-  if (!iso) return '—';
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
 }
 
 /** Fixed HH:MM:SS (24h, local time, zero-padded) — a stable shape across

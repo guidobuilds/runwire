@@ -2,6 +2,7 @@ import type { ApiSessionDetail, ApiSessionSummary, ContextMetrics } from '@runwi
 import { Link } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { HarnessIdentity } from '@/components/harness-identity';
+import { RelativeDate } from '@/components/relative-date';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,7 +12,6 @@ import {
   FIELD_LABELS,
   formatCompact,
   formatCurrency,
-  formatDateTime,
   formatDuration,
   TOKEN_FIELDS,
 } from './format';
@@ -214,8 +214,8 @@ export function Header({ session, refresh = 0 }: HeaderProps) {
             label="Project"
             value={session.project ? session.project.name : 'no project'}
           />
-          <DefinitionField label="Started" value={formatDateTime(session.startedAt)} />
-          <DefinitionField label="Ended" value={formatDateTime(session.endedAt)} />
+          <DefinitionField label="Started" value={<RelativeDate value={session.startedAt} />} />
+          <DefinitionField label="Ended" value={<RelativeDate value={session.endedAt} />} />
           <DefinitionField label="Duration" value={formatDuration(session.durationMs)} />
           <DefinitionField label="Cost" value={formatCurrency(session.costUsd)} />
         </dl>

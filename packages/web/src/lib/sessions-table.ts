@@ -1,10 +1,28 @@
 import type { ListSessionsQuery } from '@runwire/core';
 
 /** Server-sortable columns of the sessions table. */
-export type SortField = 'name' | 'harness' | 'startedAt' | 'duration' | 'tokens' | 'cost';
+export type SortField =
+  | 'name'
+  | 'harness'
+  | 'startedAt'
+  | 'lastActivity'
+  | 'duration'
+  | 'tokens'
+  | 'cost';
 
 /** A single active server sort, or `null` for the server default order. */
 export type SessionsSortState = { id: SortField; desc: boolean } | null;
+
+/**
+ * The server's default order when no `sort` param is sent: newest real tree
+ * activity first (`lastActivity DESC, id ASC`). The UI renders this as the
+ * active indicator while `sort` is `null`, so the visible state and the
+ * server order always agree.
+ */
+export const DEFAULT_SORT: { id: SortField; desc: boolean } = {
+  id: 'lastActivity',
+  desc: true,
+};
 
 /** The table's toolbar filter values. Unlike the old URL shape every field is
  * present; "unset" is encoded as `''` / `[]` rather than an absent key. */

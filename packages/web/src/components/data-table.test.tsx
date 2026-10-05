@@ -13,6 +13,7 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { DataTable } from '@/components/data-table';
+import { formatDateTime } from '@/components/relative-date';
 import { EMPTY_FILTERS, type SessionsFilters } from '@/lib/sessions-table';
 
 // The props-data swap regression from the original f4 suite: the table must
@@ -31,6 +32,7 @@ const sessionA: ApiSessionSummary = {
   agentType: null,
   startedAt: null,
   endedAt: null,
+  lastActivity: null,
   durationMs: null,
   modelPrimary: null,
   modelsOwn: [],
@@ -58,6 +60,14 @@ const sessionA: ApiSessionSummary = {
 };
 
 const sessionB: ApiSessionSummary = { ...sessionA, id: 'b', name: 'Session B', title: 'Session B' };
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** An ISO timestamp unambiguously `daysAgo` old (one-minute buffer so real
+ * clock drift cannot cross a whole-unit boundary). */
+function pastIso(daysAgo: number): string {
+  return new Date(Date.now() - daysAgo * DAY_MS - 60_000).toISOString();
+}
 
 type DataTableProps = React.ComponentProps<typeof DataTable>;
 
@@ -210,6 +220,176 @@ describe('DataTable subagent count columns (UX-2)', () => {
     expect(screen.getByRole('columnheader', { name: 'Full tree' })).toBeInTheDocument();
     expect(screen.queryByText('7')).toBeNull();
     expect(screen.getByText('12')).toBeInTheDocument();
+  });
+});
+
+describe('DataTable date column toggling (T5)', () => {
+  const startedA = pastIso(3);
+  const startedB = pastIso(5);
+  const lastA = pastIso(1);
+  const lastB = pastIso(2);
+
+  const datedA: ApiSessionSummary = { ...sessionA, startedAt: startedA, lastActivity: lastA };
+  const datedB: ApiSessionSummary = { ...sessionB, startedAt: startedB, lastActivity: lastB };
+
+  function renderDated(overrides: Partial<DataTableProps> = {}) {
+    return renderTable({ data: [datedA, datedB], total: 2, ...overrides });
+  }
+
+  it('switches every date in the clicked column together and leaves the other column relative', () => {
+    renderDated();
+
+    expect(screen.getByRole('button', { name: '3d ago' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '5d ago' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '3d ago' }));
+
+    // Both Started At cells switched, not just the clicked one.
+    expect(screen.getByRole('button', { name: formatDateTime(startedA) })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: formatDateTime(startedB) })).toBeInTheDocument();
+    // Last Activity is untouched.
+    expect(screen.getByRole('button', { name: '1d ago' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '2d ago' })).toBeInTheDocument();
+  });
+
+  it('toggles the whole column back on a second click', () => {
+    renderDated();
+
+    fireEvent.click(screen.getByRole('button', { name: '3d ago' }));
+    fireEvent.click(screen.getByRole('button', { name: formatDateTime(startedA) }));
+
+    expect(screen.getByRole('button', { name: '3d ago' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '5d ago' })).toBeInTheDocument();
+  });
+
+  it('keeps Started At and Last Activity column states independent', () => {
+    renderDated();
+
+    fireEvent.click(screen.getByRole('button', { name: '1d ago' }));
+
+    expect(screen.getByRole('button', { name: formatDateTime(lastA) })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: formatDateTime(lastB) })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '3d ago' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '5d ago' })).toBeInTheDocument();
+  });
+
+  it('never changes a dashboard date format on hover, before or after toggling', () => {
+    renderDated();
+
+    // While the pointer is over the relative cell it must still read relative.
+    const relative = screen.getByRole('button', { name: '3d ago' });
+    fireEvent.mouseEnter(relative);
+    expect(screen.getByRole('button', { name: '3d ago' })).toBeInTheDocument();
+    fireEvent.mouseLeave(relative);
+
+    fireEvent.click(relative);
+    const absolute = screen.getByRole('button', { name: formatDateTime(startedA) });
+    fireEvent.mouseEnter(absolute);
+    expect(screen.getByRole('button', { name: formatDateTime(startedA) })).toBeInTheDocument();
+    fireEvent.mouseLeave(absolute);
+    expect(screen.getByRole('button', { name: formatDateTime(startedA) })).toBeInTheDocument();
+  });
+
+  it('keeps the column mode across a mounted data refresh/rerender', () => {
+    const { rerender } = renderDated();
+    fireEvent.click(screen.getByRole('button', { name: '3d ago' }));
+
+    // A refetch hands the table a fresh array with new row identities.
+    rerender(<DataTable {...makeProps({ data: [{ ...datedA }, { ...datedB }] })} />);
+
+    expect(screen.getByRole('button', { name: formatDateTime(startedA) })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: formatDateTime(startedB) })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '1d ago' })).toBeInTheDocument();
+  });
+
+  it('toggles the whole column with Enter/Space and never navigates the row', async () => {
+    const user = userEvent.setup();
+    const { router } = renderDated();
+
+    const cell = screen.getByRole('button', { name: '3d ago' });
+    cell.focus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('button', { name: formatDateTime(startedA) })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: formatDateTime(startedB) })).toBeInTheDocument();
+
+    await user.keyboard(' ');
+    expect(screen.getByRole('button', { name: '3d ago' })).toBeInTheDocument();
+
+    expect(router.state.location.pathname).toBe('/');
+  });
+
+  it('leaves a null date as a plain em dash through a column toggle', () => {
+    const lastAt = pastIso(1);
+    renderTable({ data: [{ ...sessionA, startedAt: null, lastActivity: lastAt }], total: 1 });
+
+    // The Started At cell has no control to activate.
+    expect(screen.queryByRole('button', { name: '—' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '1d ago' }));
+
+    expect(screen.queryByRole('button', { name: '—' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: formatDateTime(lastAt) })).toBeInTheDocument();
+  });
+});
+
+describe('DataTable last activity column', () => {
+  it('adds a sortable Last Activity header and keeps Started At', () => {
+    renderTable();
+
+    expect(screen.getByRole('columnheader', { name: 'Last Activity' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Started At' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Last Activity' })).toBeInTheDocument();
+  });
+
+  it('labels the column in the Columns menu and never leaks the raw DTO id', async () => {
+    const user = userEvent.setup();
+    renderTable();
+
+    await user.click(toolbarMenuTrigger(/Columns/));
+    expect(
+      await screen.findByRole('menuitemcheckbox', { name: 'Last Activity' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'lastActivity' })).toBeNull();
+  });
+
+  it('renders Started At and Last Activity as relative dates by default', () => {
+    const startedAt = pastIso(3);
+    const lastActivity = pastIso(1);
+    renderTable({ data: [{ ...sessionA, startedAt, lastActivity }] });
+
+    expect(screen.getByRole('button', { name: '3d ago' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '1d ago' })).toBeInTheDocument();
+  });
+
+  it('marks Last Activity as the active descending sort while the sort is null (server default)', () => {
+    renderTable({ sort: null });
+
+    const lastActivity = screen.getByRole('button', { name: 'Last Activity' });
+    expect(lastActivity.querySelector('.lucide-arrow-down')).not.toBeNull();
+
+    const startedAt = screen.getByRole('button', { name: 'Started At' });
+    expect(startedAt.querySelector('.lucide-arrow-down')).toBeNull();
+    expect(startedAt.querySelector('.lucide-chevrons-up-down')).not.toBeNull();
+  });
+
+  it('cycles Last Activity asc -> desc -> default on header clicks, preserving the 3-state cycle', () => {
+    const onSortChange = vi.fn();
+    const { rerender } = renderTable({ sort: null, onSortChange });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Last Activity' }));
+    expect(onSortChange).toHaveBeenLastCalledWith({ id: 'lastActivity', desc: false });
+
+    rerender(
+      <DataTable {...makeProps({ sort: { id: 'lastActivity', desc: false }, onSortChange })} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Last Activity' }));
+    expect(onSortChange).toHaveBeenLastCalledWith({ id: 'lastActivity', desc: true });
+
+    rerender(
+      <DataTable {...makeProps({ sort: { id: 'lastActivity', desc: true }, onSortChange })} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Last Activity' }));
+    expect(onSortChange).toHaveBeenLastCalledWith(null);
   });
 });
 

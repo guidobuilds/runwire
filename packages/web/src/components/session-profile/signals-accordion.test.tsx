@@ -35,6 +35,7 @@ const baseSummary: ApiSessionSummary = {
   agentType: null,
   startedAt: null,
   endedAt: null,
+  lastActivity: null,
   durationMs: null,
   modelPrimary: null,
   modelsOwn: [],

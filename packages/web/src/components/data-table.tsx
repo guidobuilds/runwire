@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import * as React from 'react';
 import { HarnessIcon, HarnessIdentity } from '@/components/harness-identity';
+import { RelativeDate } from '@/components/relative-date';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -59,6 +60,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
+  DEFAULT_SORT,
   PAGE_SIZES,
   type SessionsFilters,
   type SessionsSortState,
@@ -107,6 +109,7 @@ const COLUMN_LABELS: Record<string, string> = {
   name: 'Name',
   harness: 'Harness',
   startedAt: 'Started At',
+  lastActivity: 'Last Activity',
   duration: 'Duration',
   tokens: 'Tokens',
   cost: 'Cost',
@@ -114,9 +117,15 @@ const COLUMN_LABELS: Record<string, string> = {
   subagentDescendantCount: 'Full tree',
 };
 
-/** The sorted state to display for a column (server-owned sort). */
+/** The sorted state to display for a column (server-owned sort). With no
+ * explicit sort the server orders by `DEFAULT_SORT`, so that column shows the
+ * active direction instead of an unsorted chevron. */
 function toSortedState(sort: SessionsSortState, id: SortField): false | 'asc' | 'desc' {
-  if (!sort || sort.id !== id) return false;
+  if (!sort) {
+    if (DEFAULT_SORT.id !== id) return false;
+    return DEFAULT_SORT.desc ? 'desc' : 'asc';
+  }
+  if (sort.id !== id) return false;
   return sort.desc ? 'desc' : 'asc';
 }
 
@@ -132,14 +141,6 @@ function sumTokens(totals: ApiTokenTotals): number {
   // breakdown and is never added here (it is already counted inside `output`
   // for harnesses that report it that way, so adding it double-counts).
   return totals.uncachedInput + totals.cachedInput + totals.cacheWrite + totals.output;
-}
-
-function formatDateTime(iso: string | null): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
 }
 
 function formatDuration(ms: number | null): string {
@@ -226,6 +227,18 @@ export function DataTable({
 }) {
   const [columnVisibility, setColumnVisibility] = React.useState<ColumnVisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState({});
+  // Per-column date format, owned by the mounted table so it survives refetch
+  // rerenders. Started At and Last Activity toggle independently; nothing is
+  // persisted (no storage or global preferences).
+  const [absoluteDateColumns, setAbsoluteDateColumns] = React.useState({
+    startedAt: false,
+    lastActivity: false,
+  });
+  // Read by the memoized column cells so the `columns` identity stays stable
+  // across a toggle. Re-creating the columns would remount the date controls
+  // and drop keyboard focus after Enter/Space.
+  const absoluteDateColumnsRef = React.useRef(absoluteDateColumns);
+  absoluteDateColumnsRef.current = absoluteDateColumns;
 
   const { data: harnessOptions, isPending: harnessesPending } = useHarnesses();
 
@@ -303,7 +316,40 @@ export function DataTable({
               onToggle={() => onSortChange(cycleSort(sort, 'startedAt'))}
             />
           ),
-          cell: ({ getValue }) => formatDateTime(getValue()),
+          cell: ({ getValue }) => (
+            <RelativeDate
+              value={getValue()}
+              showAbsolute={absoluteDateColumnsRef.current.startedAt}
+              onToggle={() =>
+                setAbsoluteDateColumns((previous) => ({
+                  ...previous,
+                  startedAt: !previous.startedAt,
+                }))
+              }
+            />
+          ),
+        }),
+        columnHelper.accessor('lastActivity', {
+          id: 'lastActivity',
+          header: () => (
+            <SortableHeader
+              label="Last Activity"
+              sorted={toSortedState(sort, 'lastActivity')}
+              onToggle={() => onSortChange(cycleSort(sort, 'lastActivity'))}
+            />
+          ),
+          cell: ({ getValue }) => (
+            <RelativeDate
+              value={getValue()}
+              showAbsolute={absoluteDateColumnsRef.current.lastActivity}
+              onToggle={() =>
+                setAbsoluteDateColumns((previous) => ({
+                  ...previous,
+                  lastActivity: !previous.lastActivity,
+                }))
+              }
+            />
+          ),
         }),
         columnHelper.accessor('durationMs', {
           id: 'duration',

@@ -483,6 +483,7 @@ describe('createServer /api/sessions query-param strictness', () => {
   test('sort outside the whitelist (or wrong case) returns 400', async () => {
     await expect400('?sort=bogus', 'sort');
     await expect400('?sort=startedat', 'sort');
+    await expect400('?sort=lastactivity', 'sort');
     await expect400('?sort=', 'sort');
   });
 
@@ -493,10 +494,66 @@ describe('createServer /api/sessions query-param strictness', () => {
   test('a valid sort field is accepted (200)', async () => {
     const { store, server, base } = await startServer();
     try {
-      for (const sort of ['name', '-harness', 'startedAt', 'duration', '-tokens', 'cost']) {
+      for (const sort of [
+        'name',
+        '-harness',
+        'startedAt',
+        'lastActivity',
+        '-lastActivity',
+        'duration',
+        '-tokens',
+        'cost',
+      ]) {
         const res = await fetch(`${base}/api/sessions?sort=${sort}`);
         expect(res.status, sort).toBe(200);
       }
+    } finally {
+      server.stop();
+      store.close();
+    }
+  });
+
+  test('default order is lastActivity DESC and the explicit sorts round-trip', async () => {
+    const { store, server, base } = await startServer();
+    try {
+      // root1 starts later (2024-01-02) but has no events past that; root2 starts
+      // earlier yet its descendant is the most recent activity (2024-06-01).
+      store.db.run(
+        `INSERT INTO sessions (
+           id, harness_id, project_key, parent_id, depth, started_at, ended_at,
+           source_path, source_size, source_mtime
+         ) VALUES ('fake:root2', 'fake', 'p1', NULL, 0,
+           '2024-01-01T00:00:00Z', '2024-01-01T00:10:00Z', '/fake/root2.jsonl', 1, 1)`,
+      );
+      store.db.run(
+        `INSERT INTO sessions (
+           id, harness_id, project_key, parent_id, depth, started_at, ended_at,
+           source_path, source_size, source_mtime
+         ) VALUES ('fake:root2/child', 'fake', 'p1', 'fake:root2', 0,
+           '2024-06-01T00:00:00Z', '2024-06-01T00:00:00Z', '/fake/root2-child.jsonl', 1, 1)`,
+      );
+      recomputeRollups(store.db);
+
+      const items = async (query: string) => {
+        const res = await fetch(`${base}/api/sessions${query}`);
+        expect(res.status, query).toBe(200);
+        return ((await res.json()) as { items: { id: string; lastActivity: string | null }[] })
+          .items;
+      };
+
+      // Default is most-recent-activity first, which is NOT started_at order here.
+      const byDefault = await items('');
+      expect(byDefault.map((s) => s.id)).toEqual(['fake:root2', 'fake:root1']);
+      expect(byDefault[0]!.lastActivity).toBe('2024-06-01T00:00:00Z');
+
+      expect((await items('?sort=lastActivity')).map((s) => s.id)).toEqual([
+        'fake:root1',
+        'fake:root2',
+      ]);
+      expect((await items('?sort=-lastActivity')).map((s) => s.id)).toEqual([
+        'fake:root2',
+        'fake:root1',
+      ]);
     } finally {
       server.stop();
       store.close();

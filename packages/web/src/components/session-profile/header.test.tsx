@@ -14,7 +14,16 @@ import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { server } from '@/mocks/node';
 import { mockProfileContextTree, mockProfileModelsTree } from '@/mocks/session-profile';
+import { formatDateTime } from './format';
 import { Header } from './header';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** An ISO timestamp unambiguously `daysAgo` old (one-minute buffer so real
+ * clock drift cannot cross a whole-unit boundary). */
+function pastIso(daysAgo: number): string {
+  return new Date(Date.now() - daysAgo * DAY_MS - 60_000).toISOString();
+}
 
 function queryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -67,6 +76,7 @@ const baseSummary: ApiSessionSummary = {
   agentType: null,
   startedAt: '2026-09-01T10:00:00.000Z',
   endedAt: '2026-09-01T10:30:00.000Z',
+  lastActivity: '2026-09-01T10:30:00.000Z',
   durationMs: 1_800_000,
   modelPrimary: 'claude-sonnet-5',
   modelsOwn: ['claude-sonnet-5'],
@@ -203,6 +213,41 @@ describe('Header — session navigation', () => {
     await renderHeader(detail({ children: [childSummary] }));
     expect(screen.queryByText('Child sessions')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: childSummary.name })).not.toBeInTheDocument();
+  });
+});
+
+describe('Header — relative Started/Ended dates', () => {
+  it('renders Started and Ended relative to now by default', async () => {
+    await renderHeader(detail({ startedAt: pastIso(3), endedAt: pastIso(1) }));
+
+    expect(screen.getByRole('button', { name: '3d ago' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '1d ago' })).toBeInTheDocument();
+  });
+
+  it('reveals the absolute date on hover and restores relative on unhover', async () => {
+    const startedAt = pastIso(3);
+    await renderHeader(detail({ startedAt }));
+    const button = screen.getByRole('button', { name: '3d ago' });
+
+    await userEvent.hover(button);
+    await waitFor(() => expect(button).toHaveTextContent(formatDateTime(startedAt)));
+
+    await userEvent.unhover(button);
+    await waitFor(() => expect(button).toHaveTextContent('3d ago'));
+  });
+
+  it('pins only the clicked field and leaves the sibling date relative', async () => {
+    const startedAt = pastIso(3);
+    await renderHeader(detail({ startedAt, endedAt: pastIso(1) }));
+    const started = screen.getByRole('button', { name: '3d ago' });
+    const ended = screen.getByRole('button', { name: '1d ago' });
+
+    await userEvent.click(started);
+
+    expect(started).toHaveAttribute('aria-pressed', 'true');
+    expect(started).toHaveTextContent(formatDateTime(startedAt));
+    expect(ended).toHaveAttribute('aria-pressed', 'false');
+    expect(ended).toHaveTextContent('1d ago');
   });
 });
 

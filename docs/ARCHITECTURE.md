@@ -206,6 +206,37 @@ batched over the requested page/slice — never one query per row.
 additive. The web sessions table surfaces them as the display-only (not
 sortable) `Direct` and `Full tree` columns.
 
+### Session activity and list ordering
+
+`ApiSessionSummary`/`ApiSessionDetail` carry `lastActivity: string | null`:
+`MAX(ended_at)` across the session **and every descendant** — the same
+tree-inclusive walk as the subagent counts, independent of own/inclusive
+metric scope. The session's own `startedAt` seeds the value **only** when the
+whole subtree has no `ended_at` at all (an empty or still-open tree);
+`source_mtime` is never consulted. `null` means nothing in the tree ever
+reported a timestamp.
+
+`GET /api/sessions` defaults to newest activity first (`lastActivity DESC,
+id ASC`) when no `sort` is sent. `sort=lastActivity` and `sort=-lastActivity`
+are supported; every order ends with `id` as a deterministic tie-break.
+
+The web sessions table mirrors that contract: the `Last Activity` column is
+sortable, `Started At` is retained, and while the client sort is unset the
+`null` state means "the server default" — the `Last Activity` header renders
+the descending indicator instead of unsorted, and the 3-state header cycle
+(`asc -> desc -> default`) is unchanged. In the dashboard, both date columns
+render relative to now and toggle independently: clicking any date — Enter or
+Space on a focused date works the same way — switches every date in that one
+column to the exact local date+time, and activating again switches it back.
+Hover never changes the format, and the column's mode stays put while the
+table is mounted (refetches included) but is intentionally not persisted
+across reloads. The profile header's `Started`/`Ended` keep the older per-cell
+interaction: hovering one temporarily reveals the exact local date+time, and
+clicking pins that single field until it is clicked again. One shared page
+clock keeps every relative date current, and null/invalid values render an em
+dash with no control. The Events table, Context columns and chart axes are
+unchanged.
+
 ## 6. Import flow
 
 ```text

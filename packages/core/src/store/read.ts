@@ -31,6 +31,14 @@ export type ApiSessionSummary = {
   agentType: string | null;
   startedAt: string | null;
   endedAt: string | null;
+  /**
+   * Latest ACTIVITY across this session and ALL its descendants: the greatest
+   * `ended_at` in the subtree (the last real event). Only when the subtree has no
+   * `ended_at` at all does it fall back to THIS session's `started_at`; null when
+   * that is also null. `source_mtime` is deliberately never used. Always
+   * tree-inclusive, independent of the own/inclusive metric scopes.
+   */
+  lastActivity: string | null;
   durationMs: number | null;
   modelPrimary: string | null;
   /** Own models: the session's own `steps.kind='call'` models + its own model_primary. */
@@ -144,6 +152,7 @@ type SessionRow = {
   agent_type: string | null;
   started_at: string | null;
   ended_at: string | null;
+  last_activity: string | null;
   duration_ms: number | null;
   model_primary: string | null;
   uncached_input: number | null;
@@ -172,13 +181,42 @@ type SessionRow = {
   r_descendants: number | null;
 };
 
+// Tree-inclusive last activity. `ended_at` is the adapter's max source event
+// timestamp (ARCHITECTURE §4 "First and last timestamp in the source"), so the
+// latest real event in the subtree is `MAX(ended_at)` over the seed and all its
+// descendants. Only when that MAX is NULL (no `ended_at` anywhere in the subtree)
+// do we fall back to the seed's own `started_at` — NOT to a descendant's start,
+// which would let a started-but-eventless node outrank a real event. `source_mtime`
+// is never consulted (a file touch is not activity). The `hex(id)` visited-path
+// guard terminates hand-made parent cycles exactly like the other tree CTEs. A
+// correlated scalar subquery keeps this one statement for the whole page — it is
+// used verbatim in the SELECT projection and in ORDER BY via `SORT_COLUMNS`.
+const LAST_ACTIVITY_EXPR = `COALESCE(
+  (
+    SELECT MAX(a.ended_at)
+    FROM sessions a
+    WHERE a.id IN (
+      WITH RECURSIVE subtree(id, path) AS (
+        SELECT s.id, '.' || hex(s.id) || '.'
+        UNION ALL
+        SELECT c.id, st.path || hex(c.id) || '.'
+        FROM sessions c JOIN subtree st ON c.parent_id = st.id
+        WHERE instr(st.path, '.' || hex(c.id) || '.') = 0
+      )
+      SELECT id FROM subtree
+    )
+  ),
+  s.started_at
+)`;
+
 // The single item query. `WHERE` is supplied per call (roots-only for the
 // list, `s.id = ?` for a detail) but is always a constant from this module —
 // user input (the id) is bound via `?`, never interpolated.
 const ITEM_SQL = `
   SELECT
     s.id, s.title, s.parent_id, s.depth, s.relation, s.agent_type,
-    s.started_at, s.ended_at, s.duration_ms, mp.name AS model_primary,
+    s.started_at, s.ended_at, ${LAST_ACTIVITY_EXPR} AS last_activity,
+    s.duration_ms, mp.name AS model_primary,
     s.uncached_input, s.cached_input, s.cache_write, s.output, s.reasoning_output,
     s.turns, s.api_calls, s.tool_calls, s.compactions, s.cost_usd,
     h.id AS harness_id, h.display_name AS harness_display_name, h.adapter_version AS harness_adapter_version,
@@ -236,6 +274,7 @@ function toSummary(
     agentType: row.agent_type,
     startedAt: row.started_at,
     endedAt: row.ended_at,
+    lastActivity: row.last_activity,
     durationMs: row.duration_ms,
     modelPrimary: row.model_primary,
     modelsOwn: [...own].sort(),
@@ -486,18 +525,20 @@ const SORT_COLUMNS: Record<string, string> = {
   name: `LOWER(${NAME_EXPR})`,
   harness: 'LOWER(h.display_name)',
   startedAt: 's.started_at',
+  lastActivity: LAST_ACTIVITY_EXPR,
   duration: 's.duration_ms',
   tokens:
     '(COALESCE(r.uncached_input,0)+COALESCE(r.cached_input,0)+COALESCE(r.cache_write,0)+COALESCE(r.output,0))',
   cost: 's.cost_usd',
 };
 
-const DEFAULT_ORDER_BY = 's.started_at DESC, s.id';
+// Default: most recent activity first (the product contract), not `started_at`.
+const DEFAULT_ORDER_BY = `${LAST_ACTIVITY_EXPR} DESC, s.id`;
 
 /**
  * Maps a `sort` string (`<field>` ASC / `-<field>` DESC) to a safe ORDER BY via
  * the `SORT_COLUMNS` whitelist. An absent or unknown field falls back to the
- * default `started_at DESC, id`. Every produced clause ends with `, s.id` so a
+ * default `lastActivity DESC, id`. Every produced clause ends with `, s.id` so a
  * tie on the sort field is always deterministic.
  */
 function buildOrderBy(sort: string | undefined): string {
@@ -593,7 +634,7 @@ function buildRootFilter(query: ListSessionsQuery): RootFilter {
 
 /**
  * Root sessions only (`parent_id IS NULL`), ordered by the whitelisted `sort`
- * (default `started_at DESC, id`), filtered by the optional AND filters
+ * (default `lastActivity DESC, id`), filtered by the optional AND filters
  * (`harness` comma-list, `startedAfter`, `model`, `q`, `durationMin`,
  * `costOnly`) and paginated by `limit`/`offset`. `total` is the real COUNT of
  * the filtered root set BEFORE pagination. Models/childCounts are computed ONLY

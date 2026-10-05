@@ -130,6 +130,9 @@ profile.
 - **Metadata only.** Rows carry kind, action, subject, timestamp, and
   kind-specific metadata (`model`, `category`, `toolName`, `durationMs`,
   `trigger`, `from`/`to`). They never render args, paths, or tool output.
+- **Timestamps stay absolute.** The events table keeps its fixed 24h
+  `HH:MM:SS` formatter; it is intentionally excluded from the relative-date
+  display used by the dashboard and the profile header (ARCHITECTURE §5).
 
 ---
 
@@ -197,6 +200,11 @@ profile.
   distinct from `name`; `harness`, `project`, started/ended/duration, cost, and
   per-field own/inclusive token totals are shown from `ApiSessionDetail`. No
   tool-call, turn, or API-call fields, and no summed token KPI.
+- `Started` and `Ended` render **relative to now**, matching the dashboard's
+  date columns (ARCHITECTURE §5): hovering one temporarily reveals the exact
+  local date+time, a click pins that one field until it is clicked again, and
+  Enter/Space toggles it from the keyboard. An invalid or missing timestamp is
+  a plain em dash with no control.
 - Route search params do not control profile panel state. Token field defaults to
   `output`; the events datatable defaults to `sort=time`, `dir=asc`, no filters,
   and page 1. The merged-events

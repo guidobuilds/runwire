@@ -29,8 +29,10 @@ type SessionSeed = {
   title?: string | null;
   modelPrimary?: string | null;
   startedAt?: string | null;
+  endedAt?: string | null;
   durationMs?: number | null;
   harnessId?: string;
+  sourceMtime?: number;
   turns?: number | null;
   apiCalls?: number | null;
   toolCalls?: number | null;
@@ -47,10 +49,10 @@ function insertSession(db: Database, id: string, opts: SessionSeed = {}) {
   db.run(
     `INSERT INTO sessions (
        id, harness_id, project_key, parent_id, depth, relation, title, model_primary_id,
-       started_at, duration_ms, turns, api_calls, tool_calls, compactions, cost_usd,
+       started_at, ended_at, duration_ms, turns, api_calls, tool_calls, compactions, cost_usd,
        uncached_input, cached_input, cache_write, output, reasoning_output,
        source_path, source_size, source_mtime
-     ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+     ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
     [
       id,
       opts.harnessId ?? 'fake',
@@ -60,6 +62,7 @@ function insertSession(db: Database, id: string, opts: SessionSeed = {}) {
       opts.title ?? null,
       opts.modelPrimary == null ? null : modelId(db, opts.modelPrimary),
       opts.startedAt ?? null,
+      opts.endedAt ?? null,
       opts.durationMs ?? null,
       opts.turns ?? null,
       opts.apiCalls ?? null,
@@ -72,6 +75,7 @@ function insertSession(db: Database, id: string, opts: SessionSeed = {}) {
       opts.output ?? null,
       opts.reasoningOutput ?? null,
       `/fake/${id}.jsonl`,
+      opts.sourceMtime ?? 1,
     ],
   );
 }
@@ -1042,6 +1046,227 @@ describe('listSessions sort whitelist', () => {
       'fake:late',
       'fake:early',
     ]);
+    db.close();
+  });
+});
+
+describe('lastActivity (tree-inclusive latest activity)', () => {
+  test('reflects a later descendant ended_at and is tree-inclusive for every node', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:root', {
+      startedAt: '2024-01-01T00:00:00Z',
+      endedAt: '2024-01-01T00:10:00Z',
+    });
+    insertSession(db, 'fake:root/child', {
+      parentId: 'fake:root',
+      startedAt: '2024-01-04T00:00:00Z',
+      endedAt: '2024-01-05T00:00:00Z',
+    });
+    insertSession(db, 'fake:root/child/grand', {
+      parentId: 'fake:root/child',
+      startedAt: '2024-01-03T00:00:00Z',
+      endedAt: '2024-01-03T01:00:00Z',
+    });
+    recomputeRollups(db);
+
+    const root = listSessions(db).items.find((s) => s.id === 'fake:root')!;
+    // The root's own ended_at is untouched, but lastActivity walks the subtree.
+    expect(root.endedAt).toBe('2024-01-01T00:10:00Z');
+    expect(root.lastActivity).toBe('2024-01-05T00:00:00Z');
+
+    // An intermediate node is inclusive too; a leaf reports only itself.
+    const child = getSession(db, 'fake:root/child')!;
+    expect(child.lastActivity).toBe('2024-01-05T00:00:00Z');
+    expect(child.children[0]!.lastActivity).toBe('2024-01-03T01:00:00Z');
+    const grand = getSession(db, 'fake:root/child/grand')!;
+    expect(grand.lastActivity).toBe('2024-01-03T01:00:00Z');
+    db.close();
+  });
+
+  test('falls back to startedAt when neither the node nor its subtree has ended_at', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:noevents', { startedAt: '2024-02-02T00:00:00Z', endedAt: null });
+    // A descendant with nothing at all does not turn the parent's fallback into null.
+    insertSession(db, 'fake:noevents/child', { parentId: 'fake:noevents' });
+    // No ended_at and no started_at anywhere -> null, never source_mtime.
+    insertSession(db, 'fake:neither', { startedAt: null, endedAt: null });
+    recomputeRollups(db);
+
+    const noevents = listSessions(db).items.find((s) => s.id === 'fake:noevents')!;
+    expect(noevents.lastActivity).toBe('2024-02-02T00:00:00Z');
+    const neither = listSessions(db).items.find((s) => s.id === 'fake:neither')!;
+    expect(neither.lastActivity).toBeNull();
+    db.close();
+  });
+
+  test('own/inclusive invariance: descendant activity wins over the root fallback', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    // The root itself emitted no ended_at; its subtree activity must still win.
+    insertSession(db, 'fake:root', { startedAt: '2024-01-01T00:00:00Z', endedAt: null });
+    insertSession(db, 'fake:root/child', {
+      parentId: 'fake:root',
+      startedAt: '2024-01-02T00:00:00Z',
+      endedAt: '2024-01-09T00:00:00Z',
+    });
+    recomputeRollups(db);
+
+    const root = listSessions(db).items.find((s) => s.id === 'fake:root')!;
+    expect(root.endedAt).toBeNull();
+    expect(root.lastActivity).toBe('2024-01-09T00:00:00Z');
+    db.close();
+  });
+
+  test('a later-started descendant with no ended_at does not override real event activity', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:root', {
+      startedAt: '2024-01-01T00:00:00Z',
+      endedAt: '2024-01-01T00:10:00Z',
+    });
+    // Descendant starts much later but never emitted an event (ended_at null).
+    insertSession(db, 'fake:root/child', {
+      parentId: 'fake:root',
+      startedAt: '2024-06-01T00:00:00Z',
+      endedAt: null,
+    });
+    // Deeper nesting: a grandchild also starts later with no ended_at.
+    insertSession(db, 'fake:root/child/grand', {
+      parentId: 'fake:root/child',
+      startedAt: '2024-07-01T00:00:00Z',
+      endedAt: null,
+    });
+    recomputeRollups(db);
+
+    const root = listSessions(db).items.find((s) => s.id === 'fake:root')!;
+    // The latest ACTUAL event is the root's own ended_at; started-only descendants
+    // must NOT override it (per-node COALESCE(ended, started) would wrongly win here).
+    expect(root.lastActivity).toBe('2024-01-01T00:10:00Z');
+    // The intermediate node's own subtree has no ended_at anywhere, so it falls
+    // back to ITS startedAt (the subtree seed), not the grandchild's later start.
+    const child = getSession(db, 'fake:root/child')!;
+    expect(child.lastActivity).toBe('2024-06-01T00:00:00Z');
+    db.close();
+  });
+
+  test('subtree-wide fallback uses the seed startedAt, not a later descendant start', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:root', { startedAt: '2024-02-02T00:00:00Z', endedAt: null });
+    insertSession(db, 'fake:root/child', {
+      parentId: 'fake:root',
+      startedAt: '2024-07-07T00:00:00Z',
+      endedAt: null,
+    });
+    recomputeRollups(db);
+
+    const root = listSessions(db).items.find((s) => s.id === 'fake:root')!;
+    // No ended_at exists anywhere in the subtree -> fall back to the seed's own
+    // startedAt; a later-started descendant must not become the fallback.
+    expect(root.lastActivity).toBe('2024-02-02T00:00:00Z');
+    db.close();
+  });
+
+  test('default order is lastActivity DESC (not started_at) with id ASC tie-break', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    // Later start, earlier activity: default must NOT pick this first.
+    insertSession(db, 'fake:late-start', { startedAt: '2024-06-01T00:00:00Z' });
+    // Earlier start, but a descendant's late event is the real last activity.
+    insertSession(db, 'fake:early-start', {
+      startedAt: '2024-01-01T00:00:00Z',
+      endedAt: '2024-01-02T00:00:00Z',
+    });
+    insertSession(db, 'fake:early-start/child', {
+      parentId: 'fake:early-start',
+      startedAt: '2024-12-01T00:00:00Z',
+      endedAt: '2024-12-01T01:00:00Z',
+    });
+    // Equal lastActivity -> deterministic id ASC.
+    insertSession(db, 'fake:z-tie', {
+      startedAt: '2024-03-01T00:00:00Z',
+      endedAt: '2024-03-01T00:00:00Z',
+    });
+    insertSession(db, 'fake:a-tie', {
+      startedAt: '2024-03-01T00:00:00Z',
+      endedAt: '2024-03-01T00:00:00Z',
+    });
+    recomputeRollups(db);
+
+    expect(listSessions(db).items.map((s) => s.id)).toEqual([
+      'fake:early-start', // 2024-12-01 via descendant
+      'fake:late-start', // 2024-06-01
+      'fake:a-tie', // 2024-03-01, id ASC tie-break
+      'fake:z-tie',
+    ]);
+    db.close();
+  });
+
+  test('explicit lastActivity sort: ascending and descending', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:root', {
+      startedAt: '2024-01-01T00:00:00Z',
+      endedAt: '2024-01-02T00:00:00Z',
+    });
+    insertSession(db, 'fake:root/child', {
+      parentId: 'fake:root',
+      startedAt: '2024-05-01T00:00:00Z',
+      endedAt: '2024-05-01T00:00:00Z',
+    });
+    insertSession(db, 'fake:other', {
+      startedAt: '2024-03-01T00:00:00Z',
+      endedAt: '2024-03-01T00:00:00Z',
+    });
+    recomputeRollups(db);
+
+    expect(listSessions(db, { sort: 'lastActivity' }).items.map((s) => s.id)).toEqual([
+      'fake:other',
+      'fake:root',
+    ]);
+    expect(listSessions(db, { sort: '-lastActivity' }).items.map((s) => s.id)).toEqual([
+      'fake:root',
+      'fake:other',
+    ]);
+    db.close();
+  });
+
+  test('source_mtime is never the activity source', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    insertSession(db, 'fake:root', {
+      startedAt: '2024-01-01T00:00:00Z',
+      endedAt: '2024-01-01T00:05:00Z',
+      sourceMtime: 9_999_999_999_999,
+    });
+    recomputeRollups(db);
+
+    const root = listSessions(db).items.find((s) => s.id === 'fake:root')!;
+    expect(root.lastActivity).toBe('2024-01-01T00:05:00Z');
+    db.close();
+  });
+
+  test('a hand-made parent cycle terminates with the seed excluded from its own walk', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    // a <-> b cycle, both with distinct ended_at values. getSession is the only
+    // way to reach non-root nodes; the recursive guard must terminate.
+    insertSession(db, 'fake:a', {
+      parentId: 'fake:b',
+      startedAt: '2024-01-01T00:00:00Z',
+      endedAt: '2024-01-01T00:00:00Z',
+    });
+    insertSession(db, 'fake:b', {
+      parentId: 'fake:a',
+      startedAt: '2024-01-01T00:00:00Z',
+      endedAt: '2024-02-02T00:00:00Z',
+    });
+    recomputeRollups(db);
+
+    const a = getSession(db, 'fake:a')!;
+    expect(a.lastActivity).toBe('2024-02-02T00:00:00Z'); // seed + b
     db.close();
   });
 });
