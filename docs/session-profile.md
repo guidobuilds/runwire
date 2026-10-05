@@ -101,6 +101,21 @@ profile.
   included call has a usable, non-decreasing `at`.
 - **Spawn markers.** `spawns` carries `{at, parentId, childId}` from the same
   `callAt` join as the agent graph (`linked` matches only, `at !== null`).
+- **Chart lines start at the first positive value.** The endpoint is a raw
+  cumulative timeline: a model's buckets before its first positive value for the
+  selected field are `0` (never consumed yet) or `null` (appeared but never
+  observed), and they stay part of the response. The chart is presentational:
+  it hides those leading `0`/`null` values — tooltip included — and draws the
+  line from the first positive cumulative value, then plots the original values
+  unchanged so plateaus survive. A model with no positive value for the
+  selected field is omitted from the chart legend; surviving models keep their
+  original `series` index and color. Switching the token field recomputes this
+  visibility. The activation threshold always comes from the full timeline,
+  while the isolated-point marker is judged over the displayed zoom range: a
+  multi-point model zoomed down to one positive point still gets that marker,
+  and a range with no positive point for a model gets none. The `Total` line,
+  axes, bucket resolution, zoom and spawn markers are otherwise unaffected, and
+  the API contract above never changes.
 
 ---
 

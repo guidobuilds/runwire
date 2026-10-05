@@ -179,6 +179,23 @@ function seriesColor(index: number) {
   return `var(--token-model-${(index % CHART_TOKEN_COUNT) + 1})`;
 }
 
+/** First point index where a model's cumulative value for the selected field is
+ * positive, or null when the model never consumes the field. Core emits
+ * leading zeros (and nulls for never-observed models) before that instant; the
+ * chart starts the line there instead of drawing a connector from the origin.
+ * Zeros and nulls before the first positive value stay invisible, tooltips
+ * included; values after it are plotted unchanged, plateaus and all. */
+function firstPositivePointIndex(
+  points: readonly { cumulative: readonly (number | null)[] }[],
+  seriesIndex: number,
+): number | null {
+  for (let index = 0; index < points.length; index += 1) {
+    const value = points[index]?.cumulative[seriesIndex];
+    if (typeof value === 'number' && value > 0) return index;
+  }
+  return null;
+}
+
 /** True when every point's `delta`/`cumulative` vector matches `series.length`
  * — F-7 guard from verification.md#f3. A mismatch means the response cannot
  * be trusted to attribute values to the right model, so no chart is drawn. */
@@ -267,18 +284,23 @@ function TokenChartBody({
   } | null>(null);
   const { series, points, spawns, excludedNullAtCount } = data;
 
-  const { usesIndex, rawChartData, activityGaps } = useMemo(() => {
+  const { usesIndex, rawChartData, activityGaps, seriesStartIndex } = useMemo(() => {
     const domainInputs = [
       { start: data.timeDomain.start, end: data.timeDomain.end },
       ...spawns.map((spawn) => ({ start: spawn.at, end: spawn.at })),
     ];
     const domain = buildTimeDomain(domainInputs);
     const usesIndex = domain === null;
+    const seriesStartIndex = series.map((_, seriesIndex) =>
+      firstPositivePointIndex(points, seriesIndex),
+    );
     const rawChartData: ChartDatum[] = points.map((point, index) => {
       const x = usesIndex ? index : (toMs(point.at) ?? index);
       const datum: ChartDatum = { x, at: point.at, total: point.totalCumulative };
       for (let seriesIndex = 0; seriesIndex < series.length; seriesIndex += 1) {
-        datum[seriesKey(seriesIndex)] = point.cumulative[seriesIndex] ?? null;
+        const startsAt = seriesStartIndex[seriesIndex];
+        const started = startsAt !== null && startsAt !== undefined && index >= startsAt;
+        datum[seriesKey(seriesIndex)] = started ? (point.cumulative[seriesIndex] ?? null) : null;
       }
       return datum;
     });
@@ -286,6 +308,7 @@ function TokenChartBody({
       usesIndex,
       rawChartData,
       activityGaps: usesIndex ? [] : findActivityGaps(rawChartData),
+      seriesStartIndex,
     };
   }, [data.timeDomain.end, data.timeDomain.start, points, series, spawns]);
 
@@ -340,10 +363,27 @@ function TokenChartBody({
     setDragSelection(null);
   }
 
+  // Only models that consume the selected field are drawn. The remaining ones
+  // keep their original index, so their color association never shifts. The
+  // activation threshold comes from the full timeline, but the marker count
+  // follows the displayed zoom slice: a multi-point series zoomed down to a
+  // single positive point still needs its isolated marker, and a slice with no
+  // visible point gets none.
+  const visibleSeries = series.flatMap((item, seriesIndex) => {
+    const startsAt = seriesStartIndex[seriesIndex];
+    if (startsAt === null || startsAt === undefined) return [];
+    const displayedPointCount = points.reduce((count, point, index) => {
+      const inZoomRange = index >= zoomStartIndex && index <= zoomEndIndex;
+      const isVisiblePoint = index >= startsAt && typeof point.cumulative[seriesIndex] === 'number';
+      return inZoomRange && isVisiblePoint ? count + 1 : count;
+    }, 0);
+    return [{ item, seriesIndex, displayedPointCount }];
+  });
+
   const config = Object.fromEntries(
-    series.map((item, index) => [
-      seriesKey(index),
-      { label: readableModel(item.model), color: seriesColor(index) },
+    visibleSeries.map(({ item, seriesIndex }) => [
+      seriesKey(seriesIndex),
+      { label: readableModel(item.model), color: seriesColor(seriesIndex) },
     ]),
   ) satisfies ChartConfig;
   config.total = { label: `Total ${FIELD_LABELS[field]}`, color: 'var(--foreground)' };
@@ -465,14 +505,14 @@ function TokenChartBody({
               x2={chartData[dragSelection.currentIndex]?.x}
             />
           ) : null}
-          {series.map((item, index) => (
+          {visibleSeries.map(({ item, seriesIndex, displayedPointCount }) => (
             <Line
               connectNulls={false}
-              dataKey={seriesKey(index)}
-              dot={false}
+              dataKey={seriesKey(seriesIndex)}
+              dot={displayedPointCount === 1}
               key={item.model}
               name={readableModel(item.model)}
-              stroke={seriesColor(index)}
+              stroke={seriesColor(seriesIndex)}
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth={2}
