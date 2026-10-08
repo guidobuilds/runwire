@@ -110,6 +110,13 @@ export type Step = {
   /** tool; harness uses toolName = event name */
   toolCategory?: ToolCategory;
   toolName?: string;
+  /**
+   * tool (mcp) - normalized identity parsed from a proven `mcp__server__tool`
+   * name. Both are present together or both absent; the raw `toolName` is
+   * always preserved. Best-effort: an ambiguous/malformed name has no identity.
+   */
+  mcpServer?: string;
+  mcpTool?: string;
   callId?: string;
   skillName?: string;
   /** tool (agent) - filled by core, ARCHITECTURE §6 */

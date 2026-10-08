@@ -80,8 +80,14 @@ profile.
 
 - Tree-wide aggregates: compactions split by trigger (`auto`/`manual`/`unknown`
   — unknown covers a null trigger or any other literal), model-change count,
-  tool calls (`total` vs `mcp`), distinct MCP server names (best-effort parsed
-  from `tool_name`), skill call count and distinct skill names.
+  tool calls (`total` vs `mcp`), distinct MCP server names, skill call count and
+  distinct skill names.
+- **MCP identity is authoritative when stored.** A distinct server comes from
+  the persisted paired `steps.mcp_server`/`steps.mcp_tool`; only a legacy row
+  whose pair is NULL falls back to the strict `mcp__<server>__<tool>` parse of
+  the raw tool name, and only for an `mcp`-category tool. A partial stored pair
+  is never combined with a parsed identity, a non-MCP category is never
+  classified from its name, and ambiguity stays unknown (it is not counted).
 - Every value renders even at `0`.
 
 ---
@@ -133,7 +139,9 @@ profile.
   comma-separated allow-lists (duplicate query params are rejected, so CSV is
   the multi-value form); `status` is `ok` or `error` (`error` = `error = 1`,
   `ok` = `error IS NULL OR error = 0`); `model` is an exact model-name match;
-  `q` is a metadata-only substring search over action, subject, and model.
+  `q` is a metadata-only substring search over action, subject, model, and the
+  stored MCP identity (`mcp_server`/`mcp_tool`). The `q` filter runs in SQL
+  before `LIMIT`/`OFFSET`, so a page is always a real slice of the matches.
 - **`action`/`subject` are server-owned presentation fields.** `action` is the
   recorded tool category for a `tool` step (falling back to `tool`), otherwise
   the step kind. `subject` is the metadata-only subject (model, tool name,
@@ -144,7 +152,18 @@ profile.
   clamped >= 0).
 - **Metadata only.** Rows carry kind, action, subject, timestamp, and
   kind-specific metadata (`model`, `category`, `toolName`, `durationMs`,
-  `trigger`, `from`/`to`). They never render args, paths, or tool output.
+  `trigger`, `from`/`to`). A `tool` row also carries the nullable resolved
+  `mcpServer`/`mcpTool` (the authoritative stored pair, or the strict legacy
+  fallback for a NULL pair); the raw `toolName` and the `subject` it feeds are
+  always preserved verbatim. Rows never render args, paths, or tool output.
+- **MCP identity renders as a server · tool hierarchy.** An `action=MCP` tool
+  row whose stored `mcpServer`/`mcpTool` pair is complete shows the server as the
+  primary line and the tool as the secondary line of the Subject cell. Both are
+  truncated to the column width with their full value available on hover, and
+  the raw `subject` stays on the cell as the fallback tooltip. A missing,
+  partial, or malformed pair is never completed or invented client-side: the row
+  degrades to the raw subject (legacy responses predating the pair included),
+  and a non-MCP row is unchanged.
 - **Timestamps stay absolute.** The events table keeps its fixed 24h
   `HH:MM:SS` formatter; it is intentionally excluded from the relative-date
   display used by the dashboard and the profile header (ARCHITECTURE §5).

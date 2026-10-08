@@ -546,7 +546,11 @@ fixtures/pi/<case>/home/.pi/agent/sessions/--home-u-pi--/<ts>_<uuid>.jsonl
   dir → per `*.jsonl` file, `stat`; skip iff `(sizeBytes, mtimeMs)` matches `known`; else
   read → compute → yield. Files are independent, so — unlike Claude's parent+child coupling —
   there is no group rule. Sort by project dir then filename; the uuidv7 ids make that order
-  chronological, so the stream is deterministic (the "stable ids" test needs it).
+  chronological, so the stream is deterministic (the "stable ids" test needs it). Fail-closed:
+  `discover` throws if the probed root or a parent-enumerated project dir vanished before its
+  own listing (and `RunwireFs` rethrows EACCES/EIO), so `importAll` keeps history and clears the
+  completion marker instead of pruning an incomplete walk; this is a point-in-time check, not an
+  atomic filesystem snapshot.
 - **Boundaries**: `@runwire/core` only; register in `packages/cli/src/adapters.ts` (D76).
 - Pi can rewrite a whole file during migration (`_rewriteFile`), which jumps both `size` and
   `mtime` → one full re-import of that session. Correct, not a bug, but worth a line in the docs.

@@ -102,6 +102,9 @@ export const StepSchema = z
     model: z.string().optional(),
     toolCategory: ToolCategorySchema.optional(),
     toolName: z.string().optional(),
+    // A proven identity is never empty and always a pair (see superRefine).
+    mcpServer: z.string().min(1).optional(),
+    mcpTool: z.string().min(1).optional(),
     callId: z.string().optional(),
     skillName: z.string().optional(),
     childId: z.string().optional(),
@@ -118,7 +121,30 @@ export const StepSchema = z
     fromValue: z.string().optional(),
     toValue: z.string().optional(),
   })
-  .strict() satisfies z.ZodType<Step>;
+  .strict()
+  .superRefine((step, ctx) => {
+    // MCP identity is a two-part, tool-only invariant. A malformed or
+    // ambiguous name legitimately carries NEITHER field, so absence is valid;
+    // only a partially/incorrectly populated pair is a contract violation.
+    const hasServer = step.mcpServer !== undefined;
+    const hasTool = step.mcpTool !== undefined;
+    if (!hasServer && !hasTool) return;
+    if (hasServer !== hasTool) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['mcpServer'],
+        message: 'mcpServer and mcpTool must both be present',
+      });
+      return;
+    }
+    if (step.kind !== 'tool' || step.toolCategory !== 'mcp') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['mcpServer'],
+        message: 'MCP identity is only valid on a tool step of category mcp',
+      });
+    }
+  }) satisfies z.ZodType<Step>;
 
 export const DiagnosticSchema = z
   .object({

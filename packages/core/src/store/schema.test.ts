@@ -84,6 +84,134 @@ describe('migrate(): source_id/source_locator columns, backfill and UNIQUE index
   });
 });
 
+describe('migrate(): MCP identity columns', () => {
+  test('a fresh DB gets nullable mcp_server/mcp_tool columns on steps', () => {
+    const db = new Database(':memory:');
+    migrate(db);
+    const cols = columns(db, 'steps');
+    expect(cols).toContain('mcp_server');
+    expect(cols).toContain('mcp_tool');
+    db.close();
+  });
+
+  test('an existing canonical DB without the columns gains them additively (no rebuild)', () => {
+    const db = new Database(':memory:');
+    migrate(db);
+    // Simulate a DB created before the MCP-identity columns existed.
+    db.exec('ALTER TABLE steps DROP COLUMN mcp_server');
+    db.exec('ALTER TABLE steps DROP COLUMN mcp_tool');
+    db.run(
+      "INSERT INTO harnesses (id, display_name, adapter_version, capabilities) VALUES ('fake', 'Fake', '1.0.0', '[]')",
+    );
+    db.run(
+      `INSERT INTO sessions (id, harness_id, depth, source_path, source_size, source_mtime)
+       VALUES ('fake:s1', 'fake', 0, '/fake/s1.jsonl', 10, 1)`,
+    );
+    db.run(
+      "INSERT INTO steps (session_id, seq, kind, tool_category, tool_name) VALUES ('fake:s1', 0, 'tool', 'mcp', 'mcp__server__tool')",
+    );
+
+    migrate(db);
+
+    expect(columns(db, 'steps')).toContain('mcp_server');
+    expect(columns(db, 'steps')).toContain('mcp_tool');
+    // The pre-existing row survives with NULL identity (nothing was fabricated).
+    expect(db.query('SELECT session_id, seq, mcp_server, mcp_tool FROM steps').all()).toEqual([
+      { session_id: 'fake:s1', seq: 0, mcp_server: null, mcp_tool: null },
+    ]);
+    db.close();
+  });
+
+  test('a legacy DB that rebuilds model identity also comes out with the MCP columns, FK-clean, rows preserved', () => {
+    const db = seedLegacyModelDb();
+    migrate(db);
+
+    const cols = columns(db, 'steps');
+    expect(cols).toContain('mcp_server');
+    expect(cols).toContain('mcp_tool');
+    // Every row survived the rebuild with a NULL identity.
+    expect((db.query('SELECT COUNT(*) AS n FROM steps').get() as { n: number }).n).toBe(8);
+    expect(
+      (
+        db
+          .query('SELECT COUNT(*) AS n FROM steps WHERE mcp_server IS NULL AND mcp_tool IS NULL')
+          .get() as {
+          n: number;
+        }
+      ).n,
+    ).toBe(8);
+    expect(db.query('PRAGMA foreign_key_check').all()).toEqual([]);
+
+    // Idempotent: a second migrate() changes nothing.
+    const before = snapshot(db);
+    migrate(db);
+    expect(snapshot(db)).toBe(before);
+    db.close();
+  });
+
+  test('a rebuilt legacy DB has the same steps/sessions shape and indexes as a fresh one (fresh/rebuild equality)', () => {
+    const fresh = new Database(':memory:');
+    migrate(fresh);
+    const rebuilt = seedLegacyModelDb();
+    migrate(rebuilt);
+
+    expect(columns(rebuilt, 'steps')).toEqual(columns(fresh, 'steps'));
+    expect(columns(rebuilt, 'sessions')).toEqual(columns(fresh, 'sessions'));
+    expect(indexNames(rebuilt, 'steps').sort()).toEqual(indexNames(fresh, 'steps').sort());
+    expect(indexNames(rebuilt, 'sessions').sort()).toEqual(indexNames(fresh, 'sessions').sort());
+    fresh.close();
+    rebuilt.close();
+  });
+});
+
+describe('migrate(): imported_version completion marker (D82)', () => {
+  test('a fresh DB gets a nullable imported_version on harnesses', () => {
+    const db = new Database(':memory:');
+    migrate(db);
+    expect(columns(db, 'harnesses')).toContain('imported_version');
+    db.run(
+      "INSERT INTO harnesses (id, display_name, adapter_version, capabilities) VALUES ('fake', 'Fake', '1.0.0', '[]')",
+    );
+    expect(db.query("SELECT imported_version FROM harnesses WHERE id = 'fake'").get()).toEqual({
+      imported_version: null,
+    });
+    db.close();
+  });
+
+  test('a legacy DB without the column gains it additively with a NULL marker', () => {
+    const db = seedLegacyModelDb();
+    expect(columns(db, 'harnesses')).not.toContain('imported_version');
+
+    migrate(db);
+
+    expect(columns(db, 'harnesses')).toContain('imported_version');
+    // A NULL marker is what forces the one bounded historical refresh.
+    expect(db.query("SELECT imported_version FROM harnesses WHERE id = 'fake'").get()).toEqual({
+      imported_version: null,
+    });
+    expect(db.query('PRAGMA foreign_key_check').all()).toEqual([]);
+
+    // Idempotent: a second migrate() leaves the shape and data unchanged.
+    const before = snapshot(db);
+    const harnessColumns = columns(db, 'harnesses');
+    migrate(db);
+    expect(snapshot(db)).toBe(before);
+    expect(columns(db, 'harnesses')).toEqual(harnessColumns);
+    db.close();
+  });
+
+  test('fresh and rebuilt harnesses shapes match exactly', () => {
+    const fresh = new Database(':memory:');
+    migrate(fresh);
+    const rebuilt = seedLegacyModelDb();
+    migrate(rebuilt);
+
+    expect(columns(rebuilt, 'harnesses')).toEqual(columns(fresh, 'harnesses'));
+    fresh.close();
+    rebuilt.close();
+  });
+});
+
 // The pre-normalization shape: `sessions.model_primary` and `steps.model` are
 // raw text, `models` does not exist, and the source-identity columns are
 // absent (they were added by ensureColumn, so the rebuild must re-add them).
@@ -326,7 +454,9 @@ describe('migrate(): models table + model-identity rebuild', () => {
        )`,
     );
     db.exec('PRAGMA foreign_keys = ON');
-    db.run("INSERT INTO harnesses VALUES ('fake', 'Fake', '1.0.0', '[]')");
+    db.run(
+      "INSERT INTO harnesses (id, display_name, adapter_version, capabilities) VALUES ('fake', 'Fake', '1.0.0', '[]')",
+    );
     db.run(
       `INSERT INTO sessions (id, harness_id, model_primary, source_path, source_size, source_mtime)
        VALUES ('s1', 'fake', 'claude-sonnet-4', '/a', 1, 1), ('s2', 'fake', NULL, '/b', 1, 1)`,

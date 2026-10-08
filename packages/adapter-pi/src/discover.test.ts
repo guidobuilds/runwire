@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import type { AdapterContext, Known, SessionBundle } from '@runwire/core';
-import { createBunFs } from '@runwire/core';
+import type { AdapterContext, Known, RunwireFs, SessionBundle } from '@runwire/core';
+import { createBunFs, createMemoryFs } from '@runwire/core';
 import { discover, probe } from './discover';
 
 const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', 'fixtures', 'pi');
@@ -75,5 +75,84 @@ describe('pi discover: walk', () => {
     const bundles = await collect(ctx);
     expect(bundles).toHaveLength(1);
     expect(bundles[0]?.session.id).toBe(`pi:${SMALL_UUID}`);
+  });
+});
+
+describe('pi discover: incomplete enumeration is rejected, not masked', () => {
+  const ROOT = '/home/u/.pi/agent/sessions';
+  const PROJECT = '/home/u/.pi/agent/sessions/proj';
+  const FILE = `${PROJECT}/2026-01-01T00-00-00-000Z_${SMALL_UUID}.jsonl`;
+  const HEADER = JSON.stringify({
+    type: 'session',
+    version: 3,
+    id: SMALL_UUID,
+    timestamp: '2026-01-01T00:00:00.000Z',
+    cwd: '/home/u/pi',
+  });
+  const USER = JSON.stringify({
+    type: 'message',
+    id: 'e1',
+    parentId: null,
+    timestamp: '2026-01-01T00:00:01.000Z',
+    message: { role: 'user', content: [{ type: 'text', text: 'hi' }] },
+  });
+
+  function baseFs(): RunwireFs {
+    return createMemoryFs({ files: { [FILE]: `${HEADER}\n${USER}\n` } });
+  }
+
+  function ctxWithFs(fs: RunwireFs): AdapterContext {
+    return {
+      home: '/home/u',
+      platform: 'linux',
+      env: {},
+      fs,
+      privacy: { titles: true },
+      log: { info() {}, warn() {}, error() {} },
+    };
+  }
+
+  function fsError(code: string): Error {
+    return Object.assign(new Error(`${code} synthetic`), { code });
+  }
+
+  test('a project dir listed by the parent but vanished before its listing rejects, and a retry succeeds', async () => {
+    const real = baseFs();
+    const vanished: RunwireFs = {
+      ...real,
+      async stat(path) {
+        return path === PROJECT ? undefined : real.stat(path);
+      },
+    };
+    await expect(collect(ctxWithFs(vanished))).rejects.toThrow();
+
+    const bundles = await collect(ctxWithFs(real));
+    expect(bundles.map((b) => b.session.id)).toEqual([`pi:${SMALL_UUID}`]);
+  });
+
+  test('a project dir listed by the parent but unreadable (EACCES) before its listing rejects', async () => {
+    const real = baseFs();
+    const denied: RunwireFs = {
+      ...real,
+      async readdir(path) {
+        if (path === PROJECT) throw fsError('EACCES');
+        return real.readdir(path);
+      },
+    };
+    await expect(collect(ctxWithFs(denied))).rejects.toMatchObject({ code: 'EACCES' });
+  });
+
+  test('the probed root vanishing makes discover reject instead of yielding an empty walk', async () => {
+    const real = baseFs();
+    const gone: RunwireFs = {
+      ...real,
+      async readdir(path) {
+        return path === ROOT ? [] : real.readdir(path);
+      },
+      async stat(path) {
+        return path === ROOT ? undefined : real.stat(path);
+      },
+    };
+    await expect(collect(ctxWithFs(gone))).rejects.toThrow();
   });
 });

@@ -66,6 +66,11 @@ type AdapterContext = {
   log: Logger;
 };
 
+// RunwireFs absence semantics: `stat`/`readFile` return `undefined` and `readdir`
+// returns `[]` ONLY for ENOENT/ENOTDIR ("no such source"). Every other failure
+// (EACCES, EIO, ...) is rethrown, so a permission/I-O error can never masquerade
+// as a vanished source and let discovery report an incomplete tree as complete.
+
 type Capability =
   | 'usage.perCall' | 'usage.cumulative' | 'usage.cacheWrite' | 'usage.reasoning'
   | 'timing' | 'model' | 'mode' | 'effort' | 'version' | 'turns' | 'toolCalls' | 'compactions'
@@ -115,6 +120,7 @@ type Step = {
   sessionId: string; seq: number; at?: string; kind: StepKind;
   model?: string;                                                              // call
   toolCategory?: ToolCategory; toolName?: string; callId?: string;             // tool; harness uses toolName = event name
+  mcpServer?: string; mcpTool?: string;                                         // tool (mcp) — normalized identity from a proven mcp__server__tool name; both-or-neither, toolName kept raw
   skillName?: string;                                                          // tool (skill) — metadata only, never the rest of input (D7)
   childId?: string;                                                            // tool (agent) — filled by core, §6
   durationMs?: number; error?: boolean;                                        // tool, turn
@@ -143,6 +149,7 @@ type Diagnostic = { level: 'info' | 'warn' | 'error'; code: string; message: str
 | `title` | Only if `ctx.privacy.titles`. |
 | `steps` | Source order, `seq` from 0. `call` carries its own usage; `tool` carries `call_id`, `error`, `duration_ms` from the paired result. |
 | `skill_name` | Tool steps of category `skill` carry the skill name (`message.content[].input.skill`); metadata only, never the rest of the tool_use `input` (D7). |
+| `mcp_server`, `mcp_tool` | Tool steps of category `mcp` carry the normalized identity parsed from a proven `mcp__server__tool` name (exactly three nonempty `__` segments; `plugin_engram_engram` is a valid server). Both fields are present together or both absent; the raw `tool_name` is always preserved, and an ambiguous/malformed name has no fabricated identity. Metadata only: never args/output. |
 | `session_tool_counts` | `tool` steps tallied per `tool_category`. |
 | `parent_id`, `relation`, `agent_type`, `depth` | From the harness's own linkage (e.g. subagent directory, `.meta`). |
 | project | Per D8/D9: normalized remote → repo root → cwd, via `ctx.fs` only. |
@@ -154,7 +161,7 @@ Invariant: per token field, Σ over `call` steps = the session's value.
 ## 5. SQLite schema
 
 ```sql
-harnesses(id PK, display_name, adapter_version, capabilities)
+harnesses(id PK, display_name, adapter_version, capabilities, imported_version)
 projects(key PK, name, repo_root, worktree, identity)
 models(id PK, name NOT NULL UNIQUE)            -- canonical model identity; name = exact raw harness string
 sessions(id PK, harness_id → harnesses, project_key → projects, parent_id → sessions, relation, depth, agent_type, spawn_call_id,
@@ -166,7 +173,7 @@ sessions(id PK, harness_id → harnesses, project_key → projects, parent_id �
          harness_version_first, harness_version_last,
          source_id UNIQUE, source_locator,          -- effective source identity + physical locator (see §3); backfilled from source_path
          source_path UNIQUE, source_size, source_mtime)
-steps(session_id → sessions, seq, at, kind, model_id → models, tool_category, tool_name, skill_name, call_id, child_id, duration_ms, error,
+steps(session_id → sessions, seq, at, kind, model_id → models, tool_category, tool_name, mcp_server, mcp_tool, skill_name, call_id, child_id, duration_ms, error,
       uncached_input, cached_input, cache_write, output, reasoning_output,
       compaction_trigger, pre_tokens, post_tokens, from_value, to_value, PK (session_id, seq))
 session_tool_counts(session_id → sessions, category, count, PK (session_id, category))
@@ -178,7 +185,7 @@ rollups(session_id PK → sessions, uncached_input, cached_input, cache_write, o
 | `steps.kind` | Columns used |
 |---|---|
 | `call` | `model_id`, `uncached_input` … `reasoning_output` |
-| `tool` | `model_id`, `tool_category`, `tool_name`, `skill_name`, `call_id`, `child_id`, `duration_ms`, `error` |
+| `tool` | `model_id`, `tool_category`, `tool_name`, `mcp_server`, `mcp_tool`, `skill_name`, `call_id`, `child_id`, `duration_ms`, `error` |
 | `turn` | `duration_ms` |
 | `harness` | `tool_name` (event name, e.g. `hook:PreToolUse`) |
 | `compaction` | `compaction_trigger`, `pre_tokens`, `post_tokens` |
@@ -187,6 +194,7 @@ rollups(session_id PK → sessions, uncached_input, cached_input, cache_write, o
 - Typed nullable columns, no JSON blobs: waste-pattern queries (D51) are plain SQL.
 - `sessions` holds exclusive values only. Derivable data (`model.all`, `children[]`, `cwd.all`) is not stored.
 - Model identity is normalized: `models.name` is the exact raw harness model string (the canonical key; reserved names such as `unknown`/`other` are stored as-is), and `steps.model_id` / `sessions.model_primary_id` are hard FKs to `models(id)`. The legacy text columns (`steps.model`, `sessions.model_primary`) no longer exist; a NULL model stays a NULL id.
+- `harnesses.adapter_version` is the installed adapter metadata, rewritten on every run. `harnesses.imported_version` is a separate nullable completion marker: the adapter mapping version whose full historical import last finished cleanly (D82). The marker is read before the metadata upsert and only advances after a fully clean import, so the two must not be conflated.
 - NULL is the empty state (D72).
 
 ### Session summary counts
@@ -242,25 +250,52 @@ unchanged.
 ```text
 importAll({ adapters, db, ctx }) — adapters come from the composition root (D76), never from core
 for each adapter:
+  marker = SELECT imported_version FROM harnesses WHERE id = adapter.id   -- READ BEFORE the metadata upsert
+  upsert harnesses SET adapter_version = adapter.adapterVersion           -- installed metadata, marker untouched
+  refresh = marker IS NULL OR marker <> adapter.adapterVersion            -- D82
   known  = SELECT COALESCE(source_id, source_path), COALESCE(source_locator, source_path),
                   source_size, source_mtime FROM sessions WHERE harness_id = adapter.id
            -- keyed by the EFFECTIVE source id (sourceId ?? sourcePath); root-scoped by the PHYSICAL locator
-  for await bundle of adapter.discover(ctx, known):
+  for await bundle of adapter.discover(ctx, refresh OR --force OR --no-titles ? empty : known):
     validate → upsert project, models, session, steps, session_tool_counts, diagnostics   (one transaction per bundle)
     emitted.add(effectiveSourceId(bundle.session))
   remove    known-but-unemitted sources that no longer exist, with their steps/counts/diagnostics.
-            The existence test is adapter-answered: adapter.sourceExists(ctx, {sourceId, sourceLocator})
+            Only on a COMPLETE scan: a failed bundle or `error`-level diagnostic leaves stored history
+            intact rather than pruning sources this incomplete run simply did not enumerate. The
+            existence test is adapter-answered: adapter.sourceExists(ctx, {sourceId, sourceLocator})
             when present, else fs.stat(sourceLocator ?? sourceId) (the Claude filesystem heuristic).
             Removal is only computed after the discover stream completes without throwing — a mid-stream
             discover() throw keeps what was persisted and skips removal. A DB-backed sourceExists returns
             true (retain) on any DB open/read/stat error and false (delete) only on a CONFIRMED absent source,
             so a transient error or an unreadable store never mass-deletes.
+            A filesystem adapter keeps this safe from the other side: it revalidates its probed root
+            before the walk ends and rejects a parent-enumerated directory that vanished, or any
+            EACCES/EIO stat/readdir; that throw also skips removal. Truly optional absent paths
+            (a missing subagents/ dir or .meta.json) stay tolerated.
+  mark      only when the stream enumerated, every bundle validated/persisted with no failed bundle and no
+            `error`-level diagnostic, and removal finished: UPDATE harnesses SET imported_version = adapter.adapterVersion
+            otherwise (failed bundle, error diagnostic, throw, cleanup failure): UPDATE ... SET imported_version = NULL
+            so the next scan re-discovers instead of trusting a marker an earlier success left at this version
   link      parent_id from bundles; for a flattened depth-2+ child, recover its immediate parent when exactly one
             agent step at depth N-1 in the same tree owns its spawn_call_id; steps.child_id = the child whose spawn_call_id equals that step's call_id
             depth as declared by the adapter; unresolved parent → diagnostic `orphan-child`, child kept as a root
   rollups   exclusive = the row; inclusive = row + all descendants (turns copied from the root, not summed)
   aggregates per project and per harness, from root sessions
 ```
+
+A mapping-version change (an adapter bump) or a legacy store whose marker is NULL
+performs ONE bounded full historical reimport for that adapter: every existing source
+is re-read and re-persisted even when its size/mtime are unchanged, because the
+`imported_version` marker is read before `upsertHarness` rewrites `adapter_version` and
+the refresh bypasses the size/mtime cache (the next server scan runs the same
+`importAll`, so it inherits the refresh automatically). Once a fully clean run completes,
+the marker catches up and ordinary incremental behavior resumes. An incomplete run does NOT
+leave an apparent success behind: a mid-stream `discover()` throw deletes nothing and CLEARS
+the marker, and a failed bundle or `error`-level diagnostic also clears it and prunes nothing, so the next run
+bypasses the size/mtime cache and retries rather than skipping a source whose re-read failed
+while an earlier success had already set the marker to the running version. `warn`/`info`
+diagnostics (e.g. a tolerated malformed-line fixture) do not block completion, so a
+known-tolerated warning never causes a retry loop.
 
 Rollups are a table (`rollups`, §5) recomputed by core after each import: inclusive = own row + all descendants for the token fields, `api_calls`, `tool_calls`, `compactions`; `descendants` is a count; `turns` is not rolled up (read it from the root row). Aggregates are SQL views (`project_aggregates`, `harness_aggregates`) over root sessions joined with `rollups`. `importAll` returns an `ImportReport { perAdapter: { discovered, imported, skipped, removed, failed }, durationMs }`.
 
@@ -275,6 +310,7 @@ Foreign-key policy: `sessions.model_primary_id` and `steps.model_id` are hard FK
 | Diagnostics | Fixed code + message (≤ 200 chars, no newlines); never record content. |
 | Titles | Written only when `ctx.privacy.titles` at import; otherwise never on disk (D7, D71). |
 | Skill name | Metadata only; only `message.content[].input.skill` is read — the rest of a tool_use `input` is never read. |
+| MCP identity | Metadata only; the normalized `mcp_server`/`mcp_tool` pair is parsed from the tool name (a tool identity string), never from tool args or output. |
 | Paths | `source_path` and `cwd` are metadata. |
 
 ## 8. Contract test kit

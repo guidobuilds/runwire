@@ -1,32 +1,66 @@
 import { Database } from 'bun:sqlite';
+import type { Stats } from 'node:fs';
 import { stat as nodeStat, readdir } from 'node:fs/promises';
 import type { FsStat, RunwireFs, SqliteReader } from './types';
 
+/**
+ * The read primitives `createBunFs` wraps. The parameter exists only so tests
+ * can raise a deterministic `EACCES`/`EIO` without depending on filesystem
+ * permissions, which a privileged CI user bypasses; production always uses
+ * `defaultIo`.
+ */
+export type BunFsIo = {
+  stat(path: string): Promise<Stats>;
+  readdir(path: string): Promise<string[]>;
+  readFileText(path: string): Promise<string>;
+};
+
+const defaultIo: BunFsIo = {
+  stat: nodeStat,
+  readdir,
+  readFileText: (path) => Bun.file(path).text(),
+};
+
+/**
+ * `ENOENT`/`ENOTDIR` mean "there is no such source"; every other code
+ * (`EACCES`, `EIO`, ...) is a real read failure. Collapsing both to
+ * undefined/[] would let a permission or I/O error look like a vanished
+ * source, so discovery would report an incomplete tree as complete and core
+ * could prune history it simply failed to read.
+ */
+function isAbsenceError(e: unknown): boolean {
+  const code = (e as { code?: unknown } | null)?.code;
+  return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
 /** Real RunwireFs over Bun/node:fs APIs. Read-only: no write/unlink is ever called. */
-export function createBunFs(): RunwireFs {
+export function createBunFs(io: BunFsIo = defaultIo): RunwireFs {
   return {
     async stat(path): Promise<FsStat | undefined> {
       try {
-        const s = await nodeStat(path);
+        const s = await io.stat(path);
         return { sizeBytes: s.size, mtimeMs: s.mtimeMs, isDirectory: s.isDirectory() };
-      } catch {
-        return undefined;
+      } catch (e) {
+        if (isAbsenceError(e)) return undefined;
+        throw e;
       }
     },
 
     async readdir(path): Promise<string[]> {
       try {
-        return await readdir(path);
-      } catch {
-        return [];
+        return await io.readdir(path);
+      } catch (e) {
+        if (isAbsenceError(e)) return [];
+        throw e;
       }
     },
 
     async readFile(path): Promise<string | undefined> {
       try {
-        return await Bun.file(path).text();
-      } catch {
-        return undefined;
+        return await io.readFileText(path);
+      } catch (e) {
+        if (isAbsenceError(e)) return undefined;
+        throw e;
       }
     },
 

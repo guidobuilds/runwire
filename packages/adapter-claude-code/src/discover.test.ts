@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { AdapterContext, Known } from '@runwire/core';
+import type { AdapterContext, Known, RunwireFs } from '@runwire/core';
 import { createMemoryFs } from '@runwire/core';
 import { discover } from './discover';
 
@@ -40,6 +40,14 @@ function ctxWithFiles(
     privacy: { titles: true },
     log: { info() {}, warn() {}, error() {} },
   };
+}
+
+function ctxWithFs(fs: RunwireFs): AdapterContext {
+  return { ...ctxWithFiles({}), fs };
+}
+
+function fsError(code: string): Error {
+  return Object.assign(new Error(`${code} synthetic`), { code });
 }
 
 async function collect(ctx: AdapterContext, known: Known = new Map()) {
@@ -121,6 +129,67 @@ describe('discover: the P10 known rule', () => {
     const bundles = await collect(ctx, new Map());
     expect(bundles.map((b) => b.session.id)).toEqual(['claude-code:s1/a1']);
     expect(bundles[0]?.session.parentId).toBe('claude-code:s1');
+  });
+});
+
+describe('discover: incomplete enumeration is rejected, not masked', () => {
+  const ROOT = '/home/u/.claude/projects';
+  const PROJECT = '/home/u/.claude/projects/proj';
+
+  function baseFs(): RunwireFs {
+    return createMemoryFs({
+      files: {
+        [ROOT_PATH]: { content: ROOT_CONTENT, mtimeMs: 1000 },
+        [CHILD_A1_PATH]: { content: CHILD_A1_CONTENT, mtimeMs: 2000 },
+        [CHILD_A1_META_PATH]: { content: META_A1 },
+      },
+    });
+  }
+
+  test('a project dir listed by the parent but vanished before its listing rejects, and a retry succeeds', async () => {
+    const real = baseFs();
+    const vanished: RunwireFs = {
+      ...real,
+      async stat(path) {
+        return path === PROJECT ? undefined : real.stat(path);
+      },
+    };
+    await expect(collect(ctxWithFs(vanished))).rejects.toThrow();
+
+    // The same fs restored is readable: the rejection was not a permanent loss.
+    const bundles = await collect(ctxWithFs(real));
+    expect(bundles.map((b) => b.session.id)).toEqual(['claude-code:s1', 'claude-code:s1/a1']);
+  });
+
+  test('a project dir listed by the parent but unreadable (EACCES) before its listing rejects', async () => {
+    const real = baseFs();
+    const denied: RunwireFs = {
+      ...real,
+      async readdir(path) {
+        if (path === PROJECT) throw fsError('EACCES');
+        return real.readdir(path);
+      },
+    };
+    await expect(collect(ctxWithFs(denied))).rejects.toMatchObject({ code: 'EACCES' });
+  });
+
+  test('the probed root vanishing makes discover reject instead of yielding an empty walk', async () => {
+    const real = baseFs();
+    const gone: RunwireFs = {
+      ...real,
+      async readdir(path) {
+        return path === ROOT ? [] : real.readdir(path);
+      },
+      async stat(path) {
+        return path === ROOT ? undefined : real.stat(path);
+      },
+    };
+    await expect(collect(ctxWithFs(gone))).rejects.toThrow();
+  });
+
+  test('an absent optional subagents dir is tolerated: the root still emits with no children', async () => {
+    const bundles = await collect(ctxWithFiles({ [ROOT_PATH]: { content: ROOT_CONTENT } }));
+    expect(bundles.map((b) => b.session.id)).toEqual(['claude-code:s1']);
   });
 });
 

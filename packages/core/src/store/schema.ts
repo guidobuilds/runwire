@@ -82,6 +82,8 @@ const STEPS_TABLE_BODY = `(
   model_id INTEGER REFERENCES models(id),
   tool_category TEXT,
   tool_name TEXT,
+  mcp_server TEXT,
+  mcp_tool TEXT,
   skill_name TEXT,
   call_id TEXT,
   child_id TEXT,
@@ -106,7 +108,8 @@ CREATE TABLE IF NOT EXISTS harnesses (
   id TEXT PRIMARY KEY,
   display_name TEXT NOT NULL,
   adapter_version TEXT NOT NULL,
-  capabilities TEXT NOT NULL
+  capabilities TEXT NOT NULL,
+  imported_version TEXT
 );
 
 CREATE TABLE IF NOT EXISTS projects (
@@ -272,6 +275,8 @@ const STEP_TARGET_COLUMNS = [
   'model_id',
   'tool_category',
   'tool_name',
+  'mcp_server',
+  'mcp_tool',
   'skill_name',
   'call_id',
   'child_id',
@@ -419,6 +424,23 @@ export function migrate(db: Database): void {
   db.exec(
     'UPDATE sessions SET source_id = source_path, source_locator = source_path WHERE source_id IS NULL',
   );
+
+  // MCP identity (nullable, additive): only a proven `mcp__server__tool` name
+  // populates these; a missing/malformed name leaves both NULL and the raw
+  // `tool_name` untouched. ensureColumn is a no-op on a fresh DB and on a
+  // second migrate(). For a legacy DB that also rebuilds model identity, the
+  // rebuild copies these two by name (missing source columns -> NULL).
+  ensureColumn(db, 'steps', 'mcp_server', 'TEXT');
+  ensureColumn(db, 'steps', 'mcp_tool', 'TEXT');
+
+  // Import completion marker (D82): `harness.adapter_version` stays the
+  // installed metadata, while this separate nullable column records the
+  // adapter mapping version whose full historical import last COMPLETED.
+  // NULL (a store predating this feature) or a value differing from the
+  // adapter's current version forces one bounded full rediscovery; the marker
+  // only advances after a run that enumerated, validated, persisted and
+  // cleaned up without a failed bundle or error-level diagnostic.
+  ensureColumn(db, 'harnesses', 'imported_version', 'TEXT');
 
   rebuildModelIdentity(db);
 

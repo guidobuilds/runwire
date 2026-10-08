@@ -48,6 +48,11 @@ describe('CAPABILITY_FIELDS exhaustiveness', () => {
     expect(seen.size).toBeGreaterThan(0);
   });
 
+  test('MCP identity fields are gated by toolCalls (so an adapter emitting them must declare it)', () => {
+    expect(CAPABILITY_FIELDS.toolCalls.stepFields).toContain('tool.mcpServer');
+    expect(CAPABILITY_FIELDS.toolCalls.stepFields).toContain('tool.mcpTool');
+  });
+
   test('every StepKind is owned by exactly one capability', () => {
     const seen = new Map<StepKind, string>();
     for (const cap of CAPABILITIES) {

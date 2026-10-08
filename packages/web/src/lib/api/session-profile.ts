@@ -118,6 +118,11 @@ function isStringArray(value: unknown): value is readonly string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
 
+/** A stored identity column is usable only as a non-empty string. */
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null;
+}
+
 function normalizeSignals(value: unknown): SessionProfileSignals {
   if (
     !isRecord(value) ||
@@ -287,21 +292,31 @@ function normalizeMergedEvent(value: unknown): Event {
     case 'call':
       if (typeof value.model !== 'string' && value.model !== null) break;
       return { ...base, kind: 'call', model: value.model };
-    case 'tool':
+    case 'tool': {
       if (
         (typeof value.category !== 'string' && value.category !== null) ||
         (typeof value.toolName !== 'string' && value.toolName !== null)
       )
         break;
+      // Paired MCP identity is additive and nullable: preserve it only when the
+      // API delivered a complete, non-empty pair. A missing/partial/malformed
+      // pair degrades to nulls (never a partial or invented identity), so the
+      // table falls back to the raw subject.
+      const mcpServer = nonEmptyString(value.mcpServer);
+      const mcpTool = nonEmptyString(value.mcpTool);
+      const completeMcpPair = mcpServer !== null && mcpTool !== null;
       return {
         ...base,
         kind: 'tool',
         category: value.category,
         toolName: value.toolName,
+        mcpServer: completeMcpPair ? mcpServer : null,
+        mcpTool: completeMcpPair ? mcpTool : null,
         // Additive-with-default: responses predating the `model` field (or a
         // null model) normalize to null rather than throwing (see merged-events-nodes-normalizer).
         model: typeof value.model === 'string' ? value.model : null,
       };
+    }
     case 'turn':
       if (typeof value.durationMs !== 'number' && value.durationMs !== null) break;
       return { ...base, kind: 'turn', durationMs: value.durationMs };

@@ -125,7 +125,14 @@ export const CAPABILITY_FIELDS: Record<Capability, CapabilityGate> = {
   toolCalls: {
     sessionFields: ['toolCalls'],
     stepKinds: ['tool'],
-    stepFields: ['tool.toolCategory', 'tool.toolName', 'tool.callId', 'tool.skillName'],
+    stepFields: [
+      'tool.toolCategory',
+      'tool.toolName',
+      'tool.callId',
+      'tool.skillName',
+      'tool.mcpServer',
+      'tool.mcpTool',
+    ],
   },
   compactions: {
     sessionFields: ['compactions'],

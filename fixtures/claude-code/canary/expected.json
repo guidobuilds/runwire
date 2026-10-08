@@ -14,31 +14,32 @@
       "modelPrimary": "claude-opus-5",
       "modelChanges": 0,
       "effort": "high",
-      "uncachedInput": 10,
+      "uncachedInput": 20,
       "cachedInput": 0,
       "cacheWrite": 0,
-      "output": 20,
+      "output": 40,
       "reasoningOutput": 0,
       "turns": 1,
-      "apiCalls": 1,
-      "toolCalls": 1,
+      "apiCalls": 2,
+      "toolCalls": 3,
       "harnessVersionFirst": "2.1.250",
       "harnessVersionLast": "2.1.250",
-      "sourceSize": 2130,
+      "sourceSize": 2896,
       "sourcePath": ".claude/projects/proj/canary-session.jsonl"
     }
   ],
   "stepCounts": {
     "claude-code:canary-session": {
       "turn": 1,
-      "call": 1,
-      "tool": 1,
+      "call": 2,
+      "tool": 3,
       "harness": 1
     }
   },
   "toolCounts": {
     "claude-code:canary-session": {
-      "exec": 1
+      "exec": 1,
+      "mcp": 2
     }
   },
   "diagnostics": {

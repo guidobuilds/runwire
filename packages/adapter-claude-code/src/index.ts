@@ -46,7 +46,7 @@ export function createClaudeCodeAdapter(): HarnessAdapter {
   return {
     id: 'claude-code',
     displayName: 'Claude Code',
-    adapterVersion: '2.0.0',
+    adapterVersion: '2.1.0',
     capabilities: CAPABILITIES,
     allowlist: claudeCodeAllowlist,
     probe,

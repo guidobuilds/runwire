@@ -7,8 +7,10 @@ import {
   effectiveSourceId,
   effectiveSourceLocator,
   loadKnown,
+  markImportedVersion,
   persistBundle,
   persistInvalidBundle,
+  readImportedVersion,
   removeVanished,
   upsertHarness,
 } from './persist';
@@ -71,6 +73,48 @@ function adapterCtx(): AdapterContext {
     log: { info() {}, warn() {}, error() {} },
   };
 }
+
+describe('harness imported_version completion marker (D82)', () => {
+  test('readImportedVersion is NULL when the harness row or the marker is absent', () => {
+    const { db } = openStore(':memory:');
+    expect(readImportedVersion(db, 'fake')).toBeNull();
+
+    upsertHarness(db, {
+      id: 'fake',
+      displayName: 'Fake',
+      adapterVersion: '1.0.0',
+      capabilities: [],
+    });
+    expect(readImportedVersion(db, 'fake')).toBeNull();
+  });
+
+  test('markImportedVersion records the completed refresh version', () => {
+    const { db } = storeWithFakeHarness();
+    markImportedVersion(db, 'fake', '2.0.0');
+    expect(readImportedVersion(db, 'fake')).toBe('2.0.0');
+  });
+
+  test('upsertHarness refreshes installed metadata but never clobbers the marker', () => {
+    const { db } = storeWithFakeHarness();
+    markImportedVersion(db, 'fake', '1.0.0');
+
+    upsertHarness(db, {
+      id: 'fake',
+      displayName: 'Fake v2',
+      adapterVersion: '2.0.0',
+      capabilities: ['title'],
+    });
+
+    const row = db
+      .query('SELECT display_name, adapter_version, imported_version FROM harnesses WHERE id = ?')
+      .get('fake');
+    expect(row).toEqual({
+      display_name: 'Fake v2',
+      adapter_version: '2.0.0',
+      imported_version: '1.0.0',
+    });
+  });
+});
 
 describe('persistBundle', () => {
   test("replaces an existing session's steps/tool counts/diagnostics rather than accumulating", () => {
@@ -153,6 +197,95 @@ describe('persistBundle', () => {
       { seq: 0, skill_name: 'my-skill' },
       { seq: 1, skill_name: null },
     ]);
+  });
+
+  test('persists step.mcpServer/mcpTool into steps.mcp_server/mcp_tool (metadata roundtrip)', () => {
+    const { db } = storeWithFakeHarness();
+    persistWithTitles(
+      db,
+      bundle({}, [
+        {
+          sessionId: 'fake:s1',
+          seq: 0,
+          kind: 'tool',
+          toolCategory: 'mcp',
+          toolName: 'mcp__plugin_engram_engram__mem_save',
+          mcpServer: 'plugin_engram_engram',
+          mcpTool: 'mem_save',
+        },
+      ]),
+    );
+    const row = db
+      .query('SELECT tool_name, mcp_server, mcp_tool FROM steps WHERE session_id = ?')
+      .get('fake:s1') as {
+      tool_name: string;
+      mcp_server: string | null;
+      mcp_tool: string | null;
+    };
+    expect(row).toEqual({
+      // The raw name is preserved verbatim alongside the normalized pair.
+      tool_name: 'mcp__plugin_engram_engram__mem_save',
+      mcp_server: 'plugin_engram_engram',
+      mcp_tool: 'mem_save',
+    });
+  });
+
+  test('writes NULL identity for an unproven mcp step and a non-MCP step', () => {
+    const { db } = storeWithFakeHarness();
+    persistWithTitles(
+      db,
+      bundle({}, [
+        {
+          sessionId: 'fake:s1',
+          seq: 0,
+          kind: 'tool',
+          toolCategory: 'mcp',
+          toolName: 'mcp__server__tool__extra',
+        },
+        { sessionId: 'fake:s1', seq: 1, kind: 'tool', toolCategory: 'read', toolName: 'Read' },
+      ]),
+    );
+    const rows = db
+      .query('SELECT seq, mcp_server, mcp_tool FROM steps WHERE session_id = ? ORDER BY seq')
+      .all('fake:s1') as { seq: number; mcp_server: string | null; mcp_tool: string | null }[];
+    expect(rows).toEqual([
+      { seq: 0, mcp_server: null, mcp_tool: null },
+      { seq: 1, mcp_server: null, mcp_tool: null },
+    ]);
+  });
+
+  test('replaceSteps clears identity when a re-emitted step loses it (no stale pair survives)', () => {
+    const { db } = storeWithFakeHarness();
+    persistWithTitles(
+      db,
+      bundle({}, [
+        {
+          sessionId: 'fake:s1',
+          seq: 0,
+          kind: 'tool',
+          toolCategory: 'mcp',
+          toolName: 'mcp__srv__tool',
+          mcpServer: 'srv',
+          mcpTool: 'tool',
+        },
+      ]),
+    );
+    persistWithTitles(
+      db,
+      bundle({}, [
+        {
+          sessionId: 'fake:s1',
+          seq: 0,
+          kind: 'tool',
+          toolCategory: 'mcp',
+          toolName: 'mcp__srv__tool__extra',
+        },
+      ]),
+    );
+    const row = db
+      .query('SELECT mcp_server, mcp_tool FROM steps WHERE session_id = ?')
+      .get('fake:s1') as { mcp_server: string | null; mcp_tool: string | null };
+    expect(row).toEqual({ mcp_server: null, mcp_tool: null });
   });
 });
 

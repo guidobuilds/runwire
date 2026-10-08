@@ -138,6 +138,66 @@ describe('claude-code adapter: canary fixture (title privacy)', () => {
     const off = await bundleFor(contextForFixture('canary', false), 'claude-code:canary-session');
     expect(off.session.title).toBeUndefined();
   });
+
+  test('a proven MCP name gets identity, an ambiguous one does not, and no input sentinel leaks', async () => {
+    const bundle = await bundleFor(contextForFixture('canary', true), 'claude-code:canary-session');
+    const mcpTools = bundle.steps.filter((s) => s.kind === 'tool' && s.toolCategory === 'mcp');
+    expect(mcpTools).toHaveLength(2);
+
+    const proven = mcpTools.find((s) => s.toolName === 'mcp__canary_server__canary_tool');
+    expect(proven).toMatchObject({ mcpServer: 'canary_server', mcpTool: 'canary_tool' });
+
+    const ambiguous = mcpTools.find((s) => s.toolName === 'mcp__canary_server__canary_tool__extra');
+    expect(ambiguous?.mcpServer).toBeUndefined();
+    expect(ambiguous?.mcpTool).toBeUndefined();
+
+    // The canary fixture puts RUNWIRE_CANARY_<n> in every content field; the
+    // MCP tool_use input is content and must never reach the bundle.
+    expect(JSON.stringify(bundle)).not.toContain('RUNWIRE_CANARY_');
+  });
+});
+
+describe('claude-code adapter: MCP identity from proven mcp__server__tool names', () => {
+  test('the medium fixture emits identity for real MCP tools and keeps every raw toolName', async () => {
+    const ctx = contextForFixture('medium');
+    const bundle = await bundleFor(ctx, 'claude-code:3666e64a-bdeb-4ffb-82d4-ad06666a67a8');
+    const mcpTools = bundle.steps.filter((s) => s.kind === 'tool' && s.toolCategory === 'mcp');
+    expect(mcpTools.length).toBeGreaterThan(0);
+
+    const memSave = mcpTools.find((s) => s.toolName === 'mcp__plugin_engram_engram__mem_save');
+    expect(memSave).toMatchObject({
+      mcpServer: 'plugin_engram_engram',
+      mcpTool: 'mem_save',
+      toolName: 'mcp__plugin_engram_engram__mem_save',
+    });
+    expect(mcpTools.some((s) => s.mcpServer === 'chrome-devtools')).toBe(true);
+
+    // Identity, when present, always reconstructs the raw name exactly.
+    for (const step of mcpTools) {
+      if (step.mcpServer === undefined && step.mcpTool === undefined) continue;
+      expect(step.toolName).toBe(`mcp__${step.mcpServer}__${step.mcpTool}`);
+    }
+
+    const toolSteps = bundle.steps.filter((s) => s.kind === 'tool');
+    expect(bundle.session.toolCalls).toBe(toolSteps.length);
+  });
+
+  test('a non-MCP tool in a fixture never gains identity', async () => {
+    const ctx = contextForFixture('small');
+    const bundles = await collect(ctx);
+    const tools = bundles.flatMap((b) => b.steps).filter((s) => s.kind === 'tool');
+    expect(tools.length).toBeGreaterThan(0);
+    for (const tool of tools) {
+      expect(tool.mcpServer).toBeUndefined();
+      expect(tool.mcpTool).toBeUndefined();
+    }
+  });
+});
+
+describe('claude-code adapter: metadata', () => {
+  test('adapterVersion reflects the MCP-identity output change', () => {
+    expect(createClaudeCodeAdapter().adapterVersion).toBe('2.1.0');
+  });
 });
 
 describe('claude-code adapter: probe', () => {

@@ -1,6 +1,6 @@
 # Adapter: Claude Code
 
-Status: implements the 2026-09-04 contract (D68–D74), `adapterVersion: '2.0.0'`. `discover(ctx, known)` computes every `SessionBundle` field itself (records.ts + compute.ts + project.ts); core only validates, persists, links and rolls up.
+Status: implements the 2026-09-04 contract (D68–D74), `adapterVersion: '2.1.0'`. `discover(ctx, known)` computes every `SessionBundle` field itself (records.ts + compute.ts + project.ts); core only validates, persists, links and rolls up.
 
 Based on structure-only inspection of CLI versions 2.1.22x–2.1.251 on macOS (2026-08-29). Validated on the reference machine (2026-08-30): 731 sources (367 root, 364 subagent), zero parse failures, cold scan 1.3 s / warm rescan 22 ms. Fields marked *(newer)* were only seen in the latest versions.
 
@@ -25,6 +25,8 @@ Based on structure-only inspection of CLI versions 2.1.22x–2.1.251 on macOS (2
 3. Read the file (`records.ts`): stream line by line, JSON-parse, project through the allowlist, schema-check. Content fields never leave the line. Yields `{ record, line }` plus line-level diagnostics (`malformed-json-line`, `invalid-record`, `oversized-line`, `source-truncated`, `unknown-record-type`).
 4. Compute the bundle (`compute.ts`), folding every record in one pass: resolve the project from the first allowlisted `cwd` (D8/D9), falling back to decoding the directory name (diagnostic `cwd-from-dirname`) when no record carries one; map records to `steps[]` in source order (table below), pairing `tool_use`/`tool_result` **strictly by `tool_use_id`** (an unmatched result is not a step, counted in one aggregated `unpaired-tool-result` diagnostic); compute the `Session`: one usage per `requestId`, `model_primary` = model with most output tokens (ties → first seen), `mode_primary` = most frequent mode, token totals, `turns`, `api_calls`, `tool_calls`, `compactions`, `duration_ms` = last − first valid timestamp, initiator. For a subagent, `discover.ts` reads `.meta.json` first for the link fields (`parent_id`, `agent_type`, `depth`, `spawn_call_id`); a missing or unparseable file still yields a bundle, diagnosed `missing-agent-meta` / `invalid-agent-meta`.
 5. Emit `{ project, session, steps, diagnostics }`. A per-source read failure (e.g. the file vanished after `stat`) yields a stub bundle with diagnostic `source-read-failed` instead of throwing.
+
+Fail-closed walk: a root that vanished after `probe` and a directory the parent `readdir` returned that disappeared (`stat` undefined) or turned unreadable (EACCES/EIO, which `RunwireFs` rethrows — [ARCHITECTURE.md §3](../ARCHITECTURE.md#3-contract)) before its own listing make `discover` throw instead of silently skipping them. `importAll` then keeps stored history and clears the completion marker rather than pruning an incomplete tree. An absent optional `<id>/subagents/` dir or `.meta.json` stays tolerated. This is a point-in-time check, not an atomic filesystem snapshot.
 
 Core links parent/child over `child_id` (matched by `spawn_call_id`) and computes rollups; the adapter never sums across sessions. See [ARCHITECTURE.md §4](../ARCHITECTURE.md#4-what-an-adapter-computes).
 
@@ -52,7 +54,7 @@ Records are one JSON object per line. Top-level `type` drives the mapping.
 
 | `type` | Produces | Fields used |
 |---|---|---|
-| `assistant` | `Step kind=call`, one per `requestId` (`model`, token columns; `<synthetic>` models keep usage, `model` undefined) → token totals, `api_calls`, `model_primary`, `effort`; `Step kind=model-change` (`from_value`/`to_value`) on non-synthetic transitions → `model_changes`; `Step kind=tool` per `tool_use` block (`tool_name`, `tool_category`, `model` (the emitting message's model; absent for `<synthetic>`), `call_id = id`, `skill_name` when the tool is `Skill`), emitted regardless of `requestId` dedup → `tool_calls`, `session_tool_counts` | `requestId`, `timestamp`, `effort`, `message.model`, `message.usage.{input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, output_tokens_details.thinking_tokens}`, `message.content[].{type, name, id, input.skill}` |
+| `assistant` | `Step kind=call`, one per `requestId` (`model`, token columns; `<synthetic>` models keep usage, `model` undefined) → token totals, `api_calls`, `model_primary`, `effort`; `Step kind=model-change` (`from_value`/`to_value`) on non-synthetic transitions → `model_changes`; `Step kind=tool` per `tool_use` block (`tool_name`, `tool_category`, `model` (the emitting message's model; absent for `<synthetic>`), `call_id = id`, `skill_name` when the tool is `Skill`, `mcp_server`/`mcp_tool` when the name is a proven `mcp__server__tool` — see "MCP identity"), emitted regardless of `requestId` dedup → `tool_calls`, `session_tool_counts` | `requestId`, `timestamp`, `effort`, `message.model`, `message.usage.{input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, output_tokens_details.thinking_tokens}`, `message.content[].{type, name, id, input.skill}` |
 | `user` | `Step kind=turn` → `turns` when not `isMeta` and no `tool_result` block (only when the file has no `system/turn_duration` records); each `tool_result` block pairs strictly by `tool_use_id` with the pending `tool` step (`error = is_error`, `duration_ms` from both timestamps); an unmatched result is not a step (diagnostic `unpaired-tool-result`) | `timestamp`, `isMeta`, `message.content[].{type, tool_use_id, is_error}` |
 | `system` / `subtype: compact_boundary` | `Step kind=compaction` (`compaction_trigger`, `pre_tokens`, `post_tokens`) → `compactions` | `compactMetadata.{trigger, preTokens, postTokens}` |
 | `system` / `subtype: turn_duration` | `Step kind=turn` with `duration_ms` (replaces the `user`-derived turns when present) | `durationMs`, `timestamp` |
@@ -91,7 +93,7 @@ Mirror of `src/allowlist.ts`; kept in step by hand.
 }
 ```
 
-Explicitly excluded: `message.content[].text|thinking|content` (content) and the rest of `input` (`input.args|input.command|input.content` — `input.skill` is now the sole allowlisted `input` key), everything in `attachment` except `type` and `hookName` (attachments embed file contents, hook stdout and injected context), `toolUseResult` (tool output), `lastPrompt`, `agentName`, `slug` (prompt-derived), `summary`, `agentSetting` (a user-authored agent name — only the *presence* of the `agent-setting` record is read).
+Explicitly excluded: `message.content[].text|thinking|content` (content) and the rest of `input` (`input.args|input.command|input.content` — `input.skill` is now the sole allowlisted `input` key), everything in `attachment` except `type` and `hookName` (attachments embed file contents, hook stdout and injected context), `toolUseResult` (tool output), `lastPrompt`, `agentName`, `slug` (prompt-derived), `summary`, `agentSetting` (a user-authored agent name — only the *presence* of the `agent-setting` record is read), and the record-level `attributionSkill` / `attributionMcpServer` / `attributionMcpTool` fields (unverified attribution; MCP identity is parsed from the tool *name* instead, see "MCP identity").
 
 `entrypoint` and `promptSource` are closed-ish enums the CLI emits — no user- or model-authored content, admissible under D7 like `model`/`mode`/`stop_reason`. The dev-only fixture redactor (`runwire fixture`) keeps their value only when it is in `CLAUDE_CODE_ENTRYPOINTS` / `CLAUDE_CODE_PROMPT_SOURCES` (`src/initiator.ts`); anything else degrades to filler.
 
@@ -153,11 +155,21 @@ Measured (reference machine, 2026-09-01): 383 roots → 318 `machine` (308 by `e
 
 A `Skill` tool step also carries `Step.skillName`, the value of `message.content[].input.skill` (metadata only — the rest of the tool_use `input` is never read, D7). Non-`skill` categories leave `skillName` undefined.
 
+### MCP identity
+
+A tool_use whose name is a **proven** `mcp__<server>__<tool>` identity additionally fills `Step.mcpServer` / `Step.mcpTool`. Identity is parsed by `parseMcpIdentity` (`@runwire/core`, ARCHITECTURE §3): exactly three nonempty `__`-separated segments with the fixed `mcp` prefix. Both fields are present together or both absent, and the raw `Step.toolName` is always preserved verbatim.
+
+- `mcp__plugin_engram_engram__mem_save` → `plugin_engram_engram` / `mem_save`; `mcp__chrome-devtools__new_page` → `chrome-devtools` / `new_page`. Single underscores are ordinary segment content, not separators.
+- Category stays `mcp` with **no** identity for anything else: fewer/more segments (`mcp__server`, `mcp__a__b__c`), an empty segment (`mcp____tool`, `mcp__server__`), or a name that does not start with `mcp__`.
+- Identity comes from the tool *name* only — tool args and output are never read (D7). Claude Code's own `attributionMcpServer` / `attributionMcpTool` record fields are **not** read: like `attributionSkill` they are not on the allowlist, and the attribution is unverified.
+
+`toolCalls` owns `Step.mcpServer`/`Step.mcpTool` in the contract (`CAPABILITY_FIELDS`), so the capability is unchanged from the tool-name mapping above.
+
 Harness event vocabulary (`claudeCodeHarnessEventNames`): `hook:<hookEvent>` (the part of `hookName` before `:`; e.g. `hook:PreToolUse`, `hook:Stop`, `hook:UserPromptSubmit`), `permission`, `plan-mode`, `plan-mode-exit`, `auto-mode`. The tool name after the colon is dropped so the vocabulary stays finite.
 
 ## Capabilities
 
-`usage.perCall`, `usage.cumulative`, `usage.cacheWrite`, `usage.reasoning`, `timing`, `model`, `mode`, `effort`, `version`, `turns`, `toolCalls`, `compactions`, `subagents`, `cost` *(newer versions only — declared; absence in old files shows as NULL)*, `title`, `git` (branch only), `initiator`, `steps.errors` (tool `error` flag), `steps.harness` (`harness` steps), `steps.toolDurations` (`tool.durationMs`). `toolCalls` now also gates `Step.skillName` for `skill`-category tool steps. No `trace.*` successor (ARCHITECTURE §3 dropped it).
+`usage.perCall`, `usage.cumulative`, `usage.cacheWrite`, `usage.reasoning`, `timing`, `model`, `mode`, `effort`, `version`, `turns`, `toolCalls`, `compactions`, `subagents`, `cost` *(newer versions only — declared; absence in old files shows as NULL)*, `title`, `git` (branch only), `initiator`, `steps.errors` (tool `error` flag), `steps.harness` (`harness` steps), `steps.toolDurations` (`tool.durationMs`). `toolCalls` now also gates `Step.skillName` for `skill`-category tool steps and `Step.mcpServer`/`Step.mcpTool` for proven MCP names. No `trace.*` successor (ARCHITECTURE §3 dropped it).
 
 ## Known variations
 
@@ -187,5 +199,5 @@ Every case except `all/` has a committed `expected.json` snapshot (`packages/ada
 | `old-version/` | a real session on CLI 2.1.234 | no `cost-state`, no `turn_duration`; turns derived from user-message heuristics |
 | `dispatch/` | a real `cli`-entrypoint session dispatched by another agent framework | initiator classifies `machine`/`subagent-dispatch` on the `agent-setting` marker alone, since `entrypoint` says `cli` exactly as a human terminal session would |
 | `malformed/` | hand-written | a broken JSON line and a truncated final line, both mid-file so records before and after still parse. The oversized-line path is exercised in-memory in `records.test.ts`, not via an 8 MB fixture |
-| `canary/` | hand-written | every content field = a unique `RUNWIRE_CANARY_<n>` sentinel, except `aiTitle` (a different, unchecked sentinel — the sanctioned D7 exception that legitimately reaches `title`) |
+| `canary/` | hand-written | every content field = a unique `RUNWIRE_CANARY_<n>` sentinel, except `aiTitle` (a different, unchecked sentinel — the sanctioned D7 exception that legitimately reaches `title`). Includes a proven `mcp__canary_server__canary_tool` name (identity emitted) and an ambiguous `mcp__canary_server__canary_tool__extra` (no identity), both with canary sentinels in `input` to prove tool input never reaches the bundle |
 | `all/` | generated | union of every fixture above, for the contract test kit's capability-consistency check only (see `all/README.md`) |

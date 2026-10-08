@@ -144,6 +144,43 @@ function subjectCell(event: Event): string {
   return EM_DASH;
 }
 
+/** The tooltip/fallback text for the subject cell: the raw subject (or its
+ * duration fallback), never the em dash. */
+function subjectTitle(event: Event): string | undefined {
+  const subject = subjectCell(event);
+  return subject === EM_DASH ? undefined : subject;
+}
+
+/** The authoritative, complete stored MCP identity for an MCP tool row. Null
+ * for a non-MCP event or a missing/partial/malformed pair, so the row falls
+ * back to the raw subject instead of an invented identity. */
+function mcpIdentity(event: Event): { server: string; tool: string } | null {
+  if (event.kind !== 'tool' || event.action !== 'mcp') return null;
+  const { mcpServer, mcpTool } = event;
+  if (typeof mcpServer !== 'string' || mcpServer === '') return null;
+  if (typeof mcpTool !== 'string' || mcpTool === '') return null;
+  return { server: mcpServer, tool: mcpTool };
+}
+
+/** A complete MCP pair renders as a truncated server/tool hierarchy with the
+ * full values on hover; every other row keeps the raw subject. */
+function SubjectCell({ event }: { event: Event }) {
+  const identity = mcpIdentity(event);
+  if (identity) {
+    return (
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate font-medium text-foreground" title={identity.server}>
+          {identity.server}
+        </span>
+        <span className="truncate" title={identity.tool}>
+          {identity.tool}
+        </span>
+      </span>
+    );
+  }
+  return <span className="block truncate">{subjectCell(event)}</span>;
+}
+
 const SKELETON_ROW_KEYS = ['row-0', 'row-1', 'row-2', 'row-3', 'row-4'] as const;
 
 function pageCount(total: number, pageSize: number): number {
@@ -404,8 +441,11 @@ export function EventsTable({
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs">{ACTION_LABELS[event.action]}</TableCell>
-                      <TableCell className="max-w-xs truncate text-muted-foreground text-xs">
-                        {subjectCell(event)}
+                      <TableCell
+                        className="max-w-xs text-muted-foreground text-xs"
+                        title={subjectTitle(event)}
+                      >
+                        <SubjectCell event={event} />
                       </TableCell>
                       <TableCell className="font-mono text-xs">{modelCell(event)}</TableCell>
                       <TableCell>

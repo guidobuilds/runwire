@@ -194,6 +194,8 @@ const MERGED_ITEMS: readonly Event[] = [
     kind: 'tool',
     category: 'mcp',
     toolName: 'mcp__plugin_engram_engram__mem_save',
+    mcpServer: 'plugin_engram_engram',
+    mcpTool: 'mem_save',
     model: 'claude-sonnet-5',
     action: 'mcp',
     subject: 'mcp__plugin_engram_engram__mem_save',

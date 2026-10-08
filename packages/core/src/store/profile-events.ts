@@ -1,4 +1,5 @@
 import type { Database, SQLQueryBindings } from 'bun:sqlite';
+import { resolveMcpIdentity } from './profile-mcp';
 import { profileScopeCte, profileScopeParams, readProfileScopeNodes } from './profile-scope';
 import type {
   Event,
@@ -22,45 +23,49 @@ type EventRow = {
   trigger: string | null;
   from_value: string | null;
   to_value: string | null;
+  mcp_server: string | null;
+  mcp_tool: string | null;
   action: EventAction;
   subject: string | null;
 };
 
 /* Seven source variants, with an explicit metadata-only column list for every
  * arm. No catch-all arm means an unknown future source kind cannot leak into
- * the profile by accident, and UNION ALL is safe because source kinds differ. */
+ * the profile by accident, and UNION ALL is safe because source kinds differ.
+ * `mcp_server`/`mcp_tool` are the stored identity columns (NULL off the tool
+ * arm) so the `q` filter can search them in SQL before pagination. */
 const EVENTS_CTE = `,
-profile_events(stream_id, seq, at, kind, error, model, category, tool_name, duration_ms, trigger, from_value, to_value) AS (
+profile_events(stream_id, seq, at, kind, error, model, category, tool_name, duration_ms, trigger, from_value, to_value, mcp_server, mcp_tool) AS (
   SELECT st.session_id, st.seq, st.at, 'call', st.error, mn.name,
-         NULL, NULL, NULL, NULL, NULL, NULL
+         NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
   FROM steps st JOIN profile_scope ps ON ps.id = st.session_id
   LEFT JOIN models mn ON mn.id = st.model_id
   WHERE st.kind = 'call'
   UNION ALL
   SELECT st.session_id, st.seq, st.at, 'tool', st.error, mn.name,
-         st.tool_category, st.tool_name, NULL, NULL, NULL, NULL
+         st.tool_category, st.tool_name, NULL, NULL, NULL, NULL, st.mcp_server, st.mcp_tool
   FROM steps st JOIN profile_scope ps ON ps.id = st.session_id
   LEFT JOIN models mn ON mn.id = st.model_id
   WHERE st.kind = 'tool'
   UNION ALL
   SELECT st.session_id, st.seq, st.at, 'turn', st.error, NULL,
-         NULL, NULL, st.duration_ms, NULL, NULL, NULL
+         NULL, NULL, st.duration_ms, NULL, NULL, NULL, NULL, NULL
   FROM steps st JOIN profile_scope ps ON ps.id = st.session_id WHERE st.kind = 'turn'
   UNION ALL
   SELECT st.session_id, st.seq, st.at, 'harness', st.error, NULL,
-         NULL, st.tool_name, NULL, NULL, NULL, NULL
+         NULL, st.tool_name, NULL, NULL, NULL, NULL, NULL, NULL
   FROM steps st JOIN profile_scope ps ON ps.id = st.session_id WHERE st.kind = 'harness'
   UNION ALL
   SELECT st.session_id, st.seq, st.at, 'compaction', st.error, NULL,
-         NULL, NULL, NULL, st.compaction_trigger, NULL, NULL
+         NULL, NULL, NULL, st.compaction_trigger, NULL, NULL, NULL, NULL
   FROM steps st JOIN profile_scope ps ON ps.id = st.session_id WHERE st.kind = 'compaction'
   UNION ALL
   SELECT st.session_id, st.seq, st.at, 'model-change', st.error, NULL,
-         NULL, NULL, NULL, NULL, st.from_value, st.to_value
+         NULL, NULL, NULL, NULL, st.from_value, st.to_value, NULL, NULL
   FROM steps st JOIN profile_scope ps ON ps.id = st.session_id WHERE st.kind = 'model-change'
   UNION ALL
   SELECT st.session_id, st.seq, st.at, 'mode-change', st.error, NULL,
-         NULL, NULL, NULL, NULL, st.from_value, st.to_value
+         NULL, NULL, NULL, NULL, st.from_value, st.to_value, NULL, NULL
   FROM steps st JOIN profile_scope ps ON ps.id = st.session_id WHERE st.kind = 'mode-change'
 )`;
 
@@ -121,14 +126,18 @@ function filterConditions(query: MergedEventsQuery): Conditions {
     params.push(query.model);
   }
   if (query.q !== undefined) {
-    // Metadata-only presentation surface: action, subject, and model.
+    // Metadata-only presentation surface: action, subject, model, and the
+    // stored MCP identity (so a search for the authoritative server/tool also
+    // matches when it differs from the raw tool name the subject carries).
     clauses.push(
       `(COALESCE(${ACTION_EXPR}, '') LIKE ? ESCAPE '\\'` +
         ` OR COALESCE(${SUBJECT_EXPR}, '') LIKE ? ESCAPE '\\'` +
-        ` OR COALESCE(model, '') LIKE ? ESCAPE '\\')`,
+        ` OR COALESCE(model, '') LIKE ? ESCAPE '\\'` +
+        ` OR COALESCE(mcp_server, '') LIKE ? ESCAPE '\\'` +
+        ` OR COALESCE(mcp_tool, '') LIKE ? ESCAPE '\\')`,
     );
     const pattern = likePattern(query.q);
-    params.push(pattern, pattern, pattern);
+    params.push(pattern, pattern, pattern, pattern, pattern);
   }
 
   return { sql: clauses.length === 0 ? '' : ` AND ${clauses.join(' AND ')}`, params };
@@ -157,14 +166,23 @@ function toEvent(row: EventRow): Event {
   switch (row.kind) {
     case 'call':
       return { ...base, kind: 'call', model: row.model };
-    case 'tool':
+    case 'tool': {
+      const identity = resolveMcpIdentity({
+        category: row.category,
+        toolName: row.tool_name,
+        mcpServer: row.mcp_server,
+        mcpTool: row.mcp_tool,
+      });
       return {
         ...base,
         kind: 'tool',
         category: row.category,
         toolName: row.tool_name,
+        mcpServer: identity.server,
+        mcpTool: identity.tool,
         model: row.model,
       };
+    }
     case 'turn':
       return { ...base, kind: 'turn', durationMs: row.duration_ms };
     case 'harness':
@@ -202,7 +220,7 @@ export function readProfileMergedEvents(
 
   const countSql = `${prefix} SELECT COUNT(*) AS n FROM profile_events WHERE at IS NOT NULL${filter.sql}`;
   const excludedSql = `${prefix} SELECT COUNT(*) AS n FROM profile_events WHERE at IS NULL${filter.sql}`;
-  const pageSql = `${prefix} SELECT stream_id, seq, at, kind, error, model, category, tool_name, duration_ms, trigger, from_value, to_value, ${ACTION_EXPR} AS action, ${SUBJECT_EXPR} AS subject FROM profile_events WHERE at IS NOT NULL${filter.sql} ${orderSql(sort, dir)} LIMIT ? OFFSET ?`;
+  const pageSql = `${prefix} SELECT stream_id, seq, at, kind, error, model, category, tool_name, duration_ms, trigger, from_value, to_value, mcp_server, mcp_tool, ${ACTION_EXPR} AS action, ${SUBJECT_EXPR} AS subject FROM profile_events WHERE at IS NOT NULL${filter.sql} ${orderSql(sort, dir)} LIMIT ? OFFSET ?`;
 
   const totalRow = db.query(countSql).get(...scopeParams, ...filter.params) as { n: number };
   const excludedRow = db.query(excludedSql).get(...scopeParams, ...filter.params) as {

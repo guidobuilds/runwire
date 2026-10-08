@@ -26,10 +26,12 @@ function step(
     toolName?: string | null;
     skillName?: string | null;
     trigger?: string | null;
+    mcpServer?: string | null;
+    mcpTool?: string | null;
   } = {},
 ): void {
   db.run(
-    'INSERT INTO steps (session_id, seq, kind, tool_category, tool_name, skill_name, compaction_trigger) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO steps (session_id, seq, kind, tool_category, tool_name, skill_name, compaction_trigger, mcp_server, mcp_tool) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       session,
       seq,
@@ -38,6 +40,8 @@ function step(
       opts.toolName ?? null,
       opts.skillName ?? null,
       opts.trigger ?? null,
+      opts.mcpServer ?? null,
+      opts.mcpTool ?? null,
     ],
   );
 }
@@ -130,6 +134,80 @@ describe('readProfileSignals', () => {
     expect(tree.toolCalls).toEqual({ total: 2, mcp: 2 });
     expect(tree.mcpServers).toEqual(['a', 'b']);
     expect(readProfileSignals(db, 'missing')).toBeNull();
+    db.close();
+  });
+
+  test('distinct MCP servers come from the authoritative stored pair, not the raw name', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    session(db, 'root');
+    step(db, 'root', 0, 'tool', {
+      category: 'mcp',
+      toolName: 'mcp__raw__thing',
+      mcpServer: 'stored-server',
+      mcpTool: 'stored_tool',
+    });
+    step(db, 'root', 1, 'tool', {
+      category: 'mcp',
+      toolName: 'mcp__plugin_engram_engram__mem_save',
+    });
+    const result = readProfileSignals(db, 'root')!;
+    expect(result.toolCalls).toEqual({ total: 2, mcp: 2 });
+    expect(result.mcpServers).toEqual(['plugin_engram_engram', 'stored-server']);
+    db.close();
+  });
+
+  test('legacy NULL pair falls back to the strict parse; malformed/partial stored pairs stay unknown', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    session(db, 'root');
+    // Legacy row: no stored identity, canonical Claude name.
+    step(db, 'root', 0, 'tool', { category: 'mcp', toolName: 'mcp__legacy__call' });
+    // Malformed raw name: still an MCP call, but no fabricated server.
+    step(db, 'root', 1, 'tool', { category: 'mcp', toolName: 'mcp__a__b__c' });
+    // Partial stored pair never combines with the parsed raw pair.
+    step(db, 'root', 2, 'tool', {
+      category: 'mcp',
+      toolName: 'mcp__raw__thing',
+      mcpServer: 'stored-only',
+    });
+    // Non-MCP category is never classified from a raw mcp-looking name.
+    step(db, 'root', 3, 'tool', { category: 'read', toolName: 'mcp__sneaky__tool' });
+    const result = readProfileSignals(db, 'root')!;
+    expect(result.toolCalls).toEqual({ total: 4, mcp: 3 });
+    expect(result.mcpServers).toEqual(['legacy']);
+    db.close();
+  });
+
+  test('own/tree dedup stored identities without changing the tool/mcp counts', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    session(db, 'root');
+    session(db, 'child', 'root');
+    step(db, 'root', 0, 'tool', {
+      category: 'mcp',
+      toolName: 'mcp__raw__a',
+      mcpServer: 'shared',
+      mcpTool: 'a',
+    });
+    step(db, 'child', 0, 'tool', {
+      category: 'mcp',
+      toolName: 'mcp__raw__b',
+      mcpServer: 'shared',
+      mcpTool: 'b',
+    });
+    step(db, 'child', 1, 'tool', {
+      category: 'mcp',
+      toolName: 'mcp__raw__c',
+      mcpServer: 'child-only',
+      mcpTool: 'c',
+    });
+    const own = readProfileSignals(db, 'root', { scope: 'own' })!;
+    expect(own.toolCalls).toEqual({ total: 1, mcp: 1 });
+    expect(own.mcpServers).toEqual(['shared']);
+    const tree = readProfileSignals(db, 'root')!;
+    expect(tree.toolCalls).toEqual({ total: 3, mcp: 3 });
+    expect(tree.mcpServers).toEqual(['child-only', 'shared']);
     db.close();
   });
 

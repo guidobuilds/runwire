@@ -6,7 +6,7 @@ import type {
   SessionBundle,
   Step,
 } from '@runwire/core';
-import { makeDiagnostic, TOKEN_FIELDS } from '@runwire/core';
+import { makeDiagnostic, parseMcpIdentity, TOKEN_FIELDS } from '@runwire/core';
 import { classifyInitiator } from './initiator';
 import type { ClaudeCodeRecord } from './schema';
 import { claudeCodeToolCategory, hookEventName } from './tool-category';
@@ -276,6 +276,10 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
         for (const block of message?.content ?? []) {
           if (block.type === 'tool_use' && block.name) {
             const toolCategory = claudeCodeToolCategory(block.name);
+            // Identity only from a proven `mcp__server__tool` name; a
+            // malformed/ambiguous name stays undefined. The raw toolName is
+            // always preserved.
+            const mcp = toolCategory === 'mcp' ? parseMcpIdentity(block.name) : null;
             const toolStep: Step = {
               sessionId,
               seq: seq++,
@@ -283,6 +287,8 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
               kind: 'tool',
               toolCategory,
               toolName: block.name,
+              mcpServer: mcp?.server,
+              mcpTool: mcp?.tool,
               callId: block.id,
               skillName:
                 toolCategory === 'skill'

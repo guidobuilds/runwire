@@ -135,6 +135,113 @@ describe('validateBundle', () => {
   });
 });
 
+describe('StepSchema: optional MCP identity (mcpServer/mcpTool)', () => {
+  test('a tool step of category mcp carrying both mcpServer and mcpTool validates', () => {
+    const b = validBundle();
+    (b.steps as unknown[]).push({
+      sessionId: 'fake:s1',
+      seq: 0,
+      kind: 'tool',
+      toolCategory: 'mcp',
+      toolName: 'mcp__plugin_engram_engram__mem_save',
+      mcpServer: 'plugin_engram_engram',
+      mcpTool: 'mem_save',
+    });
+    expect(validateBundle(b).ok).toBe(true);
+  });
+
+  test('a tool step of category mcp without identity still validates (unproven name keeps raw only)', () => {
+    const b = validBundle();
+    (b.steps as unknown[]).push({
+      sessionId: 'fake:s1',
+      seq: 0,
+      kind: 'tool',
+      toolCategory: 'mcp',
+      toolName: 'mcp__server__tool__extra',
+    });
+    expect(validateBundle(b).ok).toBe(true);
+  });
+
+  test('the fields are admitted (not stripped) and round-trip through validateBundle', () => {
+    const b = validBundle();
+    (b.steps as unknown[]).push({
+      sessionId: 'fake:s1',
+      seq: 0,
+      kind: 'tool',
+      toolCategory: 'mcp',
+      toolName: 'mcp__server__tool',
+      mcpServer: 'server',
+      mcpTool: 'tool',
+    });
+    const r = validateBundle(b);
+    if (!r.ok) throw new Error('unreachable');
+    expect(r.bundle.steps[0]).toMatchObject({ mcpServer: 'server', mcpTool: 'tool' });
+  });
+
+  test('a non-tool step carrying identity fails', () => {
+    const b = validBundle();
+    (b.steps as unknown[]).push({
+      sessionId: 'fake:s1',
+      seq: 0,
+      kind: 'call',
+      mcpServer: 'server',
+      mcpTool: 'tool',
+    });
+    expect(validateBundle(b).ok).toBe(false);
+  });
+
+  test('a tool step of another category carrying identity fails', () => {
+    const b = validBundle();
+    (b.steps as unknown[]).push({
+      sessionId: 'fake:s1',
+      seq: 0,
+      kind: 'tool',
+      toolCategory: 'read',
+      toolName: 'Read',
+      mcpServer: 'server',
+      mcpTool: 'tool',
+    });
+    expect(validateBundle(b).ok).toBe(false);
+  });
+
+  test('an unpaired identity (only one of the pair) fails', () => {
+    const b = validBundle();
+    (b.steps as unknown[]).push({
+      sessionId: 'fake:s1',
+      seq: 0,
+      kind: 'tool',
+      toolCategory: 'mcp',
+      toolName: 'mcp__server__tool',
+      mcpServer: 'server',
+    });
+    expect(validateBundle(b).ok).toBe(false);
+
+    const b2 = validBundle();
+    (b2.steps as unknown[]).push({
+      sessionId: 'fake:s1',
+      seq: 0,
+      kind: 'tool',
+      toolCategory: 'mcp',
+      toolName: 'mcp__server__tool',
+      mcpTool: 'tool',
+    });
+    expect(validateBundle(b2).ok).toBe(false);
+  });
+
+  test('an empty identity segment fails (a proven identity is never empty)', () => {
+    const b = validBundle();
+    (b.steps as unknown[]).push({
+      sessionId: 'fake:s1',
+      seq: 0,
+      kind: 'tool',
+      toolCategory: 'mcp',
+      mcpServer: '',
+      mcpTool: 'tool',
+    });
+    expect(validateBundle(b).ok).toBe(false);
+  });
+});
+
 describe('D21 scope: default z.object stripping vs .strict()', () => {
   test('a bare z.object silently strips an unknown key by default (documents the D21-vs-bundle distinction)', () => {
     const Loose = z.object({ a: z.string() });

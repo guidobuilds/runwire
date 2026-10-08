@@ -1,3 +1,4 @@
+import type { Event } from '@runwire/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -5,7 +6,7 @@ import { HttpResponse, http } from 'msw';
 import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 import { server } from '@/mocks/node';
-import { PROFILE_ROOT_ID } from '@/mocks/session-profile';
+import { mockProfileMergedEventsTree, PROFILE_ROOT_ID } from '@/mocks/session-profile';
 import { EventsTable } from './events-table';
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -20,6 +21,16 @@ function wrapper({ children }: { children: ReactNode }) {
 
 function renderTable(props: Partial<React.ComponentProps<typeof EventsTable>> = {}) {
   return render(<EventsTable sessionId={PROFILE_ROOT_ID} {...props} />, { wrapper });
+}
+
+/** The default MCP tool fixture row, with additive overrides for API-shape tests. */
+function mcpItem(overrides: Partial<Extract<Event, { kind: 'tool' }>> = {}) {
+  const base = mockProfileMergedEventsTree.items.find(
+    (item): item is Extract<Event, { kind: 'tool' }> =>
+      item.kind === 'tool' && item.action === 'mcp',
+  );
+  if (!base) throw new Error('mcp fixture missing');
+  return { ...base, ...overrides };
 }
 
 const emptyResponse = {
@@ -190,16 +201,108 @@ describe('EventsTable — loaded state', () => {
     expect(screen.getByText(/events without timestamp not shown/)).toBeInTheDocument();
   });
 
-  it('renders the server-owned action label and subject for tool rows', async () => {
+  it('renders a complete stored MCP pair as a server/tool hierarchy', async () => {
     renderTable();
 
     const row = await screen.findByRole('row', { name: /mcp/i });
-    expect(within(row).getByText('MCP')).toBeInTheDocument();
-    expect(within(row).getByText('mcp__plugin_engram_engram__mem_save')).toBeInTheDocument();
+    const subject = within(row).getAllByRole('cell')[4];
+    expect(within(subject).getByText('plugin_engram_engram')).toBeInTheDocument();
+    expect(within(subject).getByText('mem_save')).toBeInTheDocument();
+    // The raw subject is only the fallback/tooltip, never an invented value.
+    expect(
+      within(subject).queryByText('mcp__plugin_engram_engram__mem_save'),
+    ).not.toBeInTheDocument();
+    expect(subject).toHaveAttribute('title', 'mcp__plugin_engram_engram__mem_save');
     // The legacy "category · toolName" concatenation is gone.
     expect(
       within(row).queryByText('mcp · mcp__plugin_engram_engram__mem_save'),
     ).not.toBeInTheDocument();
+  });
+
+  it('falls back to the raw subject when the API pair is missing (legacy response)', async () => {
+    server.use(
+      http.get('/api/sessions/:id/profile/events', () =>
+        HttpResponse.json({
+          ...mockProfileMergedEventsTree,
+          items: [{ ...mcpItem(), mcpServer: null, mcpTool: null }],
+        }),
+      ),
+    );
+
+    renderTable();
+
+    const row = await screen.findByRole('row', { name: /mcp/i });
+    const subject = within(row).getAllByRole('cell')[4];
+    expect(within(subject).getByText('mcp__plugin_engram_engram__mem_save')).toBeInTheDocument();
+  });
+
+  it('falls back to the raw subject for a partial pair (no invented identity)', async () => {
+    server.use(
+      http.get('/api/sessions/:id/profile/events', () =>
+        HttpResponse.json({
+          ...mockProfileMergedEventsTree,
+          items: [{ ...mcpItem(), mcpTool: null }],
+        }),
+      ),
+    );
+
+    renderTable();
+
+    const row = await screen.findByRole('row', { name: /mcp/i });
+    const subject = within(row).getAllByRole('cell')[4];
+    expect(within(subject).getByText('mcp__plugin_engram_engram__mem_save')).toBeInTheDocument();
+    expect(within(subject).queryByText('plugin_engram_engram')).not.toBeInTheDocument();
+  });
+
+  it('leaves non-MCP tool subjects unchanged', async () => {
+    renderTable();
+
+    const row = await screen.findByRole('row', { name: /bash/i });
+    const subject = within(row).getAllByRole('cell')[4];
+    expect(within(subject).getByText('bash')).toBeInTheDocument();
+  });
+
+  it('truncates long server/tool values while keeping the full value available', async () => {
+    const longServer = `an-extremely-long-mcp-server-name-${'x'.repeat(80)}`;
+    const tool = `a-very-long-tool-name-${'y'.repeat(80)}`;
+    server.use(
+      http.get('/api/sessions/:id/profile/events', () =>
+        HttpResponse.json({
+          ...mockProfileMergedEventsTree,
+          items: [{ ...mcpItem(), mcpServer: longServer, mcpTool: tool }],
+        }),
+      ),
+    );
+
+    renderTable();
+
+    const row = await screen.findByRole('row', { name: /mcp/i });
+    const subject = within(row).getAllByRole('cell')[4];
+    const serverEl = within(subject).getByText(longServer);
+    const toolEl = within(subject).getByText(tool);
+    expect(serverEl).toHaveAttribute('title', longServer);
+    expect(toolEl).toHaveAttribute('title', tool);
+    expect(serverEl.className).toContain('truncate');
+    expect(toolEl.className).toContain('truncate');
+  });
+
+  it('escapes metadata markup as literal text', async () => {
+    const payload = '<img src=x onerror=alert(1)>';
+    server.use(
+      http.get('/api/sessions/:id/profile/events', () =>
+        HttpResponse.json({
+          ...mockProfileMergedEventsTree,
+          items: [{ ...mcpItem(), mcpServer: null, mcpTool: null, subject: payload }],
+        }),
+      ),
+    );
+
+    renderTable();
+
+    const row = await screen.findByRole('row', { name: /mcp/i });
+    const subject = within(row).getAllByRole('cell')[4];
+    expect(within(subject).getByText(payload)).toBeInTheDocument();
+    expect(within(subject).queryByRole('img')).not.toBeInTheDocument();
   });
 
   it('shows an error badge only on the error-flagged row', async () => {

@@ -363,6 +363,86 @@ describe('GET /api/sessions/{id}/profile/events', () => {
     });
   });
 
+  test('stored MCP identity is authoritative; legacy NULL pair falls back; non-MCP rows stay null with raw subject', async () => {
+    await withServer(async (base, db) => {
+      db.run(
+        "INSERT INTO steps (session_id, seq, kind, tool_category, tool_name, mcp_server, mcp_tool, at) VALUES ('root', 20, 'tool', 'mcp', 'mcp__raw__thing', 'stored-server', 'stored_tool', '2024-01-01T00:00:20.000Z')",
+      );
+
+      const signals = await body(base, '/api/sessions/root/profile/signals');
+      // The legacy fixture row (NULL pair, canonical name) still resolves via
+      // the strict fallback; the new row comes from its stored pair.
+      expect(signals.json.mcpServers).toEqual(['plugin_engram_engram', 'stored-server']);
+      expect(signals.json.toolCalls).toEqual({ total: 6, mcp: 2 });
+
+      const mcpEvents = await body(base, '/api/sessions/root/profile/events?action=mcp');
+      expect(mcpEvents.json.items).toHaveLength(2);
+      const stored = mcpEvents.json.items.find(
+        (item: { toolName: string | null }) => item.toolName === 'mcp__raw__thing',
+      );
+      expect(stored).toMatchObject({
+        kind: 'tool',
+        action: 'mcp',
+        subject: 'mcp__raw__thing',
+        toolName: 'mcp__raw__thing',
+        mcpServer: 'stored-server',
+        mcpTool: 'stored_tool',
+      });
+      const legacy = mcpEvents.json.items.find(
+        (item: { toolName: string | null }) =>
+          item.toolName === 'mcp__plugin_engram_engram__mem_save',
+      );
+      expect(legacy).toMatchObject({ mcpServer: 'plugin_engram_engram', mcpTool: 'mem_save' });
+
+      const all = await body(base, '/api/sessions/root/profile/events?kind=tool');
+      const rootRead = all.json.items.find(
+        (item: { streamId: string; toolName: string | null }) =>
+          item.streamId === 'root' && item.toolName === 'Read',
+      );
+      expect(rootRead).toMatchObject({
+        category: 'read',
+        subject: 'Read',
+        toolName: 'Read',
+        mcpServer: null,
+        mcpTool: null,
+      });
+      assertEventsMetadataOnly(all.json);
+    });
+  });
+
+  test('q matches stored server/tool in SQL before pagination and keeps raw names searchable', async () => {
+    await withServer(async (base, db) => {
+      db.run(
+        "INSERT INTO steps (session_id, seq, kind, tool_category, tool_name, mcp_server, mcp_tool, at) VALUES ('root', 30, 'tool', 'mcp', 'mcp__raw__alpha', 'search-srv', 'run', '2024-01-01T00:00:30.000Z')",
+      );
+      db.run(
+        "INSERT INTO steps (session_id, seq, kind, tool_category, tool_name, mcp_server, mcp_tool, at) VALUES ('root', 31, 'tool', 'mcp', 'mcp__raw__beta', 'search-srv', 'stop', '2024-01-01T00:00:31.000Z')",
+      );
+
+      const page1 = await body(
+        base,
+        '/api/sessions/root/profile/events?q=search-srv&limit=1&offset=0',
+      );
+      const page2 = await body(
+        base,
+        '/api/sessions/root/profile/events?q=search-srv&limit=1&offset=1',
+      );
+      expect(page1.json.total).toBe(2);
+      expect(page2.json.total).toBe(2);
+      expect(page1.json.items).toHaveLength(1);
+      expect(page2.json.items).toHaveLength(1);
+      expect(page1.json.items[0].seq).not.toBe(page2.json.items[0].seq);
+      expect(page1.json.items[0]).toMatchObject({
+        mcpServer: 'search-srv',
+        toolName: 'mcp__raw__alpha',
+      });
+
+      const raw = await body(base, '/api/sessions/root/profile/events?q=raw__beta');
+      expect(raw.json.total).toBe(1);
+      expect(raw.json.items[0].subject).toBe('mcp__raw__beta');
+    });
+  });
+
   test('kind and action filters are CSV allow-lists', async () => {
     await withServer(async (base) => {
       const tools = await body(base, '/api/sessions/root/profile/events?kind=tool');

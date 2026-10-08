@@ -46,6 +46,45 @@ export function upsertHarness(db: Database, adapter: HarnessMeta): void {
   );
 }
 
+/**
+ * The completed-refresh marker (D82): the adapter mapping version whose full
+ * historical import last finished cleanly, or NULL for a store predating the
+ * marker. Deliberately separate from `harnesses.adapter_version`, which stays
+ * the installed metadata; `upsertHarness` never touches this column. Read it
+ * BEFORE `upsertHarness` so the comparison sees the pre-run marker.
+ */
+export function readImportedVersion(db: Database, harnessId: string): string | null {
+  const row = db.query('SELECT imported_version FROM harnesses WHERE id = ?').get(harnessId) as {
+    imported_version: string | null;
+  } | null;
+  return row?.imported_version ?? null;
+}
+
+/**
+ * Advances the completed-refresh marker. Only called once a run enumerated the
+ * whole stream, validated/persisted every bundle without a failed bundle or
+ * error-level diagnostic, and finished vanished-source cleanup (D82). A
+ * partially successful run leaves the marker untouched so the next run retries.
+ */
+export function markImportedVersion(db: Database, harnessId: string, version: string): void {
+  db.run('UPDATE harnesses SET imported_version = ? WHERE id = ?', [version, harnessId]);
+}
+
+/**
+ * Clears the completed-refresh marker after an INCOMPLETE run - a failed
+ * bundle, an error-level diagnostic, a thrown discover/persist/cleanup, or a
+ * probe/upsert error (D82). Without this, a marker already equal to the
+ * running `adapterVersion` from an earlier success would still look complete,
+ * and the next same-version scan would hand the size/mtime cache to
+ * `discover`, skipping the very source whose re-read failed. NULL means "no
+ * completed refresh for the current mapping", so the next run bypasses the
+ * cache instead. No-op when the harness row does not exist yet (a throw before
+ * the metadata upsert).
+ */
+export function invalidateImportedVersion(db: Database, harnessId: string): void {
+  db.run('UPDATE harnesses SET imported_version = NULL WHERE id = ?', [harnessId]);
+}
+
 export function upsertProject(db: Database, project: Project): void {
   db.run(
     `INSERT INTO projects (key, name, repo_root, worktree, identity) VALUES (?, ?, ?, ?, ?)
@@ -192,8 +231,8 @@ function replaceSteps(
       `INSERT INTO steps (
          session_id, seq, at, kind, model_id, tool_category, tool_name, skill_name, call_id, child_id,
          duration_ms, error, uncached_input, cached_input, cache_write, output, reasoning_output,
-         compaction_trigger, pre_tokens, post_tokens, from_value, to_value
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         compaction_trigger, pre_tokens, post_tokens, from_value, to_value, mcp_server, mcp_tool
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         sessionId,
         step.seq,
@@ -217,6 +256,8 @@ function replaceSteps(
         step.postTokens ?? null,
         step.fromValue ?? null,
         step.toValue ?? null,
+        step.mcpServer ?? null,
+        step.mcpTool ?? null,
       ],
     );
   }

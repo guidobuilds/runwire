@@ -84,6 +84,8 @@ const mergedEventsResponse = {
       kind: 'tool',
       category: 'mcp',
       toolName: 'mcp__engram__mem_save',
+      mcpServer: 'engram',
+      mcpTool: 'mem_save',
       model: 'claude-sonnet-5',
       action: 'mcp',
       subject: 'mcp__engram__mem_save',
@@ -255,6 +257,64 @@ describe('session profile API', () => {
     expect(result.items[1]).toMatchObject({ kind: 'tool', model: 'claude-sonnet-5' });
     // Tool row whose source omitted `model`: additive-with-default → null, never a throw.
     expect(result.items[2]).toMatchObject({ kind: 'tool', model: null });
+  });
+
+  it('retains a complete stored MCP pair on a tool event', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(new Response(JSON.stringify(mergedEventsResponse), { status: 200 })),
+    );
+    const result = await fetchSessionProfileMergedEvents('root', { scope: 'tree' });
+    expect(result.items[1]).toMatchObject({
+      kind: 'tool',
+      mcpServer: 'engram',
+      mcpTool: 'mem_save',
+    });
+  });
+
+  it('degrades missing, partial, empty or malformed MCP metadata to nulls', async () => {
+    const tool = mergedEventsResponse.items[1];
+    const variants: Record<string, unknown> = {
+      missing: { ...tool, mcpServer: undefined, mcpTool: undefined },
+      partialServer: { ...tool, mcpServer: 'server-only', mcpTool: null },
+      partialTool: { ...tool, mcpServer: null, mcpTool: 'tool-only' },
+      empty: { ...tool, mcpServer: '', mcpTool: '' },
+      malformed: { ...tool, mcpServer: 7, mcpTool: true },
+    };
+    for (const [name, item] of Object.entries(variants)) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          new Response(JSON.stringify({ ...mergedEventsResponse, items: [item] }), {
+            status: 200,
+          }),
+        ),
+      );
+      const result = await fetchSessionProfileMergedEvents('root', { scope: 'tree' });
+      expect(result.items[0], name).toMatchObject({
+        kind: 'tool',
+        mcpServer: null,
+        mcpTool: null,
+      });
+    }
+  });
+
+  it('defaults the MCP pair to nulls on a non-MCP tool event', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(new Response(JSON.stringify(mergedEventsResponse), { status: 200 })),
+    );
+    const result = await fetchSessionProfileMergedEvents('root', { scope: 'tree' });
+    expect(result.items[2]).toMatchObject({
+      kind: 'tool',
+      action: 'exec',
+      mcpServer: null,
+      mcpTool: null,
+    });
   });
 
   it('rejects a malformed merged events response', async () => {

@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { resolveMcpIdentity } from './profile-mcp';
 import { profileScopeCte, profileScopeParams, readProfileScopeNodes } from './profile-scope';
 import type { SignalsQuery, SignalsResponse } from './profile-types';
 
@@ -6,23 +7,11 @@ type StepRow = {
   kind: string;
   tool_category: string | null;
   tool_name: string | null;
+  mcp_server: string | null;
+  mcp_tool: string | null;
   skill_name: string | null;
   compaction_trigger: string | null;
 };
-
-/**
- * Best-effort MCP server name from an `mcp__<server>__<tool>` tool_name. A
- * server segment may itself contain underscores, so only the first and last
- * `__`-delimited segments (the fixed `mcp` prefix and the tool name) are
- * stripped; everything in between is rejoined as the server name. This is
- * metadata-only (a tool identity string, never args/output) and best-effort,
- * not authoritative.
- */
-function mcpServerName(toolName: string): string | null {
-  const parts = toolName.split('__');
-  if (parts.length < 3) return null;
-  return parts.slice(1, -1).join('__');
-}
 
 /**
  * Metadata-only signals reader: waste-pattern counts (compactions, model
@@ -41,14 +30,12 @@ export function readProfileSignals(
 
   const prefix = profileScopeCte(scope);
   const params = profileScopeParams(sessionId);
-  const rows = db
-    .query(
-      `${prefix}
-       SELECT st.kind, st.tool_category, st.tool_name, st.skill_name, st.compaction_trigger
+  const rowsSql = `${prefix}
+       SELECT st.kind, st.tool_category, st.tool_name, st.mcp_server, st.mcp_tool,
+              st.skill_name, st.compaction_trigger
        FROM steps st JOIN profile_scope ps ON ps.id = st.session_id
-       WHERE st.kind IN ('compaction', 'model-change', 'tool')`,
-    )
-    .all(...params) as StepRow[];
+       WHERE st.kind IN ('compaction', 'model-change', 'tool')`;
+  const rows = db.query(rowsSql).all(...params) as StepRow[];
 
   let auto = 0;
   let manual = 0;
@@ -71,10 +58,13 @@ export function readProfileSignals(
       toolTotal += 1;
       if (row.tool_category === 'mcp') {
         toolMcp += 1;
-        if (row.tool_name !== null) {
-          const server = mcpServerName(row.tool_name);
-          if (server !== null) mcpServers.add(server);
-        }
+        const identity = resolveMcpIdentity({
+          category: row.tool_category,
+          toolName: row.tool_name,
+          mcpServer: row.mcp_server,
+          mcpTool: row.mcp_tool,
+        });
+        if (identity.server !== null) mcpServers.add(identity.server);
       } else if (row.tool_category === 'skill') {
         skillCalls += 1;
         if (row.skill_name !== null) skillNames.add(row.skill_name);

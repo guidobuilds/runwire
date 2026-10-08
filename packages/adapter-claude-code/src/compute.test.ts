@@ -564,6 +564,108 @@ describe('computeBundle - skill name and D7 privacy', () => {
   });
 });
 
+describe('computeBundle - MCP identity (T2)', () => {
+  function assistantWithToolUses(
+    blocks: Array<{ id: string; name: string; input?: Record<string, unknown> }>,
+    at = '2026-01-01T00:00:00.000Z',
+  ) {
+    return rec({
+      type: 'assistant',
+      timestamp: at,
+      message: {
+        model: 'claude-opus-5',
+        content: blocks.map((b) => ({
+          type: 'tool_use',
+          id: b.id,
+          name: b.name,
+          ...(b.input ? { input: b.input } : {}),
+        })),
+      },
+    });
+  }
+
+  test('a proven mcp__server__tool name emits both mcpServer/mcpTool and keeps the raw toolName', async () => {
+    const bundle = await computeBundle(
+      baseInput([
+        assistantWithToolUses([{ id: 't1', name: 'mcp__plugin_engram_engram__mem_save' }]),
+      ]),
+    );
+    const tool = bundle.steps.find((s) => s.kind === 'tool');
+    expect(tool).toMatchObject({
+      toolCategory: 'mcp',
+      toolName: 'mcp__plugin_engram_engram__mem_save',
+      mcpServer: 'plugin_engram_engram',
+      mcpTool: 'mem_save',
+    });
+    expect(bundle.session.toolCalls).toBe(1);
+  });
+
+  test('a plain mcp__server__tool name parses into exactly server and tool', async () => {
+    const bundle = await computeBundle(
+      baseInput([assistantWithToolUses([{ id: 't1', name: 'mcp__server__tool' }])]),
+    );
+    const tool = bundle.steps.find((s) => s.kind === 'tool');
+    expect(tool).toMatchObject({ mcpServer: 'server', mcpTool: 'tool' });
+  });
+
+  test('a malformed/ambiguous mcp name keeps category mcp and raw toolName but emits no identity', async () => {
+    const names = [
+      'mcp__server',
+      'mcp__server__tool__extra',
+      'mcp____tool',
+      'mcp__server__',
+      'mcp__',
+    ];
+    const bundle = await computeBundle(
+      baseInput([assistantWithToolUses(names.map((name, i) => ({ id: `t${i}`, name })))]),
+    );
+    const tools = bundle.steps.filter((s) => s.kind === 'tool');
+    expect(tools.map((t) => t.toolName)).toEqual(names);
+    for (const tool of tools) {
+      expect(tool.toolCategory).toBe('mcp');
+      expect(tool.mcpServer).toBeUndefined();
+      expect(tool.mcpTool).toBeUndefined();
+    }
+    expect(bundle.session.toolCalls).toBe(names.length);
+  });
+
+  test('a non-MCP tool emits no identity even when its name contains the separator', async () => {
+    const bundle = await computeBundle(
+      baseInput([
+        assistantWithToolUses([
+          { id: 't1', name: 'Read' },
+          { id: 't2', name: 'server__tool' },
+        ]),
+      ]),
+    );
+    const tools = bundle.steps.filter((s) => s.kind === 'tool');
+    expect(tools.map((t) => t.toolCategory)).toEqual(['read', 'other']);
+    for (const tool of tools) {
+      expect(tool.mcpServer).toBeUndefined();
+      expect(tool.mcpTool).toBeUndefined();
+    }
+  });
+
+  test('MCP identity is metadata only: tool input never reaches the step, even for mcp names', async () => {
+    const bundle = await computeBundle(
+      baseInput([
+        assistantWithToolUses([
+          {
+            id: 't1',
+            name: 'mcp__canary_server__canary_tool',
+            input: { args: 'SECRET_ARGS', command: 'SECRET_CMD' },
+          },
+        ]),
+      ]),
+    );
+    const tool = bundle.steps.find((s) => s.kind === 'tool');
+    expect(tool).toMatchObject({ mcpServer: 'canary_server', mcpTool: 'canary_tool' });
+    const serialized = JSON.stringify(bundle.steps);
+    expect(serialized).not.toContain('SECRET_ARGS');
+    expect(serialized).not.toContain('SECRET_CMD');
+  });
+});
+
 describe('computeBundle - tool step model from the emitting assistant message', () => {
   test('a tool_use from an assistant with a model carries that model', async () => {
     const bundle = await computeBundle(

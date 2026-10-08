@@ -38,10 +38,12 @@ function step(
     trigger?: string;
     from?: string;
     to?: string;
+    mcpServer?: string | null;
+    mcpTool?: string | null;
   } = {},
 ): void {
   db.run(
-    'INSERT INTO steps (session_id, seq, kind, tool_category, at, error, model_id, tool_name, duration_ms, compaction_trigger, from_value, to_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO steps (session_id, seq, kind, tool_category, at, error, model_id, tool_name, duration_ms, compaction_trigger, from_value, to_value, mcp_server, mcp_tool) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       session,
       seq,
@@ -55,6 +57,8 @@ function step(
       opts.trigger ?? null,
       opts.from ?? null,
       opts.to ?? null,
+      opts.mcpServer ?? null,
+      opts.mcpTool ?? null,
     ],
   );
 }
@@ -280,6 +284,126 @@ describe('readProfileMergedEvents', () => {
     ]);
     expect(result.total).toBe(4);
     expect(result.excludedNullAtCount).toBe(1);
+    db.close();
+  });
+
+  test('tool events expose the nullable stored mcpServer/mcpTool and keep raw toolName/subject', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    step(db, 'root', 0, 'tool', {
+      category: 'mcp',
+      name: 'mcp__raw__thing',
+      mcpServer: 'stored-server',
+      mcpTool: 'stored_tool',
+      at: '2025-01-01T00:00:00Z',
+    });
+    step(db, 'root', 1, 'tool', {
+      category: 'read',
+      name: 'Read',
+      at: '2025-01-01T00:00:01Z',
+    });
+    const items = readProfileMergedEvents(db, 'root', { scope: 'own' })?.items ?? [];
+    expect(items[0]).toEqual(
+      expect.objectContaining({
+        kind: 'tool',
+        category: 'mcp',
+        toolName: 'mcp__raw__thing',
+        subject: 'mcp__raw__thing',
+        mcpServer: 'stored-server',
+        mcpTool: 'stored_tool',
+      }),
+    );
+    expect(items[1]).toEqual(
+      expect.objectContaining({
+        kind: 'tool',
+        category: 'read',
+        toolName: 'Read',
+        subject: 'Read',
+        mcpServer: null,
+        mcpTool: null,
+      }),
+    );
+    db.close();
+  });
+
+  test('legacy NULL pair resolves strictly; malformed/partial pairs stay null', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    step(db, 'root', 0, 'tool', {
+      category: 'mcp',
+      name: 'mcp__legacy__call',
+      at: '2025-01-01T00:00:00Z',
+    });
+    step(db, 'root', 1, 'tool', {
+      category: 'mcp',
+      name: 'mcp__a__b__c',
+      at: '2025-01-01T00:00:01Z',
+    });
+    step(db, 'root', 2, 'tool', {
+      category: 'mcp',
+      name: 'mcp__raw__thing',
+      mcpServer: 'stored-only',
+      at: '2025-01-01T00:00:02Z',
+    });
+    const items = readProfileMergedEvents(db, 'root', { scope: 'own' })?.items ?? [];
+    expect(items.map((event) => event.kind === 'tool' && event.mcpServer)).toEqual([
+      'legacy',
+      null,
+      null,
+    ]);
+    expect(items[0]).toEqual(
+      expect.objectContaining({ mcpTool: 'call', toolName: 'mcp__legacy__call' }),
+    );
+    db.close();
+  });
+
+  test('q matches the stored server/tool in SQL before LIMIT/OFFSET, alongside the raw subject', () => {
+    const { db } = openStore(':memory:');
+    seed(db);
+    step(db, 'root', 0, 'tool', {
+      category: 'mcp',
+      name: 'mcp__raw__alpha',
+      mcpServer: 'stored-a',
+      mcpTool: 'run',
+      at: '2025-01-01T00:00:00Z',
+    });
+    step(db, 'root', 1, 'tool', {
+      category: 'mcp',
+      name: 'mcp__raw__beta',
+      mcpServer: 'stored-b',
+      mcpTool: 'run',
+      at: '2025-01-01T00:00:01Z',
+    });
+    step(db, 'root', 2, 'tool', {
+      category: 'mcp',
+      name: 'mcp__raw__gamma',
+      mcpServer: 'stored-a',
+      mcpTool: 'stop',
+      at: '2025-01-01T00:00:02Z',
+    });
+
+    // A stored server that never appears in the raw tool name still matches.
+    const byServer = readProfileMergedEvents(db, 'root', { q: 'stored-a' })!;
+    expect(byServer.total).toBe(2);
+    expect(byServer.items.map((e) => e.seq)).toEqual([0, 2]);
+
+    // A stored tool shared by unrelated servers matches both.
+    expect(readProfileMergedEvents(db, 'root', { q: 'run' })!.items.map((e) => e.seq)).toEqual([
+      0, 1,
+    ]);
+
+    // Pagination happens after the filter, so pages are a real slice of matches.
+    const page1 = readProfileMergedEvents(db, 'root', { q: 'stored-a', limit: 1, offset: 0 })!;
+    const page2 = readProfileMergedEvents(db, 'root', { q: 'stored-a', limit: 1, offset: 1 })!;
+    expect(page1.total).toBe(2);
+    expect(page1.items.map((e) => e.seq)).toEqual([0]);
+    expect(page2.total).toBe(2);
+    expect(page2.items.map((e) => e.seq)).toEqual([2]);
+
+    // The raw subject stays searchable (legacy behavior).
+    expect(
+      readProfileMergedEvents(db, 'root', { q: 'raw__beta' })!.items.map((e) => e.seq),
+    ).toEqual([1]);
     db.close();
   });
 

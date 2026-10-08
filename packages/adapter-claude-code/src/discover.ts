@@ -23,6 +23,16 @@ import { parseMetaJson } from './schema';
 
 const HARNESS_ID = 'claude-code';
 
+/**
+ * A directory the parent enumeration just returned cannot be silently skipped
+ * when it is gone: its sources would drop out of `emitted`, letting core prune
+ * their history and record a false success. Throwing makes importAll keep the
+ * history and clear the completed-refresh marker so the next scan retries.
+ */
+function enumeratedDirVanished(path: string): Error {
+  return new Error(`enumerated directory vanished before its listing: ${path}`);
+}
+
 export async function probe(
   ctx: AdapterContext,
 ): Promise<{ installed: boolean; roots: string[]; notes: string[] }> {
@@ -211,7 +221,11 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
   for (const projectDirName of projectDirNames) {
     const projectDir = join(root, projectDirName);
     const projectStat = await ctx.fs.stat(projectDir);
-    if (!projectStat?.isDirectory) continue;
+    // A parent-enumerated directory that has vanished is an incomplete walk,
+    // not an absent optional path; a non-directory entry (a stray file directly
+    // under projects/) is not a source container and stays skipped.
+    if (projectStat === undefined) throw enumeratedDirVanished(projectDir);
+    if (!projectStat.isDirectory) continue;
 
     const entries = [...(await ctx.fs.readdir(projectDir))].sort();
     const rootSessionIds = new Set(entries.filter(isRootSessionFile).map(sessionIdFromRootFile));
@@ -264,7 +278,8 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
       // known state.
       const sessionDir = join(projectDir, entry);
       const sessionDirStat = await ctx.fs.stat(sessionDir);
-      if (!sessionDirStat?.isDirectory) continue;
+      if (sessionDirStat === undefined) throw enumeratedDirVanished(sessionDir);
+      if (!sessionDirStat.isDirectory) continue;
 
       const sessionId = entry;
       const subagentsDir = join(sessionDir, 'subagents');
@@ -286,4 +301,12 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
       }
     }
   }
+
+  // Revalidate the probed root after the walk: a root that vanished (possibly
+  // before its own readdir, which would have returned []) means the enumera-
+  // tion was empty or partial. Throwing here, before importAll runs vanished-
+  // source cleanup, keeps the history and clears the marker instead of
+  // pruning everything and recording success. Point-in-time, not atomic.
+  const rootStat = await ctx.fs.stat(root);
+  if (!rootStat?.isDirectory) throw enumeratedDirVanished(root);
 }

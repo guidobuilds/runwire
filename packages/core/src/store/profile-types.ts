@@ -112,6 +112,10 @@ export type Event =
       kind: 'tool';
       category: string | null;
       toolName: string | null;
+      /** Authoritative stored MCP identity when the pair is complete; a strict
+       * legacy fallback for a NULL pair; otherwise null. See readProfileMergedEvents. */
+      mcpServer?: string | null;
+      mcpTool?: string | null;
       model: string | null;
     })
   | (EventBase & { kind: 'turn'; durationMs: number | null })
@@ -217,7 +221,9 @@ export type SignalsResponse = {
   compactions: { auto: number; manual: number; unknown: number };
   modelChanges: number;
   toolCalls: { total: number; mcp: number };
-  /** Distinct, best-effort parse of tool_name for MCP calls (see readProfileSignals). */
+  /** Distinct MCP servers from the authoritative stored `steps.mcp_server`
+   * pair, with a strict `parseMcpIdentity` fallback for legacy rows whose pair
+   * is NULL (see readProfileSignals). */
   mcpServers: readonly string[];
   skillCalls: number;
   /** Distinct, non-null steps.skill_name. */
