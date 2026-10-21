@@ -16,4 +16,5 @@ it('maps fixed zones and scrolled lanes to global columns using half-open bounds
   expect(hitTest(790, 30, zones)).toEqual({ zone: 'scrollbar', lane: null, column: null });
   expect(hitTest(800, 30, zones)).toEqual({ zone: 'outside', lane: null, column: null });
   expect(hitTest(-1, 30, zones).zone).toBe('outside');
+  expect(hitTest(8, 340, zones)).toEqual({ zone: 'context', lane: null, column: null });
 });

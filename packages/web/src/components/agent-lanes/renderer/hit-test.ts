@@ -12,6 +12,7 @@ export function contains(rect: Rect, x: number, y: number): boolean {
 
 export function hitTest(x: number, y: number, layout: Layout): Hit {
   const hit: Hit = { zone: 'outside', lane: null, column: null };
+  if (contains(layout.contextLabels, x, y)) return { ...hit, zone: 'context' };
   const zones = [
     ['scrollbar', layout.scrollbar],
     ['label', layout.labels],

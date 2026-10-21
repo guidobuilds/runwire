@@ -24,6 +24,28 @@ export const laneTokens = [
 export type LaneToken = (typeof laneTokens)[number];
 export type LaneTheme = Record<LaneToken, string>;
 
+export type LaneSwatch = { label: string; token: LaneToken };
+
+/** Pure mapping shared by the HTML legend and canvas palette. CSS resolves the active theme. */
+export function laneRoleSwatches(): { kinds: LaneSwatch[]; tiers: LaneSwatch[] } {
+  return {
+    kinds: [
+      { label: 'Subagent', token: '--lane-kind-agent' },
+      { label: 'MCP', token: '--lane-kind-mcp' },
+      { label: 'Write', token: '--lane-kind-write' },
+      { label: 'Exec', token: '--lane-kind-exec' },
+      { label: 'Read / search', token: '--lane-kind-look' },
+      { label: 'Other', token: '--lane-kind-other' },
+      { label: 'Reply', token: '--lane-kind-reply' },
+    ],
+    tiers: [
+      { label: 'High tier', token: '--lane-tier-high' },
+      { label: 'Mid tier', token: '--lane-tier-mid' },
+      { label: 'Low tier', token: '--lane-tier-low' },
+    ],
+  };
+}
+
 /** Call on mount and on theme changes, not from the frame loop. */
 export function readLaneTheme(element: Element): LaneTheme {
   const style = getComputedStyle(element);

@@ -59,6 +59,35 @@ export function idleCuts(cols: readonly LaneColumn[]) {
   });
 }
 
+/** Labels occupy the lower axis row, with at least 8 CSS px between measured bounds. */
+export function idleLabels(
+  cuts: ReturnType<typeof idleCuts>,
+  x: (index: number) => number,
+  measure: (label: string) => number,
+  width: number,
+) {
+  let right = -Infinity;
+  return cuts.flatMap((cut) => {
+    const left = x(cut.index);
+    const end = left + measure(`// ${cut.label}`);
+    if (left < 0 || end > width || left < right + 8) return [];
+    right = end;
+    return [{ ...cut, x: left }];
+  });
+}
+
+/** Same call centers as the context path; after-events sit at the trailing call edge. */
+export function compactionPositions(model: LaneModelData, view: Viewport, width: number) {
+  const pixels = ppc(view, width);
+  return model.cols.flatMap((col) =>
+    col.events.flatMap((event) => {
+      if (event.kind !== 'compaction') return [];
+      const index = col.index + (event.after ? 1 : 0);
+      return [{ index, x: xOf(view, width, index) + (event.after ? 0 : pixels / 2) }];
+    }),
+  );
+}
+
 function lowerBound(cols: readonly LaneColumn[], index: number): number {
   let low = 0;
   let high = cols.length;
@@ -86,7 +115,7 @@ export function prepareOverview(model: LaneModelData, width: number): number[] {
       bins.length - 1,
       Math.floor((col.index / Math.max(1, model.callCount)) * bins.length),
     );
-    if (index >= 0) bins[index] = (bins[index] ?? 0) + 1;
+    if (index >= 0) bins[index] = Math.max(bins[index] ?? 0, col.contextPercent ?? 0);
   }
   return bins;
 }
@@ -184,11 +213,10 @@ export function drawFrame(
           }
         }
         for (const event of col.events) {
-          const compaction = event.kind === 'compaction';
-          if (!enabled(compaction ? 'compactions' : 'model-changes')) continue;
-          ctx.setLineDash(compaction ? [] : [2, 2]);
+          if (event.kind === 'compaction' || !enabled('model-changes')) continue;
+          ctx.setLineDash([2, 2]);
           const eventX = x(col.index + (event.after ? 1 : 0));
-          line(eventX, y, eventX, y + 29, compaction ? '--lane-compaction' : '--lane-tier-high');
+          line(eventX, y, eventX, y + 29, '--lane-tier-high');
           ctx.setLineDash([]);
         }
       }
@@ -197,6 +225,8 @@ export function drawFrame(
         ctx.strokeStyle = theme['--lane-detection'];
         ctx.lineWidth = options.focusedFinding === finding ? 3 : 1;
         ctx.strokeRect(x(finding.from), y + 1, (finding.to - finding.from + 1) * pixels, 28);
+        ctx.fillStyle = theme['--lane-detection'];
+        ctx.fillText(String(findings.indexOf(finding) + 1), x(finding.from) + 2, y + 7);
         ctx.lineWidth = 1;
       }
     }
@@ -225,8 +255,8 @@ export function drawFrame(
         theme[agent.id === options.selectedAgentId ? '--lane-surface' : '--lane-background'];
       ctx.fillRect(0, y, zones.labels.width, LANE_HEIGHT);
       ctx.fillStyle = theme['--lane-foreground'];
-      const label = `${agent.agentType || agent.id}${hidden ? ` +${hidden} hidden` : ''}`;
-      const indent = Math.min(60, agent.depth * 10) + 8;
+      const label = agent.label;
+      const indent = Math.min(60, agent.depth * 10) + 22;
       ctx.fillText(
         truncateLabel(
           label,
@@ -234,30 +264,66 @@ export function drawFrame(
           (text) => ctx.measureText(text).width,
         ),
         indent,
-        y + 16,
+        y + 10,
       );
+      ctx.fillStyle = theme['--lane-muted'];
+      ctx.fillText(hidden ? `+${hidden} hidden` : `${agent.cols.length} calls`, indent, y + 24);
     }
   });
+  ctx.fillStyle = theme['--lane-muted'];
+  ctx.fillText('model call', 8, 7);
   clip(ctx, zones.axis, () => {
     ctx.fillStyle = theme['--lane-muted'];
     for (const tick of axisTicks(state.view, zones.axis.width))
-      ctx.fillText(tick.label, x(tick.index) + 2, 12);
+      ctx.fillText(tick.label, x(tick.index) + 2, 7);
     if (enabled('idle')) {
       // Include the preceding column to retain cuts at the viewport's left boundary.
       const start = Math.max(0, lowerBound(model.cols, state.view.start) - 1);
       const end = lowerBound(model.cols, state.view.start + state.view.span);
-      for (const cut of idleCuts(model.cols.slice(start, end))) {
-        ctx.fillStyle = theme['--lane-idle'];
-        ctx.fillText(`// ${cut.label}`, x(cut.index), 21);
+      const cuts = idleCuts(model.cols.slice(start, end));
+      // Keep all cut marks, even when a neighboring duration label has to be omitted.
+      for (const cut of cuts) {
+        line(x(cut.index), 15, x(cut.index) + 2, 25, '--lane-idle');
       }
+      for (const cut of idleLabels(
+        cuts,
+        (index) => x(index) - zones.axis.x,
+        (label) => ctx.measureText(label).width,
+        zones.axis.width,
+      )) {
+        ctx.fillStyle = theme['--lane-idle'];
+        ctx.fillText(`// ${cut.label}`, zones.axis.x + cut.x, 20);
+      }
+    }
+  });
+  const bottom = zones.context.y + zones.context.height - 6;
+  const cy = (percent: number) => bottom - Math.min(100, Math.max(0, percent)) * 0.75;
+  clip(ctx, zones.contextLabels, () => {
+    ctx.fillStyle = theme['--lane-surface'];
+    ctx.fillRect(0, zones.context.y, zones.contextLabels.width, zones.contextLabels.height);
+    ctx.fillStyle = theme['--lane-foreground'];
+    ctx.fillText('Context %', 8, zones.context.y + 12);
+    const selected = options.selectedAgentId ? model.byId.get(options.selectedAgentId) : null;
+    if (selected) {
+      const name = selected.label;
+      ctx.fillText(
+        truncateLabel(
+          `${name} highlighted`,
+          zones.contextLabels.width - 30,
+          (text) => ctx.measureText(text).width,
+        ),
+        8,
+        zones.context.y + 27,
+      );
+    }
+    for (const percent of [100, 50, 0]) {
+      ctx.fillText(String(percent), Math.max(0, zones.contextLabels.width - 25), cy(percent));
     }
   });
   clip(ctx, zones.context, () => {
     ctx.fillStyle = theme['--lane-surface'];
     ctx.fillRect(zones.context.x, zones.context.y, zones.context.width, zones.context.height);
     if (!enabled('context')) return;
-    const bottom = zones.context.y + zones.context.height - 6;
-    const cy = (percent: number) => bottom - Math.min(100, Math.max(0, percent)) * 0.75;
     ctx.setLineDash([3, 3]);
     line(
       zones.context.x,
@@ -275,14 +341,28 @@ export function drawFrame(
       ctx.strokeStyle = theme['--lane-context'];
       ctx.beginPath();
       let connected = false;
-      for (const col of bucket(visibleColumns(agent.cols, from - size, to + size), size)) {
-        if (col.maxContextPercent === null) {
+      // Do not bucket this series: max buckets would move or hide compaction drops.
+      for (const col of visibleColumns(agent.cols, from - size, to + size)) {
+        if (col.contextPercent === null) {
           connected = false;
           continue;
         }
-        const px = x(col.from) + (pixels * size) / 2;
-        if (connected) ctx.lineTo(px, cy(col.maxContextPercent));
-        else ctx.moveTo(px, cy(col.maxContextPercent));
+        const px = x(col.index) + pixels / 2;
+        for (const event of col.events) {
+          if (
+            event.kind !== 'compaction' ||
+            event.after ||
+            !col.contextWindow ||
+            event.preTokens === null
+          )
+            continue;
+          const before = cy((event.preTokens / col.contextWindow) * 100);
+          if (connected) ctx.lineTo(px, before);
+          else ctx.moveTo(px, before);
+          connected = true;
+        }
+        if (connected) ctx.lineTo(px, cy(col.contextPercent));
+        else ctx.moveTo(px, cy(col.contextPercent));
         connected = true;
       }
       ctx.stroke();
@@ -294,9 +374,9 @@ export function drawFrame(
     const nx = (index: number) => nav.x + (index / Math.max(12, model.callCount)) * nav.width;
     ctx.fillStyle = theme['--lane-muted'];
     const overview = options.overview ?? [];
-    const peak = Math.max(1, ...overview);
-    overview.forEach((count, i) => {
-      ctx.fillRect(nav.x + i, nav.y + 25 - (count / peak) * 20, 1, (count / peak) * 20);
+    overview.forEach((percent, i) => {
+      const height = (Math.min(100, Math.max(0, percent)) / 100) * 20;
+      ctx.fillRect(nav.x + i, nav.y + 25 - height, 1, height);
     });
     for (const finding of findings) {
       line(nx(finding.from), nav.y + 3, nx(finding.to + 1), nav.y + 3, '--lane-detection');
@@ -309,6 +389,32 @@ export function drawFrame(
       28,
     );
   });
+  ctx.fillStyle = theme['--lane-muted'];
+  ctx.fillText(`${model.callCount.toLocaleString('en-US')} calls`, 8, zones.navigator.y + 15);
+  if (enabled('compactions')) {
+    clip(
+      ctx,
+      {
+        ...zones.lanesArea,
+        height: zones.navigator.y - zones.lanesArea.y,
+      },
+      () => {
+        for (const position of compactionPositions(model, state.view, zones.axis.width)) {
+          if (position.x < 0 || position.x > zones.axis.width) continue;
+          const cx = zones.axis.x + position.x;
+          const top = zones.lanesArea.y;
+          line(cx, top, cx, zones.navigator.y, '--lane-compaction');
+          ctx.fillStyle = theme['--lane-compaction'];
+          ctx.beginPath();
+          ctx.moveTo(cx - 4, top);
+          ctx.lineTo(cx + 4, top);
+          ctx.lineTo(cx, top + 6);
+          ctx.closePath();
+          ctx.fill();
+        }
+      },
+    );
+  }
   if (zones.scrollbar && zones.thumb) {
     ctx.fillStyle = theme['--lane-surface'];
     ctx.fillRect(

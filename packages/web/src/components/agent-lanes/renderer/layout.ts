@@ -18,6 +18,7 @@ export type Layout = {
   axis: Rect;
   lanesArea: Rect;
   context: Rect;
+  contextLabels: Rect;
   navigator: Rect;
   scrollbar: Rect | null;
   thumb: Rect | null;
@@ -50,10 +51,10 @@ export function layout(
     if (options.collapsed?.has(agent.id)) hiddenBy.set(agent.id, placement);
   }
   const available = Math.max(0, height - AXIS_HEIGHT - CONTEXT_HEIGHT - NAVIGATOR_HEIGHT);
-  const laneHeight = Math.min(
-    available,
-    (options.fullscreen ? lanes.length : Math.min(10, lanes.length)) * LANE_HEIGHT,
-  );
+  // Fullscreen consumes the measured canvas height even with only one visible lane.
+  const laneHeight = options.fullscreen
+    ? available
+    : Math.min(available, Math.min(10, lanes.length) * LANE_HEIGHT);
   const maxScrollY = Math.max(0, lanes.length * LANE_HEIGHT - laneHeight);
   scrollY = Math.max(0, Math.min(maxScrollY, scrollY));
   const scrollbarWidth = maxScrollY > 0 ? Math.min(width, SCROLLBAR_WIDTH) : 0;
@@ -89,6 +90,7 @@ export function layout(
     axis,
     lanesArea,
     context,
+    contextLabels: { x: 0, y: context.y, width: labelWidth, height: CONTEXT_HEIGHT },
     navigator,
     scrollbar,
     thumb,

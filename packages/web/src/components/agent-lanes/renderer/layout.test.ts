@@ -9,6 +9,8 @@ function sampleModel(count = 18): LaneModelData {
     parentId: i ? 'a0' : null,
     depth: i ? 1 : 0,
     agentType: 'agent',
+    label: i ? `agent #${i}` : 'main',
+    detail: 'agent · 0 calls',
     spawnCallId: null,
     cols: [],
   }));
@@ -40,7 +42,10 @@ describe('layout', () => {
 
   it('fits fullscreen lanes, clamps scroll, hides descendants and handles tiny sizes', () => {
     const result = layout(800, 800, fitView(100), 999, sampleModel(), { fullscreen: true });
-    expect(result.lanesArea.height).toBe(540);
+    expect(result.lanesArea.height).toBe(652);
+    expect(result.height).toBe(800);
+    expect(result.navigator.y + result.navigator.height).toBe(800);
+    expect(result.contextLabels).toEqual({ x: 0, y: result.context.y, width: 168, height: 92 });
     expect(result.scrollbar).toBeNull();
     expect(result.scrollY).toBe(0);
     const collapsed = layout(800, 800, fitView(100), 50, sampleModel(), {
