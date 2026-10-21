@@ -1,0 +1,198 @@
+{
+  "short": [
+    {
+      "agentId": "main",
+      "from": 3,
+      "to": 8,
+      "text": "6 calls in a row on claude-opus-5-5, only exec"
+    },
+    {
+      "agentId": "main",
+      "from": 38,
+      "to": 42,
+      "text": "5 calls in a row on claude-opus-5-5, only exec"
+    },
+    {
+      "agentId": "main",
+      "from": 48,
+      "to": 52,
+      "text": "5 calls in a row on claude-opus-5-5, only exec"
+    },
+    {
+      "agentId": "main",
+      "from": 66,
+      "to": 71,
+      "text": "6 calls in a row on claude-opus-5-5, only exec"
+    },
+    {
+      "agentId": "main",
+      "from": 76,
+      "to": 81,
+      "text": "6 calls in a row on claude-opus-5-5, only exec"
+    }
+  ],
+  "long": [
+    {
+      "agentId": "main",
+      "from": 102,
+      "to": 110,
+      "text": "9 calls above 85%, peak 94% (256k tokens)"
+    },
+    {
+      "agentId": "main",
+      "from": 212,
+      "to": 223,
+      "text": "12 calls above 85%, peak 93% (253k tokens)"
+    },
+    {
+      "agentId": "main",
+      "from": 321,
+      "to": 330,
+      "text": "10 calls above 85%, peak 93% (253k tokens)"
+    },
+    {
+      "agentId": "main",
+      "from": 332,
+      "to": 335,
+      "text": "4 calls above 85%, peak 94% (255k tokens)"
+    },
+    {
+      "agentId": "main",
+      "from": 444,
+      "to": 460,
+      "text": "17 calls above 85%, peak 96% (261k tokens)"
+    },
+    {
+      "agentId": "main",
+      "from": 550,
+      "to": 555,
+      "text": "6 calls above 85%, peak 93% (254k tokens)"
+    },
+    {
+      "agentId": "main",
+      "from": 630,
+      "to": 638,
+      "text": "9 calls above 85%, peak 93% (254k tokens)"
+    },
+    {
+      "agentId": "main",
+      "from": 698,
+      "to": 708,
+      "text": "11 calls above 85%, peak 97% (262k tokens)"
+    },
+    {
+      "agentId": "main",
+      "from": 750,
+      "to": 755,
+      "text": "3 failed tool steps across 3 calls (write, agent)"
+    },
+    {
+      "agentId": "main",
+      "from": 951,
+      "to": 995,
+      "text": "45 calls above 85%, peak 96% (288k tokens)"
+    },
+    {
+      "agentId": "main",
+      "from": 1035,
+      "to": 1049,
+      "text": "3 failed tool steps across 3 calls (other, agent, write)"
+    }
+  ],
+  "tree3": [
+    {
+      "agentId": "main",
+      "from": 212,
+      "to": 218,
+      "text": "3 failed tool steps across 2 calls (write, mcp)"
+    }
+  ],
+  "tree17": [
+    {
+      "agentId": "sub-3",
+      "from": 25,
+      "to": 51,
+      "text": "26 calls in a row on claude-opus-5-5, only read / search"
+    }
+  ],
+  "nested": [
+    {
+      "agentId": "main",
+      "from": 0,
+      "to": 9,
+      "text": "10 calls in a row on claude-opus-5, only exec"
+    },
+    {
+      "agentId": "sub-2.1",
+      "from": 35,
+      "to": 51,
+      "text": "5 calls in a row on claude-opus-5, only exec"
+    },
+    {
+      "agentId": "sub-1.2",
+      "from": 65,
+      "to": 105,
+      "text": "9 calls in a row on claude-opus-5, only exec"
+    },
+    {
+      "agentId": "sub-2",
+      "from": 66,
+      "to": 81,
+      "text": "7 calls in a row on claude-opus-5, only exec / search"
+    },
+    {
+      "agentId": "sub-2",
+      "from": 89,
+      "to": 166,
+      "text": "48 calls in a row on claude-opus-5, only exec"
+    },
+    {
+      "agentId": "sub-3.2.2",
+      "from": 266,
+      "to": 399,
+      "text": "31 calls in a row on claude-opus-5, only exec"
+    },
+    {
+      "agentId": "main",
+      "from": 447,
+      "to": 451,
+      "text": "5 calls in a row on claude-opus-5, only exec"
+    },
+    {
+      "agentId": "main",
+      "from": 528,
+      "to": 536,
+      "text": "9 calls in a row on claude-opus-5, only exec"
+    },
+    {
+      "agentId": "main",
+      "from": 548,
+      "to": 561,
+      "text": "14 calls in a row on claude-opus-5, only exec"
+    },
+    {
+      "agentId": "main",
+      "from": 576,
+      "to": 581,
+      "text": "6 calls in a row on claude-opus-5, only exec / read"
+    },
+    {
+      "agentId": "main",
+      "from": 598,
+      "to": 606,
+      "text": "9 calls in a row on claude-opus-5, only exec"
+    },
+    {
+      "agentId": "main",
+      "from": 608,
+      "to": 615,
+      "text": "8 calls in a row on claude-opus-5, only exec / search"
+    },
+    {
+      "agentId": "main",
+      "from": 619,
+      "to": 629,
+      "text": "11 calls in a row on claude-opus-5, only exec"
+    }
+  ]
+}
