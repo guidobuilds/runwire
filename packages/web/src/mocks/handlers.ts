@@ -7,7 +7,14 @@ import type {
   PagedSessions,
 } from '@runwire/core';
 import { HttpResponse, http } from 'msw';
+import long from '@/components/agent-lanes/fixtures/long.json';
+import nested from '@/components/agent-lanes/fixtures/nested.json';
+import short from '@/components/agent-lanes/fixtures/short.json';
+import tree3 from '@/components/agent-lanes/fixtures/tree3.json';
+import tree17 from '@/components/agent-lanes/fixtures/tree17.json';
 import { sessionProfileHandlers } from './session-profile';
+
+const lanesFixtures = { short, long, nested, tree3, tree17, 'sess-1': short };
 
 const tokenTotals = {
   uncachedInput: 1200,
@@ -153,6 +160,22 @@ export const handlers = [
       return HttpResponse.json({ error: 'session not found' }, { status: 404 });
     }
     return HttpResponse.json({ session: mockSessionDetail });
+  }),
+  http.get('/api/sessions/:id/profile/lanes', ({ params, request }) => {
+    const fixture = lanesFixtures[String(params.id) as keyof typeof lanesFixtures];
+    if (!fixture) return HttpResponse.json({ error: 'session not found' }, { status: 404 });
+    const scope = new URL(request.url).searchParams.get('scope') ?? 'tree';
+    if (scope !== 'own' && scope !== 'tree') {
+      return HttpResponse.json({ error: 'invalid scope' }, { status: 400 });
+    }
+    const agents = scope === 'own' ? fixture.agents.slice(0, 1) : fixture.agents;
+    return HttpResponse.json({
+      ...fixture,
+      sessionId: params.id,
+      scope,
+      agents,
+      callCount: agents.reduce((n, agent) => n + agent.calls.seq.length, 0),
+    });
   }),
   ...sessionProfileHandlers,
 ];

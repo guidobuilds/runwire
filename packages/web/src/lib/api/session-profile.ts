@@ -3,6 +3,11 @@ import type {
   Event,
   EventAction,
   EventSortField,
+  LaneAgent,
+  LaneCallKind,
+  LaneEvent,
+  LaneModel,
+  LanesResponse,
   MergedEventsQuery,
   MergedEventsResponse,
   ModelsResponse,
@@ -30,6 +35,8 @@ export type SessionProfileTimeline = TimelineResponse & { view: 'timeline' };
 export type SessionProfileMergedEvents = MergedEventsResponse & { view: 'merged' };
 export type SessionProfileModels = ModelsResponse & { view: 'models' };
 export type SessionProfileContext = ProfileContextResponse & { view: 'context' };
+export type SessionProfileLanes = LanesResponse & { view: 'lanes' };
+export type LanesRequest = { scope?: Scope };
 
 export type SpawnsRequest = ProfileSpawnsQuery;
 export type SignalsRequest = SignalsQuery;
@@ -38,7 +45,7 @@ export type MergedEventsRequest = MergedEventsQuery;
 
 function path(
   id: string,
-  endpoint: 'spawns' | 'signals' | 'timeline' | 'events' | 'models' | 'context',
+  endpoint: 'spawns' | 'signals' | 'timeline' | 'events' | 'models' | 'context' | 'lanes',
 ): string {
   return `/api/sessions/${encodeURIComponent(id)}/profile/${endpoint}`;
 }
@@ -486,6 +493,153 @@ function normalizeContext(value: unknown): SessionProfileContext {
     tree: normalizeContextMetrics(value.tree),
     descendants: value.descendants.map(normalizeContextDescendant),
   };
+}
+
+const invalidLanes = () => new TypeError('invalid session profile lanes response');
+const laneCount = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+const laneTokens = (value: unknown): value is number | null => value === null || laneCount(value);
+const laneString = (value: unknown): value is string | null =>
+  value === null || typeof value === 'string';
+
+function normalizeLaneEvent(value: unknown): LaneEvent {
+  if (!isRecord(value) || (value.after !== undefined && value.after !== true)) throw invalidLanes();
+  const after = value.after === true ? { after: true as const } : {};
+  if (
+    value.kind === 'compaction' &&
+    laneString(value.trigger) &&
+    laneTokens(value.preTokens) &&
+    laneTokens(value.postTokens)
+  ) {
+    return {
+      kind: 'compaction',
+      trigger: value.trigger,
+      preTokens: value.preTokens,
+      postTokens: value.postTokens,
+      ...after,
+    };
+  }
+  if (value.kind === 'model-change' && laneString(value.from) && laneString(value.to)) {
+    return { kind: 'model-change', from: value.from, to: value.to, ...after };
+  }
+  throw invalidLanes();
+}
+
+function laneArray<T>(value: unknown, length: number, guard: (v: unknown) => v is T): T[] {
+  if (!Array.isArray(value) || value.length !== length || !value.every(guard)) throw invalidLanes();
+  return value.slice();
+}
+
+function normalizeLaneAgent(value: unknown, modelCount: number): LaneAgent {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    !laneString(value.parentId) ||
+    !laneCount(value.depth) ||
+    !laneString(value.agentType) ||
+    !laneString(value.spawnCallId) ||
+    !isRecord(value.calls) ||
+    !Array.isArray(value.calls.seq)
+  )
+    throw invalidLanes();
+  const calls = value.calls;
+  const length = value.calls.seq.length;
+  const kind = (v: unknown): v is LaneCallKind =>
+    typeof v === 'string' &&
+    ['agent', 'mcp', 'write', 'exec', 'look', 'other', 'reply'].includes(v);
+  return {
+    id: value.id,
+    parentId: value.parentId,
+    depth: value.depth,
+    agentType: value.agentType,
+    spawnCallId: value.spawnCallId,
+    calls: {
+      seq: laneArray(calls.seq, length, laneCount),
+      at: laneArray(
+        calls.at,
+        length,
+        (v): v is string => typeof v === 'string' && Number.isFinite(Date.parse(v)),
+      ),
+      model: laneArray(
+        calls.model,
+        length,
+        (v): v is number =>
+          typeof v === 'number' && Number.isInteger(v) && v >= -1 && v < modelCount,
+      ),
+      promptInput: laneArray(calls.promptInput, length, laneTokens),
+      output: laneArray(calls.output, length, laneTokens),
+      kind: laneArray(calls.kind, length, kind),
+      tools: laneArray(calls.tools, length, laneCount),
+      mechanical: laneArray(calls.mechanical, length, (v): v is boolean => typeof v === 'boolean'),
+      failed: laneArray(calls.failed, length, laneCount),
+      mcp: laneArray(calls.mcp, length, laneCount),
+      skill: laneArray(calls.skill, length, laneCount),
+      spawns: laneArray(
+        calls.spawns,
+        length,
+        (v): v is string[] | null =>
+          v === null || (Array.isArray(v) && v.every((id) => typeof id === 'string')),
+      ),
+      events: laneArray(
+        calls.events,
+        length,
+        (v): v is unknown[] | null => v === null || Array.isArray(v),
+      ).map((events) => events?.map(normalizeLaneEvent) ?? null),
+    },
+  };
+}
+
+function normalizeLanes(value: unknown): SessionProfileLanes {
+  if (
+    !isRecord(value) ||
+    typeof value.sessionId !== 'string' ||
+    !isScope(value.scope) ||
+    !laneCount(value.callCount) ||
+    !laneCount(value.excludedNullAtCount) ||
+    !Array.isArray(value.models) ||
+    !Array.isArray(value.agents)
+  )
+    throw invalidLanes();
+  const models = value.models.map((model): LaneModel => {
+    if (
+      !isRecord(model) ||
+      typeof model.name !== 'string' ||
+      !laneTokens(model.contextWindow) ||
+      (model.contextWindow !== null && model.contextWindow === 0) ||
+      !['high', 'mid', 'low', null].includes(model.tier as string | null)
+    )
+      throw invalidLanes();
+    return {
+      name: model.name,
+      contextWindow: model.contextWindow,
+      tier: model.tier as LaneModel['tier'],
+    };
+  });
+  const agents = value.agents.map((agent) => normalizeLaneAgent(agent, models.length));
+  if (
+    agents.reduce((n, agent) => n + agent.calls.seq.length, 0) !== value.callCount ||
+    new Set(agents.map((agent) => agent.id)).size !== agents.length
+  )
+    throw invalidLanes();
+  return {
+    view: 'lanes',
+    sessionId: value.sessionId,
+    scope: value.scope,
+    models,
+    agents,
+    callCount: value.callCount,
+    excludedNullAtCount: value.excludedNullAtCount,
+  };
+}
+
+export async function fetchSessionProfileLanes(
+  id: string,
+  request: LanesRequest = {},
+  signal?: AbortSignal,
+): Promise<SessionProfileLanes> {
+  return normalizeLanes(
+    await apiFetch<unknown>(`${path(id, 'lanes')}${search({ scope: request.scope })}`, { signal }),
+  );
 }
 
 export function fetchSessionProfileSpawns(

@@ -4,8 +4,7 @@ The session profile is the `/sessions/{id}` page: answers **what did my
 harness do here that cost me context or time?** for a single session and its
 complete tree. It reads distinct session-scoped profile resources (every runwire
 API route is served under `/api/*`) and
-composes, in order: header → agent graph (git-graph, one wall-clock line per
-agent, branches at spawn time) → token chart (tree-wide cumulative, one line
+composes, in order: header → AgentLanes (canvas, one lane per agent with a global model-call axis) → token chart (tree-wide cumulative, one line
 per model) → merged events table → signals accordion (collapsed).
 
 This doc records the **approved contracts** the panels rely on, the
@@ -28,6 +27,7 @@ profile.
   - `/profile/events` → events merged by true chronology across the whole scope
   - `/profile/models` → per-model output-token shares for the session and its
     subagent descendants
+  - `/profile/lanes` → metadata-only call lanes for the complete tree
   - `/profile/context` → prompt-context pressure for the session (own + pooled
     tree) plus one own-only row per descendant
 - `scope` (`tree` default | `own`) is validated strictly. `tree` covers the
@@ -274,14 +274,21 @@ profile.
   table renders 10 rows per page by default; the API's own `limit` default stays 50.
   Each panel owns its state and re-fetches only its own TanStack query when it changes.
 - An explicit **Refresh** bumps a refresh token that re-fetches every panel
-  (spawns, signals, timeline, merged, models, context).
+  (lanes, signals, timeline, merged, models, context).
 - The header's first card carries a **Context pressure** block (between the token
   stack and the model charts): avg / p95 / peak prompt per call, cache read share
   and the observed-call count. It renders the `tree` figure as primary and the
   `own` figure as a secondary line only when the session actually has
   descendants; a null metric renders an em dash. It loads and errors in isolation
   with its own Retry.
-- A **Subagent context** table mounts after the agent graph and before the token
+- **AgentLanes** replaces AgentGraph: a focusable canvas with keyboard pan/zoom,
+  indicator and detection Popovers, accessible agent and finding lists, and an
+  Open action preserving profile navigation. Indicator/rule selections and the
+  context threshold persist locally when storage is available. A finding expands
+  its branch, scrolls to its lane, and zooms/highlights its call span. Fullscreen
+  uses both a fixed frame and the browser API; expanded mode survives API denial,
+  and Escape exits. Unknown model context stays unknown.
+- A **Subagent context** table mounts after AgentLanes and before the token
   chart, only when `descendants` is non-empty. It preserves the endpoint's
   depth-first order and relative-depth indentation, renders one row per
   descendant (Agent, Duration, Model, Calls, Avg prompt, P95 prompt, Peak prompt,
@@ -294,8 +301,8 @@ profile.
   sessions** link; the profile panels are not mounted.
 - The signals accordion's delegation share is computed client-side from the
   header's already-fetched `tokensOwn`/`tokensInclusive` for the default
-  `output` field; its subagent count comes from the agent graph's already-fetched
-  node list — neither is a redundant reader.
+  `output` field; its subagent count comes from AgentLanes' already-fetched
+  agent list — neither is a redundant reader.
 
 ---
 
@@ -307,6 +314,6 @@ profile.
   an absent model stays `0`, an appeared-but-unobserved model stays `null`.
 - **No raw content.** The profile is metadata-only: no code, prompts, responses,
   args, file paths, or tool output.
-- **No model-cost tier.** "Expensive model on cheap work" is not assessed:
-  Runwire has no model cost tier.
+- **No cost inference.** Lane detections use the configurable model tier catalog,
+  not measured prices or inferred monetary savings.
 - **No side-by-side compare view.**
