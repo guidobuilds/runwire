@@ -19,6 +19,18 @@ describe('piToolCategory: built-in tools', () => {
   });
 });
 
+describe('piToolCategory: vocabulary boundary', () => {
+  test('built-in names are exact, not prefixes, aliases or normalized input', () => {
+    expect(piToolCategory('')).toBe('other');
+    for (const [name, category] of BUILT_INS) {
+      expect(piToolCategory(name)).toBe(category);
+      for (const unknown of [`${name}_extra`, `extra_${name}`, name.toUpperCase(), ` ${name}`]) {
+        expect(piToolCategory(unknown)).toBe('other');
+      }
+    }
+  });
+});
+
 describe('piToolCategory: extension tools', () => {
   test('subagent_run / subagent_list_agents are counted as agent (D81: counted, not linked)', () => {
     expect(piToolCategory('subagent_run')).toBe('agent');

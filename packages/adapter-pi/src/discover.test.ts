@@ -69,6 +69,71 @@ describe('pi discover: walk', () => {
     expect(await collect(ctx, known)).toHaveLength(0);
   });
 
+  test('built-in tool categories survive discovery with metadata only', async () => {
+    const names = ['read', 'ls', 'grep', 'find', 'edit', 'write', 'bash', 'powershell'];
+    const file = '/home/u/.pi/agent/sessions/proj/2026-01-01T00-00-00-000Z_tools.jsonl';
+    const records = [
+      { type: 'session', version: 3, id: 'tools', cwd: '/home/u/pi' },
+      {
+        type: 'message',
+        id: 'call',
+        parentId: null,
+        message: {
+          role: 'assistant',
+          model: 'm-a',
+          usage: { input: 1, output: 1 },
+          content: names.map((name) => ({
+            type: 'toolCall',
+            id: name,
+            name,
+            arguments: { text: 'RUNWIRE_CANARY_arguments' },
+          })),
+        },
+      },
+    ];
+    const fs = createMemoryFs({
+      files: { [file]: `${records.map((record) => JSON.stringify(record)).join('\n')}\n` },
+    });
+    const bundles = await collect(ctxFor('unused', { home: '/home/u', fs }));
+    expect(bundles).toHaveLength(1);
+    const bundle = bundles[0];
+    expect(bundle?.session.apiCalls).toBe(1);
+    expect(bundle?.session.toolCalls).toBe(8);
+    expect(bundle?.steps.map((step) => step.kind)).toEqual([
+      'call',
+      ...names.map(() => 'tool' as const),
+    ]);
+    expect(
+      bundle?.steps.filter((step) => step.kind === 'tool').map((step) => step.toolCategory),
+    ).toEqual(['read', 'read', 'search', 'search', 'write', 'write', 'exec', 'exec']);
+    expect(JSON.stringify(bundles)).not.toContain('RUNWIRE_CANARY_');
+  });
+
+  test('delegation remains an unlinked agent mark, not a child session', async () => {
+    const bundles = await collect(ctxFor('subagents'));
+    expect(bundles).toHaveLength(1);
+    const bundle = bundles[0];
+    expect(bundle?.session.depth).toBe(0);
+    expect(bundle?.session.parentId).toBeUndefined();
+    expect(bundle?.session.spawnCallId).toBeUndefined();
+    expect(bundle?.session.relation).toBeUndefined();
+    expect(bundle?.session.toolCalls).toBe(1);
+    expect(bundle?.steps.filter((step) => step.kind === 'tool')).toEqual([
+      {
+        sessionId: 'pi:a1000000-0000-7000-8000-000000000003',
+        seq: 2,
+        at: '2026-01-03T00:00:02.000Z',
+        kind: 'tool',
+        toolCategory: 'agent',
+        toolName: expect.any(String),
+        callId: 'ts',
+        model: 'm-a',
+        error: false,
+        durationMs: 1000,
+      },
+    ]);
+  });
+
   test('PI_CODING_AGENT_SESSION_DIR redirects discovery', async () => {
     const sessionsDir = join(FIXTURES_ROOT, 'small', 'home', '.pi', 'agent', 'sessions');
     const ctx = ctxFor('nope', { env: { PI_CODING_AGENT_SESSION_DIR: sessionsDir } });
