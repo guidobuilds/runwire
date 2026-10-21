@@ -6,6 +6,7 @@ import {
   type ListSessionsQuery,
   listHarnesses,
   listSessions,
+  type ModelOverride,
   readProfileLanes,
   readProfileMergedEvents,
   readProfileModels,
@@ -36,6 +37,13 @@ export type CreateServerOptions = {
    * host is a deliberate opt-in the composition root maps from `--expose`.
    */
   allowNonLocal?: boolean;
+  /**
+   * Loads the user's model overrides fresh on every profile request,
+   * so an edit to `~/.runwire/models.json` applies without a restart. The
+   * composition root injects `() => readModelOverrides(modelsOverridesPath())`;
+   * omitted → no overrides.
+   */
+  modelOverrides?: () => readonly ModelOverride[];
 };
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -419,7 +427,12 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
               : json({ view: 'timeline', ...profile }, 200);
           }
           if (parsed.value.view === 'lanes') {
-            const profile = readProfileLanes(db, id, parsed.value.query);
+            const profile = readProfileLanes(
+              db,
+              id,
+              parsed.value.query,
+              opts.modelOverrides?.() ?? [],
+            );
             return profile === null
               ? json({ error: 'session not found' }, 404)
               : json({ view: 'lanes', ...profile }, 200);

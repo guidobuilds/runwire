@@ -355,17 +355,21 @@ describe('persistBundle: model provider identity (models table + FK ids)', () =>
       ['openai-codex', 'gpt-6.1-sol'],
     ]);
 
+    const openaiRow = models.find((m) => m.provider === 'openai');
+    const codexRow = models.find((m) => m.provider === 'openai-codex');
+    if (openaiRow === undefined || codexRow === undefined) throw new Error('expected both rows');
+
     const session = db
       .query('SELECT model_primary_id FROM sessions WHERE id = ?')
       .get('fake:s1') as { model_primary_id: number | null };
-    expect(session.model_primary_id).toBe(models.find((m) => m.provider === 'openai')?.id);
+    expect(session.model_primary_id).toBe(openaiRow.id);
 
     const steps = db
       .query('SELECT seq, model_id FROM steps WHERE session_id = ? ORDER BY seq')
       .all('fake:s1') as { seq: number; model_id: number | null }[];
     expect(steps).toEqual([
-      { seq: 0, model_id: models.find((m) => m.provider === 'openai')?.id },
-      { seq: 1, model_id: models.find((m) => m.provider === 'openai-codex')?.id },
+      { seq: 0, model_id: openaiRow.id },
+      { seq: 1, model_id: codexRow.id },
     ]);
   });
 
@@ -382,7 +386,7 @@ describe('persistBundle: model provider identity (models table + FK ids)', () =>
       provider: string | null;
       name: string;
     }[];
-    expect(models).toEqual([{ id: models[0]?.id, provider: null, name: 'claude-opus-5-5' }]);
+    expect(models).toEqual([{ id: expect.any(Number), provider: null, name: 'claude-opus-5-5' }]);
   });
 
   test('the same name with and without provider are distinct rows', () => {

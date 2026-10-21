@@ -56,6 +56,47 @@ describe('profile lanes endpoint', () => {
     });
   });
 
+  test('resolves model windows through the injected overrides loader at request time', async () => {
+    const { db } = openStore(':memory:');
+    db.run(`INSERT INTO harnesses VALUES ('h', 'Harness', '1', '[]', NULL)`);
+    db.run(
+      `INSERT INTO sessions (id, harness_id, source_path, title) VALUES ('s1', 'h', 'p1', 'SECRET_TITLE')`,
+    );
+    db.run(`INSERT INTO models (id, provider, name) VALUES (1, 'openai', 'gpt-6.1-sol')`);
+    db.run(
+      `INSERT INTO steps (session_id, seq, kind, at, output, model_id) VALUES ('s1', 0, 'call', '2026-01-01T00:00:00.000Z', 1, 1)`,
+    );
+    let loads = 0;
+    const server = createServer({
+      db,
+      host: '127.0.0.1',
+      port: 0,
+      modelOverrides: () => {
+        loads++;
+        return [{ provider: 'openai', model: 'gpt-6.1-sol', contextWindow: 777_000 }];
+      },
+    });
+    try {
+      const first = (await (
+        await fetch(
+          'http://127.0.0.1:' + String(server.port) + '/api/sessions/s1/profile/lanes?scope=own',
+        )
+      ).json()) as LanesResponse;
+      const second = (await (
+        await fetch(
+          'http://127.0.0.1:' + String(server.port) + '/api/sessions/s1/profile/lanes?scope=own',
+        )
+      ).json()) as LanesResponse;
+      // The loader runs per request: an edited file takes effect without a restart.
+      expect(loads).toBe(2);
+      expect(first.models).toEqual([{ name: 'gpt-6.1-sol', contextWindow: 777_000, tier: 'high' }]);
+      expect(second.models).toEqual(first.models);
+    } finally {
+      await server.stop(true);
+      db.close();
+    }
+  });
+
   test('strictly rejects invalid, duplicate and unsupported query params without changing data', async () => {
     await withServer(async (url) => {
       const baseline = await fetch(url);

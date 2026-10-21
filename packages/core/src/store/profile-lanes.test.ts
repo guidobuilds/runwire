@@ -230,6 +230,38 @@ describe('readProfileLanes', () => {
     ]);
   });
 
+  test('resolves the window per (provider, name) with overrides at request time', () => {
+    // Same model name through two providers: two rows since .
+    db.run(
+      `INSERT INTO models (id, provider, name) VALUES (1, 'openai', 'gpt-6.1-sol'), (2, 'openai-codex', 'gpt-6.1-sol')`,
+    );
+    step(0, 'call', { output: 1, model_id: 1 });
+    step(1, 'call', { output: 1, model_id: 2 });
+    const response = readProfileLanes(db, 'root', { scope: 'tree' }, [
+      { provider: 'openai', model: 'gpt-6.1-sol', contextWindow: 500_000 },
+    ]);
+    if (response === null) throw new Error('expected lanes');
+    // Exact provider/model override wins for openai; the codex row falls to the
+    // exact-name built-in (1,050,000) — both dedup into distinct LaneModel rows.
+    expect(response.models).toEqual([
+      { name: 'gpt-6.1-sol', contextWindow: 500_000, tier: 'high' },
+      { name: 'gpt-6.1-sol', contextWindow: 1_050_000, tier: 'high' },
+    ]);
+    expect(response.agents[0]?.calls.model).toEqual([0, 1]);
+  });
+
+  test('without overrides the built-in cascade resolves both provider rows to the same window', () => {
+    db.run(
+      `INSERT INTO models (id, provider, name) VALUES (1, 'openai', 'gpt-6.1-sol'), (2, 'openai-codex', 'gpt-6.1-sol')`,
+    );
+    step(0, 'call', { output: 1, model_id: 1 });
+    step(1, 'call', { output: 1, model_id: 2 });
+    expect(read().models).toEqual([
+      { name: 'gpt-6.1-sol', contextWindow: 1_050_000, tier: 'high' },
+      { name: 'gpt-6.1-sol', contextWindow: 1_050_000, tier: 'high' },
+    ]);
+  });
+
   test('returns only the metadata allowlist, never tool, MCP, skill, path or title values', () => {
     step(0, 'call', { output: 1 });
     step(1, 'tool', {
