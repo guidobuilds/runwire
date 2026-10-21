@@ -24,7 +24,6 @@ export function LaneTooltip({
   if (!agent) return null;
   const calls = agent.cols.filter((col) => col.index >= column && col.index <= endColumn);
   const first = calls[0];
-  const last = calls.at(-1);
   const previous = agent.cols.filter((col) => col.index < column).at(-1);
   const active =
     (agent.cols[0]?.index ?? Infinity) <= column && (agent.cols.at(-1)?.index ?? -1) >= column;
@@ -34,49 +33,71 @@ export function LaneTooltip({
   const contexts = calls.flatMap((col) =>
     col.contextPercent === null ? [] : [col.contextPercent],
   );
+  const compact = (value: number | null) =>
+    value === null
+      ? 'Unknown'
+      : value >= 1000
+        ? `${Number((value / 1000).toFixed(1))}k`
+        : String(value);
+  const idle = first && previous ? first.at - previous.at : 0;
+  const categories = new Map<string, number>();
+  for (const col of calls) {
+    const kind = col.kind === 'look' ? 'read/search' : col.kind;
+    const primary = Math.max(0, col.tools - col.marks.mcp - col.marks.skills);
+    if (primary && kind !== 'reply') categories.set(kind, (categories.get(kind) ?? 0) + primary);
+    if (col.marks.mcp) categories.set('MCP', (categories.get('MCP') ?? 0) + col.marks.mcp);
+    if (col.marks.skills)
+      categories.set('skills', (categories.get('skills') ?? 0) + col.marks.skills);
+  }
   return (
     <div
       role="tooltip"
       className="absolute z-20 max-h-80 w-72 overflow-auto rounded-md border bg-popover p-3 text-xs text-popover-foreground shadow-md"
-      style={{ left: x, top: y }}
+      style={{ left: x, top: y, pointerEvents: 'auto' }}
     >
       <p className="font-medium">
-        {agent.id} · {agent.agentType ?? 'Agent'}
+        {agent.label} · {agent.agentType ?? 'Agent'}
       </p>
       {first ? (
         <>
+          {/* Use global column numbering consistently, including aggregated cells. */}
           <p>
-            Calls {column + 1}–{endColumn + 1} (agent {first.seq}–{last?.seq})
+            Calls #{column + 1}–#{endColumn + 1}
           </p>
           <p>Model: {[...new Set(calls.map((col) => col.model ?? 'Unknown'))].join(', ')}</p>
           <p>
-            Context: {contexts.length ? `${Math.max(...contexts).toFixed(1)}%` : 'Unknown'} ·{' '}
-            {first.promptInput ?? 'Unknown'} input tokens · {sum((col) => col.output ?? 0)} output
-            tokens
+            Context: {contexts.length ? `${Number(Math.max(...contexts).toFixed(1))}%` : 'Unknown'}{' '}
+            · {compact(Math.max(...calls.map((col) => col.promptInput ?? 0)))}
+            {' · '}window {compact(first.contextWindow)}
           </p>
-          <p>
-            Tools: {sum((col) => col.tools)} total · {sum((col) => col.marks.mcp)} MCP ·{' '}
-            {sum((col) => col.marks.skills)} skills · {sum((col) => col.marks.subagents)} subagent
-            calls
-          </p>
-          <p>Primary categories: {[...new Set(calls.map((col) => col.kind))].join(', ')}</p>
-          <p>Failures: {sum((col) => col.fails)}</p>
+          {categories.size ? (
+            <p>
+              Tools (primary categories):{' '}
+              {[...categories].map(([kind, count]) => `${kind} ${count}`).join(', ')}
+            </p>
+          ) : null}
+          {sum((col) => col.fails) > 0 ? <p>Failures: {sum((col) => col.fails)}</p> : null}
           <ul aria-label="Events">
             {calls.flatMap((col) =>
               col.events.map((event, index) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: Events retain immutable source order within a call and have no identity field.
                 <li key={`${col.index}:${index}`}>
                   {event.kind === 'compaction'
-                    ? `Compaction (${event.trigger ?? 'unknown'}): ${event.preTokens ?? 'Unknown'} pre-tokens → ${event.postTokens ?? 'Unknown'} post-tokens`
+                    ? `Compaction (${event.trigger ?? 'unknown'}): ${compact(event.preTokens)} pre-tokens → ${compact(event.postTokens)} post-tokens`
                     : `Model change: ${event.from ?? 'Unknown'} → ${event.to ?? 'Unknown'}`}
                   {event.after ? ' (after)' : ''}
                 </li>
               )),
             )}
           </ul>
-          <p>
-            Previous idle: {previous ? `${Math.round((first.at - previous.at) / 1000)}s` : 'None'}
-          </p>
+          {idle > 30 * 60_000 ? (
+            <p>
+              Previous idle:{' '}
+              {idle >= 3_600_000
+                ? `${Math.floor(idle / 3_600_000)}h`
+                : `${Math.floor(idle / 60_000)}m`}
+            </p>
+          ) : null}
         </>
       ) : (
         <p>{active ? 'waiting, another agent is running' : 'not running'}</p>

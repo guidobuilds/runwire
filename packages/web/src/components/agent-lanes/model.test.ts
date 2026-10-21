@@ -4,6 +4,39 @@ import short from './fixtures/short.json';
 import { buildModel } from './model';
 
 describe('lane model', () => {
+  it('uses main and shortened type labels with stable ordinals and length-bounded truncation', () => {
+    const data = structuredClone(short) as LanesResponse;
+    const root = data.agents[0];
+    if (!root) throw new Error('missing root');
+    root.id = 'private-session-id';
+    const type = `design-for-ai:design-build-${'x'.repeat(80)}`;
+    data.agents = [
+      root,
+      ...['a', 'b', 'c'].map((id) => ({
+        ...structuredClone(root),
+        id,
+        parentId: root.id,
+        depth: 1,
+        agentType: type,
+      })),
+      {
+        ...structuredClone(root),
+        id: 'd',
+        parentId: root.id,
+        depth: 1,
+        agentType: 'namespace/path/research',
+      },
+    ];
+    const model = buildModel(data);
+    expect(model.agents.map((agent) => agent.label)).toEqual([
+      'main',
+      'design-build-xxxxxxxxxx… #1',
+      'design-build-xxxxxxxxxx… #2',
+      'design-build-xxxxxxxxxx… #3',
+      'research',
+    ]);
+    expect(model.agents[1]?.detail).toBe(`${type} · 110 calls`);
+  });
   it('orders by time, agent index, then seq without mutating the response', () => {
     const data = structuredClone(short) as LanesResponse;
     const first = data.agents[0];

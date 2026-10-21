@@ -7,12 +7,14 @@ import { sessionQueryOptions } from '@/queries/sessions';
 import { detect, type Finding, type RuleId, rules } from './detections';
 import { indicators as catalog } from './indicators';
 import { LaneTooltip } from './lane-tooltip';
+import { Legend } from './legend';
 import { buildModel, type LaneModelData } from './model';
 import { drawFrame, prepareOverview } from './renderer/draw';
 import { hitTest } from './renderer/hit-test';
 import { LANE_HEIGHT, type Layout, layout } from './renderer/layout';
 import { readLaneTheme } from './renderer/theme';
-import { Toolbar } from './toolbar';
+import { resolveCanvasSize } from './sizing';
+import { formatCount, Toolbar } from './toolbar';
 import { type CanvasViewState, useCanvasGestures } from './use-canvas-gestures';
 import { useFullscreen } from './use-fullscreen';
 import { bucketSize, fit as fitView, ppc, xOf } from './viewport';
@@ -82,13 +84,16 @@ function LanesPanel({ model, onOpenNode, sessionId }: AgentLanesProps & { model:
   const columnLine = useRef<HTMLDivElement | null>(null);
   const zonesRef = useRef<Layout | null>(null);
   const pointer = useRef<{ x: number; y: number } | null>(null);
+  const tooltipActive = useRef(false);
+  const collapseButtons = useRef(new Map<string, HTMLButtonElement>());
+  const [liveBucket, setLiveBucket] = useState(1);
   const [hover, setHover] = useState<Hover | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [focusedFinding, setFocusedFinding] = useState<Finding | null>(null);
   const [indicators, setIndicators] = usePreference(
     'indicators',
-    catalog.map((item) => item.id),
+    catalog.filter((item) => item.id !== 'skills' && item.id !== 'mcp').map((item) => item.id),
     (value): value is string[] =>
       Array.isArray(value) &&
       value.every((id) => catalog.some((item) => item.id === id)) &&
@@ -96,7 +101,7 @@ function LanesPanel({ model, onOpenNode, sessionId }: AgentLanesProps & { model:
   );
   const [detections, setDetections] = usePreference<RuleId[]>(
     'detections',
-    rules.map((rule) => rule.id),
+    [],
     (value): value is RuleId[] =>
       Array.isArray(value) &&
       value.every((id) => rules.some((rule) => rule.id === id)) &&
@@ -133,6 +138,7 @@ function LanesPanel({ model, onOpenNode, sessionId }: AgentLanesProps & { model:
   );
   const inlineHeight = 148 + Math.min(10, zones.lanes.length) * LANE_HEIGHT;
   const updateHover = (current: Layout) => {
+    if (tooltipActive.current) return;
     const point = pointer.current;
     const hit = point ? hitTest(point.x, point.y, current) : null;
     const line = columnLine.current;
@@ -160,8 +166,19 @@ function LanesPanel({ model, onOpenNode, sessionId }: AgentLanesProps & { model:
       agentId: hit.lane,
       column,
       endColumn: Math.min(model.callCount - 1, column + bucket - 1),
-      x: Math.max(0, Math.min(size.width - 296, point.x + 12)),
-      y: Math.max(0, Math.min(current.height - 100, point.y + 16)),
+      // Anchor to the cell, never the moving cursor. The tooltip overlaps its
+      // bottom edge so the pointer can reach Open without crossing another cell.
+      x: Math.max(
+        0,
+        Math.min(size.width - 296, current.axis.x + xOf(current.view, current.axis.width, column)),
+      ),
+      y: Math.max(
+        0,
+        Math.min(
+          current.height - 80,
+          (current.lanes.find((lane) => lane.agent.id === hit.lane)?.y ?? 0) + 20,
+        ),
+      ),
     };
     setHover((previous) =>
       previous &&
@@ -184,6 +201,15 @@ function LanesPanel({ model, onOpenNode, sessionId }: AgentLanesProps & { model:
         fullscreen,
       });
       zonesRef.current = current;
+      setLiveBucket(bucketSize(ppc(state.view, current.axis.width)));
+      for (const lane of current.lanes) {
+        const button = collapseButtons.current.get(lane.agent.id);
+        if (button) {
+          button.style.top = `${lane.y}px`;
+          button.style.display =
+            lane.y >= current.labels.y && lane.y + LANE_HEIGHT <= current.context.y ? '' : 'none';
+        }
+      }
       const context = canvas.current?.getContext('2d');
       if (context)
         drawFrame(
@@ -209,23 +235,24 @@ function LanesPanel({ model, onOpenNode, sessionId }: AgentLanesProps & { model:
   useLayoutEffect(() => {
     const element = container.current;
     if (!element) return;
-    const resize = () =>
-      setSize((previous) => {
-        const rect = element.getBoundingClientRect();
-        const next = {
-          width: rect.width || previous.width,
-          height: fullscreen ? rect.height || previous.height : inlineHeight,
-        };
-        return previous.width === next.width && previous.height === next.height ? previous : next;
-      });
+    const resize = () => {
+      const rect = element.getBoundingClientRect();
+      const measured = { width: rect.width, height: rect.height, clientWidth: element.clientWidth };
+      setSize((previous) => resolveCanvasSize(measured, previous, fullscreen, inlineHeight));
+    };
     resize();
-    if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', resize);
-      return () => window.removeEventListener('resize', resize);
-    }
-    const observer = new ResizeObserver(resize);
-    observer.observe(element);
-    return () => observer.disconnect();
+    // Fullscreen exit and ancestor/sidebar transitions may settle after this layout effect.
+    const settled = requestAnimationFrame(resize);
+    window.addEventListener('resize', resize);
+    document.addEventListener('transitionend', resize);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
+    observer?.observe(element);
+    return () => {
+      cancelAnimationFrame(settled);
+      observer?.disconnect();
+      window.removeEventListener('resize', resize);
+      document.removeEventListener('transitionend', resize);
+    };
   }, [fullscreen, inlineHeight]);
   useEffect(() => {
     const observer = new MutationObserver(() => setTheme(readLaneTheme(document.documentElement)));
@@ -267,12 +294,15 @@ function LanesPanel({ model, onOpenNode, sessionId }: AgentLanesProps & { model:
     });
     setHover(null);
   };
-  const summary = `Agent lanes: ${model.callCount} calls, ${model.agents.length} agents, ${findings.length} findings. Arrow keys pan; plus and minus zoom; 0 fits all calls.`;
+  const summary =
+    `Agent lanes: ${formatCount(model.callCount, 'call')}, ` +
+    `${formatCount(model.agents.length, 'agent')}, ${formatCount(findings.length, 'finding')}. ` +
+    'Arrow keys pan; plus and minus zoom; 0 fits all calls.';
   return (
     <section
       ref={frame}
       aria-label="Agent lanes"
-      className="flex min-h-0 flex-col rounded-lg border bg-background"
+      className="flex min-h-0 min-w-0 max-w-full flex-col rounded-lg border bg-background"
       style={fullscreen ? { position: 'fixed', inset: 0, zIndex: 50 } : undefined}
       onPointerLeave={() => {
         pointer.current = null;
@@ -319,19 +349,19 @@ function LanesPanel({ model, onOpenNode, sessionId }: AgentLanesProps & { model:
       ) : null}
       {model.excludedNullAtCount > 0 ? (
         <p className="px-3 text-xs">
-          {model.excludedNullAtCount} calls without timestamps excluded.
+          {formatCount(model.excludedNullAtCount, 'call')} without timestamps excluded.
         </p>
       ) : null}
       <div
         ref={container}
-        className="relative min-h-0 overflow-hidden"
-        style={fullscreen ? { flex: 1 } : { height: inlineHeight }}
+        className="relative min-h-0 min-w-0 w-full overflow-hidden"
+        style={{ contain: 'inline-size', ...(fullscreen ? { flex: 1 } : { height: inlineHeight }) }}
       >
         <canvas
           ref={canvas}
           tabIndex={0}
           aria-label={summary}
-          className="block focus-visible:outline-2 focus-visible:outline-ring"
+          className="absolute left-0 top-0 block cursor-grab active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-ring"
           onPointerMove={(event) => {
             const rect = event.currentTarget.getBoundingClientRect();
             pointer.current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -342,8 +372,7 @@ function LanesPanel({ model, onOpenNode, sessionId }: AgentLanesProps & { model:
             if (!current) return;
             const rect = event.currentTarget.getBoundingClientRect();
             const hit = hitTest(event.clientX - rect.left, event.clientY - rect.top, current);
-            if (hit.zone === 'label' && hit.lane) collapse(hit.lane);
-            else if (hit.lane) setSelectedAgentId(hit.lane);
+            if (hit.lane) setSelectedAgentId(hit.lane);
           }}
         />
         <div
@@ -351,14 +380,60 @@ function LanesPanel({ model, onOpenNode, sessionId }: AgentLanesProps & { model:
           aria-hidden="true"
           className="pointer-events-none absolute top-0 hidden w-px bg-foreground/30"
         />
-        {hover ? <LaneTooltip model={model} {...hover} onOpenNode={onOpenNode} /> : null}
+        {zones.lanes
+          .filter(({ agent }) => model.children.get(agent.id)?.length)
+          .map(({ agent, y, hidden }) => (
+            <button
+              key={agent.id}
+              ref={(element) => {
+                if (element) collapseButtons.current.set(agent.id, element);
+                else collapseButtons.current.delete(agent.id);
+              }}
+              type="button"
+              aria-label={`${collapsed.has(agent.id) ? 'Expand' : 'Collapse'} ${agent.label}`}
+              aria-expanded={!collapsed.has(agent.id)}
+              className="absolute z-10 h-[30px] w-5 text-xs"
+              style={{
+                left: Math.min(60, agent.depth * 10),
+                top: y,
+                display:
+                  y >= zones.labels.y && y + LANE_HEIGHT <= zones.context.y ? undefined : 'none',
+              }}
+              onClick={() => collapse(agent.id)}
+            >
+              <span aria-hidden="true">{collapsed.has(agent.id) ? '▸' : '▾'}</span>
+              {hidden ? <span className="sr-only">+{hidden} hidden</span> : null}
+            </button>
+          ))}
+        {hover ? (
+          <div
+            onPointerEnter={() => {
+              tooltipActive.current = true;
+            }}
+            onPointerLeave={() => {
+              tooltipActive.current = false;
+            }}
+          >
+            <LaneTooltip model={model} {...hover} onOpenNode={onOpenNode} />
+          </div>
+        ) : null}
       </div>
+      <Legend bucketSize={liveBucket} />
+      <ul aria-label="Agent names" className="sr-only">
+        {zones.lanes.map(({ agent }) => (
+          <li key={agent.id}>
+            <button type="button" onClick={() => setSelectedAgentId(agent.id)}>
+              {agent.label}
+            </button>
+          </li>
+        ))}
+      </ul>
       {focusedFinding ? (
         <p
           role="status"
           aria-label="Focused finding"
           className="sr-only"
-        >{`${focusedFinding.agentId}: ${focusedFinding.text} (calls ${focusedFinding.from + 1}–${focusedFinding.to + 1})`}</p>
+        >{`${model.byId.get(focusedFinding.agentId)?.label ?? 'Agent'}: ${focusedFinding.text} (calls #${focusedFinding.from + 1}–#${focusedFinding.to + 1})`}</p>
       ) : null}
     </section>
   );

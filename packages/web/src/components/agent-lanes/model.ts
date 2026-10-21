@@ -21,7 +21,11 @@ export type LaneColumn = {
   spawns: readonly string[];
   events: readonly LaneEvent[];
 };
-export type ModelAgent = Omit<LaneAgent, 'calls'> & { cols: LaneColumn[] };
+export type ModelAgent = Omit<LaneAgent, 'calls'> & {
+  label: string;
+  detail: string;
+  cols: LaneColumn[];
+};
 export type LaneModelData = {
   sessionId: string;
   agents: ModelAgent[];
@@ -35,6 +39,18 @@ export type LaneModelData = {
 /** Caller memoizes by response identity/session revision, never by sessionId alone. */
 export function buildModel(response: LanesResponse): LaneModelData {
   const cols: LaneColumn[] = [];
+  const shortTypes = response.agents.map((agent) => {
+    const type = agent.agentType?.split(/[:/]/).at(-1) || 'Agent';
+    return type.length > 24 ? `${type.slice(0, 23)}…` : type;
+  });
+  const totals = new Map<string, number>();
+  response.agents.forEach((agent, index) => {
+    if (agent.parentId) {
+      const type = shortTypes[index] ?? 'Agent';
+      totals.set(type, (totals.get(type) ?? 0) + 1);
+    }
+  });
+  const ordinals = new Map<string, number>();
   const agents = response.agents.map(({ calls, ...agent }, agentIndex) => {
     const agentCols = calls.seq.map((seq, local): LaneColumn => {
       const model = response.models[calls.model[local] ?? -1];
@@ -71,7 +87,18 @@ export function buildModel(response: LanesResponse): LaneModelData {
       };
     });
     cols.push(...agentCols);
-    return { ...agent, cols: agentCols };
+    const type = shortTypes[agentIndex] ?? 'Agent';
+    const ordinal = (ordinals.get(type) ?? 0) + 1;
+    if (agent.parentId) ordinals.set(type, ordinal);
+    const label = !agent.parentId
+      ? 'main'
+      : `${type}${(totals.get(type) ?? 0) > 1 ? ` #${ordinal}` : ''}`;
+    return {
+      ...agent,
+      label,
+      detail: `${agent.agentType ?? 'Agent'} · ${agentCols.length} calls`,
+      cols: agentCols,
+    };
   });
   cols.sort((a, b) => a.at - b.at || a.agentIndex - b.agentIndex || a.seq - b.seq);
   const byId = new Map(agents.map((agent) => [agent.id, agent]));

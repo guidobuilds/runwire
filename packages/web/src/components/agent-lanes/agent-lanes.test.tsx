@@ -1,6 +1,6 @@
 import type { LanesResponse } from '@runwire/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse, http } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,6 +32,15 @@ function mount(id = 'sess-1') {
 
 beforeEach(() => {
   localStorage.clear();
+  const originalRect = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.style.contain === 'inline-size'
+      ? new DOMRect(0, 0, 900, 448)
+      : originalRect.call(this);
+  });
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900);
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -49,6 +58,107 @@ afterEach(() => {
 });
 
 describe('Agent Lanes', () => {
+  it('provides theme-independent pan cursors and isolates the canvas from wrapper sizing', async () => {
+    mount();
+    const canvas = await screen.findByLabelText(/Agent lanes:.*calls/);
+    expect(canvas).toHaveClass('cursor-grab', 'active:cursor-grabbing', 'absolute');
+    expect(canvas.parentElement).toHaveClass('min-w-0', 'w-full');
+    expect(canvas.parentElement).toHaveStyle({ contain: 'inline-size' });
+  });
+
+  it('explains inline zoom only outside fullscreen and formats the accessible summary', async () => {
+    const user = userEvent.setup();
+    mount();
+    const canvas = await screen.findByLabelText(/Agent lanes:.*calls/);
+    expect(canvas).toHaveAccessibleName(/1 agent,.*findings/);
+    expect(screen.getByText('Ctrl/⌘ + scroll to zoom · drag to pan')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Enter fullscreen' }));
+    expect(screen.queryByText('Ctrl/⌘ + scroll to zoom · drag to pan')).not.toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.getByText('Ctrl/⌘ + scroll to zoom · drag to pan')).toBeInTheDocument();
+  });
+
+  it('observes the isolated wrapper and remeasures fullscreen exit and sidebar transitions', async () => {
+    const user = userEvent.setup();
+    let width = 900;
+    let height = 448;
+    let notify = () => {};
+    const observe = vi.fn();
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          notify = callback;
+        }
+        observe = observe;
+        disconnect() {}
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.style.contain === 'inline-size'
+        ? new DOMRect(0, 0, width + 0.5, height)
+        : new DOMRect();
+    });
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width);
+    mount();
+    const canvas = await screen.findByLabelText(/Agent lanes:.*calls/);
+    expect(observe).toHaveBeenCalledWith(canvas.parentElement);
+    const drawnSize = () => vi.mocked(drawFrame).mock.calls.at(-1)?.[2];
+    await waitFor(() => expect(drawnSize()).toMatchObject({ width: 900, height: 178 }));
+    width = 1600;
+    height = 900;
+    await user.click(screen.getByRole('button', { name: 'Enter fullscreen' }));
+    await waitFor(() => expect(drawnSize()).toMatchObject({ width: 1600, height: 900 }));
+    width = 900;
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(drawnSize()).toMatchObject({ width: 900, height: 178 }));
+    width = 700;
+    act(() => notify());
+    await waitFor(() => expect(drawnSize()).toMatchObject({ width: 700, height: 178 }));
+    width = 1000;
+    fireEvent.transitionEnd(document.body);
+    await waitFor(() => expect(drawnSize()).toMatchObject({ width: 1000, height: 178 }));
+  });
+
+  it('starts with quiet defaults and mounts the live legend', async () => {
+    mount();
+    await screen.findByLabelText(/Agent lanes:.*calls/);
+    expect(screen.getByRole('button', { name: /Indicators 6\/8/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Detections \d+ available/ })).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('agent-lanes:detections') ?? 'null')).toEqual([]);
+    expect(localStorage.getItem('agent-lanes:threshold')).toBe('85');
+    const enabled = JSON.parse(localStorage.getItem('agent-lanes:indicators') ?? '[]');
+    expect(enabled).toHaveLength(6);
+    expect(enabled).not.toContain('skills');
+    expect(enabled).not.toContain('mcp');
+    expect(screen.getByRole('region', { name: 'Agent lanes legend' })).toHaveTextContent(
+      '1 column = 1 call',
+    );
+  });
+
+  it('updates the legend bucket size after zooming', async () => {
+    const user = userEvent.setup();
+    mount('nested');
+    await screen.findByLabelText(/Agent lanes:.*calls/);
+    const legend = screen.getByRole('region', { name: 'Agent lanes legend' });
+    await waitFor(() => expect(legend).toHaveTextContent('1 column = 4 calls'));
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }));
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }));
+    await waitFor(() => expect(legend).toHaveTextContent('1 column = 2 calls'));
+  });
+
+  it('preserves stored preferences', async () => {
+    localStorage.setItem('agent-lanes:indicators', JSON.stringify(['skills', 'mcp']));
+    localStorage.setItem('agent-lanes:detections', JSON.stringify(['failure-group']));
+    localStorage.setItem('agent-lanes:threshold', '90');
+    mount();
+    await screen.findByLabelText(/Agent lanes:.*calls/);
+    expect(screen.getByRole('button', { name: /Indicators 2\/8/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Detections \d+ found/ })).toBeInTheDocument();
+    expect(localStorage.getItem('agent-lanes:threshold')).toBe('90');
+  });
   it('loads the MSW lanes and preserves count, accessible summary and menu controls', async () => {
     const user = userEvent.setup();
     const { onNodeCount } = mount();
@@ -79,25 +189,30 @@ describe('Agent Lanes', () => {
     await waitFor(() => expect(screen.queryByRole('checkbox')).not.toBeInTheDocument());
   });
 
-  it('expands and focuses a finding, zooms, and exposes agent collapse and Open actions', async () => {
+  it('expands and focuses a finding and collapses only parents in the label column', async () => {
     const user = userEvent.setup();
-    const { onOpenNode, onNodeCount } = mount('nested');
+    const { onNodeCount } = mount('nested');
     await screen.findByLabelText(/Agent lanes:/);
     expect(onNodeCount).toHaveBeenCalledWith(nested.agents.length - 1);
-    await user.click(screen.getByRole('button', { name: /Indicators/ }));
-    const agents = screen.getByRole('list', { name: 'Agents' });
-    await user.click(within(agents).getByRole('button', { name: 'Collapse sub-3' }));
-    expect(within(agents).getByRole('button', { name: 'Expand sub-3' })).toHaveTextContent(
-      '+5 hidden',
-    );
-    await user.click(within(agents).getByRole('button', { name: 'Open main' }));
-    expect(onOpenNode).toHaveBeenCalledWith('main');
-    await user.keyboard('{Escape}');
+    const parent = nested.agents.find((agent) => agent.id === 'sub-3');
+    if (!parent) throw new Error('missing parent');
+    const { buildModel } = await import('./model');
+    const labels = buildModel(nested as LanesResponse);
+    const label = labels.byId.get('sub-3')?.label;
+    await user.click(screen.getByRole('button', { name: `Collapse ${label}` }));
+    expect(screen.getByRole('button', { name: `Expand ${label}` })).toHaveTextContent('+5 hidden');
+    const leaf = labels.agents.find((agent) => !labels.children.get(agent.id)?.length);
+    expect(screen.queryByRole('button', { name: `Collapse ${leaf?.label}` })).toBeNull();
     await user.click(screen.getByRole('button', { name: /Detections/ }));
+    await user.click(screen.getByRole('checkbox', { name: /Context over threshold/ }));
+    await user.click(screen.getByRole('checkbox', { name: /Failure group/ }));
+    await user.click(screen.getByRole('checkbox', { name: /High-tier mechanical work/ }));
     const findings = screen.getByRole('list', { name: 'Findings' });
     const finding = within(findings)
       .getAllByRole('button')
-      .find((button) => /sub-3\.2\.2:/.test(button.textContent ?? ''));
+      .find((button) =>
+        button.textContent?.includes(`${labels.byId.get('sub-3.2.2')?.label} · calls`),
+      );
     expect(finding).toBeDefined();
     if (!finding) throw new Error('fixture needs a child finding');
     await user.click(finding);
@@ -114,14 +229,46 @@ describe('Agent Lanes', () => {
         expect.anything(),
       ),
     );
-    expect(screen.getByRole('status', { name: 'Focused finding' })).toHaveTextContent(
-      finding.textContent ?? '',
+    expect(screen.getByRole('status', { name: 'Focused finding' })).not.toHaveTextContent(
+      'sub-3.2.2:',
     );
     const call = vi.mocked(drawFrame).mock.calls.at(-1);
     expect(call?.[2].view.span).toBeLessThan(nested.callCount);
     await user.keyboard('{Escape}');
-    await user.click(screen.getByRole('button', { name: /Indicators/ }));
-    expect(screen.getByRole('button', { name: 'Collapse sub-3' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Collapse ${label}` })).toBeInTheDocument();
+  });
+
+  it('anchors the tooltip, freezes hover inside it, and opens the original agent', async () => {
+    const { onOpenNode } = mount();
+    const canvas = await screen.findByLabelText(/Agent lanes:.*calls/);
+    // MouseEvent supplies coordinates for pointer events in jsdom.
+    const move = (x: number, y: number) =>
+      fireEvent(canvas, new MouseEvent('pointermove', { bubbles: true, clientX: x, clientY: y }));
+    move(170, 40);
+    const tooltip = await screen.findByRole('tooltip');
+    const anchor = tooltip.getAttribute('style');
+    move(171, 41);
+    await waitFor(() => expect(drawFrame).toHaveBeenCalled());
+    expect(tooltip.getAttribute('style')).toBe(anchor);
+    fireEvent.pointerOver(tooltip);
+    await act(async () => {
+      move(800, 40);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    expect(tooltip).toHaveTextContent('Calls #1–#1');
+    expect(tooltip.getAttribute('style')).toBe(anchor);
+    fireEvent.click(within(tooltip).getByRole('button', { name: 'Open' }));
+    expect(onOpenNode).toHaveBeenCalledWith(short.agents[0]?.id);
+  });
+
+  it('highlights an agent when its label is clicked', async () => {
+    mount();
+    const canvas = await screen.findByLabelText(/Agent lanes:.*calls/);
+    await waitFor(() => expect(drawFrame).toHaveBeenCalled());
+    fireEvent.click(canvas, { clientX: 80, clientY: 40 });
+    await waitFor(() =>
+      expect(vi.mocked(drawFrame).mock.calls.at(-1)?.[3].selectedAgentId).toBe(short.agents[0]?.id),
+    );
   });
 
   it('enters fullscreen, uses fixed fallback when rejected, and exits on Escape', async () => {
