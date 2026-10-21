@@ -10,6 +10,7 @@
       "endedAt": "2026-01-01T00:00:05.000Z",
       "durationMs": 5000,
       "modelPrimary": "m-a",
+      "modelPrimaryProvider": "anthropic",
       "modelChanges": 0,
       "effort": "medium",
       "uncachedInput": 10,

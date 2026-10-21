@@ -48,7 +48,10 @@ const messageSchema = z
   .object({
     type: z.string().optional(),
     role: z.string().optional(),
-    model: z.object({ id: z.string().optional() }).passthrough().optional(),
+    model: z
+      .object({ id: z.string().optional(), providerID: z.string().optional() })
+      .passthrough()
+      .optional(),
     previous: z.object({ id: z.string().optional() }).passthrough().optional(),
     time: z
       .object({

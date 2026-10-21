@@ -182,6 +182,10 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
   const modelOrder: string[] = [];
   const modelCounts = new Map<string, number>();
   const modelOutputByName = new Map<string, number>();
+  // First provider observed per model name: feeds modelPrimaryProvider.
+  // A session running one model name through two providers is not something the
+  // harnesses do in practice; first-seen wins deterministically.
+  const modelProviderByName = new Map<string, string>();
   const modelTargetsSeen = new Set<string>();
   const declaredModelTargets = new Set<string>();
 
@@ -277,6 +281,10 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
             if (resolved !== undefined) {
               if (!modelCounts.has(resolved)) modelOrder.push(resolved);
               modelCounts.set(resolved, (modelCounts.get(resolved) ?? 0) + 1);
+              if (!modelProviderByName.has(resolved)) {
+                if (message.provider !== undefined)
+                  modelProviderByName.set(resolved, message.provider);
+              }
               if (lastModel !== undefined && lastModel !== resolved) {
                 steps.push({
                   sessionId,
@@ -302,6 +310,7 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
               at,
               kind: 'call',
               model: resolved,
+              modelProvider: message.provider,
               uncachedInput: usage.input,
               cachedInput: usage.cacheRead,
               cacheWrite: usage.cacheWrite,
@@ -325,6 +334,7 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
               toolName: block.name,
               callId: block.id,
               model: resolved,
+              modelProvider: message.provider,
             };
             steps.push(toolStep);
             toolCallCount++;
@@ -560,6 +570,7 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
     endedAt: lastAt,
     durationMs: firstAt && lastAt ? Date.parse(lastAt) - Date.parse(firstAt) : undefined,
     modelPrimary,
+    modelPrimaryProvider: modelPrimary ? modelProviderByName.get(modelPrimary) : undefined,
     modelChanges: modelOrder.length > 0 ? modelChanges : undefined,
     effort,
     uncachedInput: tokenFieldSeen.has('uncachedInput') ? tokenSums.uncachedInput : undefined,

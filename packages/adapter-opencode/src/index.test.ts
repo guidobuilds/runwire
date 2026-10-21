@@ -56,7 +56,7 @@ describe('opencode adapter: createOpencodeAdapter shape', () => {
     const adapter = createOpencodeAdapter();
     expect(adapter.id).toBe('opencode');
     expect(adapter.displayName).toBe('OpenCode');
-    expect(adapter.adapterVersion).toBe('1.1.0');
+    expect(adapter.adapterVersion).toBe('1.2.0');
     expect(Array.isArray(adapter.capabilities)).toBe(true);
     expect(adapter.allowlist).toBeTypeOf('object');
     expect(adapter.probe).toBeTypeOf('function');

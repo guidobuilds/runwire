@@ -51,6 +51,7 @@ export const SessionSchema = z
     endedAt: z.iso.datetime().optional(),
     durationMs: nonNegInt().optional(),
     modelPrimary: z.string().optional(),
+    modelPrimaryProvider: z.string().optional(),
     modelChanges: nonNegInt().optional(),
     modePrimary: z.string().optional(),
     modeChanges: nonNegInt().optional(),
@@ -100,6 +101,7 @@ export const StepSchema = z
     at: z.iso.datetime().optional(),
     kind: z.enum(['call', 'tool', 'turn', 'harness', 'compaction', 'model-change', 'mode-change']),
     model: z.string().optional(),
+    modelProvider: z.string().optional(),
     toolCategory: ToolCategorySchema.optional(),
     toolName: z.string().optional(),
     // A proven identity is never empty and always a pair (see superRefine).

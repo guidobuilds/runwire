@@ -31,7 +31,7 @@ export function createPiAdapter(): HarnessAdapter {
   return {
     id: 'pi',
     displayName: 'Pi',
-    adapterVersion: '1.0.0',
+    adapterVersion: '1.1.0',
     capabilities: CAPABILITIES,
     allowlist: piAllowlist,
     probe,

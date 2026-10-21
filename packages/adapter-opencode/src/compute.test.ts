@@ -18,6 +18,68 @@ function ctxFor(name: string): AdapterContext {
   };
 }
 
+describe('computeBundle: model provider', () => {
+  test('model.providerID flows to call/tool steps and the session primary', async () => {
+    const ctx = ctxFor('small');
+    const session: OpenCodeSession = {
+      id: 'provider-flow',
+      projectId: 'p',
+      directory: '/home/u/proj',
+    };
+    const messages: OpenCodeMessage[] = [
+      {
+        type: 'assistant',
+        seq: 1,
+        data: {
+          time: { created: 50, completed: 500 },
+          model: { id: 'glm5.3-flash', providerID: 'nan' },
+          tokens: { input: 10, output: 5 },
+          content: [
+            {
+              type: 'tool',
+              id: 'tool-1',
+              name: 'read',
+              time: { created: 100, completed: 225 },
+              state: { status: 'completed' },
+            },
+          ],
+        },
+      },
+      {
+        type: 'assistant',
+        seq: 2,
+        data: {
+          time: { created: 600, completed: 900 },
+          model: { id: 'gpt-6.1-sol', providerID: 'openai' },
+          tokens: { input: 20, output: 30 },
+          content: [],
+        },
+      },
+    ];
+    const bundle = await computeBundle({
+      harnessId: 'opencode',
+      origin: 'current',
+      session,
+      messages,
+      sessionsById: new Map([[session.id, session]]),
+      projects: new Map(),
+      recordDiagnostics: [],
+      ctx,
+    });
+
+    const calls = bundle.steps.filter((s) => s.kind === 'call');
+    expect(calls.map((s) => [s.model, s.modelProvider])).toEqual([
+      ['glm5.3-flash', 'nan'],
+      ['gpt-6.1-sol', 'openai'],
+    ]);
+    const tools = bundle.steps.filter((s) => s.kind === 'tool');
+    expect(tools.map((s) => [s.model, s.modelProvider])).toEqual([['glm5.3-flash', 'nan']]);
+    // gpt-6.1-sol has the largest output -> primary.
+    expect(bundle.session.modelPrimary).toBe('gpt-6.1-sol');
+    expect(bundle.session.modelPrimaryProvider).toBe('openai');
+  });
+});
+
 describe('computeDepth', () => {
   test('walks the parent chain within the same origin', () => {
     const sessionsById = new Map<string, OpenCodeSession>([

@@ -460,7 +460,7 @@ first message, which is the same trade-off D7 already adjudicated. Shipped as **
 | `compaction.compactionTrigger` | Pi computes `reason ∈ {'manual','threshold','overflow'}` for its `session_before_compact` event but does **not** persist it, and `CompactionDetails` only carries `{readFiles, modifiedFiles}` | D51 signal #1 ("repeated *automatic* compaction") degrades to "repeated compaction". `fromHook` does distinguish extension-authored. **Upstream ask:** persist the reason you already compute |
 | `compaction.postTokens` | `CompactionResult.estimatedTokensAfter` is not written to the entry | only `preTokens` available |
 | `Step.error` on a failed call | `error` is gated for `tool` steps only (`CAPABILITY_FIELDS['steps.errors']`) | workaround chosen in §3.3 (`harness` step `call-error`); the clean fix is widening `error` to `call` steps |
-| `provider` | Runwire has no provider column, and Pi's cost per token varies by provider as well as model | decide whether `modelPrimary` carries `provider/model`; see D-"decisions" below |
+| `provider` | ~~Runwire has no provider column~~ **resolved**: `models.provider` exists (serving provider, NULL for Claude Code) and the adapter now emits `message.provider` as `Step.modelProvider` / `Session.modelPrimaryProvider`; `modelPrimary` stays bare per D80 (cross-harness comparability) — the pair joins in the catalog cascade | — |
 | `usage.cacheWrite1h` | Anthropic's 1 h-retention split, a subset of `cacheWrite` | outside the contract; a future cache-cost signal |
 | `--no-session` runs | nothing written | invisible, and unfixable from disk |
 | custom `--session-dir` runs | written outside `<agentDir>/sessions` | invisible unless extra roots are configured; do not hardcode extension dirs |
@@ -554,7 +554,7 @@ Core continues to add `orphan-child` and `bundle-invalid` at persist time.
 
 ```text
 packages/adapter-pi/
-  src/index.ts          createPiAdapter(): HarnessAdapter  (id 'pi', displayName 'Pi', adapterVersion '1.0.0')
+  src/index.ts          createPiAdapter(): HarnessAdapter  (id 'pi', displayName 'Pi', adapterVersion '1.1.0')
   src/paths.ts          agentDir(ctx) → env PI_CODING_AGENT_DIR ?? <home>/.pi/agent ;
                         sessionsRoot(ctx) → env PI_CODING_AGENT_SESSION_DIR ?? <agentDir>/sessions;
                         sessionIdFromRootFile(); projectDirnameEncode/Decode()   [path.posix.join only]
