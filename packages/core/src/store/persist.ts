@@ -104,33 +104,52 @@ export function upsertProject(db: Database, project: Project): void {
 }
 
 /**
- * Upserts every distinct raw model string the bundle mentions (union of
- * `steps[].model` and `session.modelPrimary`) into `models` by its UNIQUE
- * `name` (idempotent, `upsertHarness` style), then resolves name -> id in one
- * SELECT. Runs inside persistBundle's transaction before the session/step
- * writes so the hard FKs (`sessions.model_primary_id`, `steps.model_id`) can
- * never observe a missing `models` row. The contract stays raw-string
- * (`Session.modelPrimary` / `Step.model`); which model is "primary" is chosen
- * by the adapter and persist only stores what it is given.
+ * Upserts every distinct (provider, model) pair the bundle mentions (union of
+ * `steps[].model`/`steps[].modelProvider` and
+ * `session.modelPrimary`/`session.modelPrimaryProvider`) into `models` by its
+ * `(provider, name)` identity (idempotent, `upsertHarness` style), then
+ * resolves each pair -> id in one SELECT. Runs inside persistBundle's
+ * transaction before the session/step writes so the hard FKs
+ * (`sessions.model_primary_id`, `steps.model_id`) can never observe a missing
+ * `models` row. The contract stays raw-string (`Session.modelPrimary` /
+ * `Step.model`, plus their optional providers); which model is "primary" is
+ * chosen by the adapter and persist only stores what it is given. A missing
+ * provider means NULL (Claude Code; older adapter versions).
  */
+/**
+ * Map key for a (provider, name) model identity. JSON-encoded so the
+ * absent-provider case is unambiguous (a plain separator collides with a
+ * NUL-sentinel prefix when provider is missing).
+ */
+function modelKey(provider: string | undefined, name: string): string {
+  return JSON.stringify([provider ?? null, name]);
+}
+
 function upsertModels(db: Database, b: SessionBundle): Map<string, number> {
-  const names = new Set<string>();
-  if (b.session.modelPrimary !== undefined) names.add(b.session.modelPrimary);
+  const pairs = new Set<string>();
+  if (b.session.modelPrimary !== undefined) {
+    pairs.add(modelKey(b.session.modelPrimaryProvider, b.session.modelPrimary));
+  }
   for (const step of b.steps) {
-    if (step.model !== undefined) names.add(step.model);
+    if (step.model !== undefined) pairs.add(modelKey(step.modelProvider, step.model));
   }
-  if (names.size === 0) return new Map();
+  if (pairs.size === 0) return new Map();
 
-  for (const name of names) {
-    db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT(name) DO NOTHING', [name]);
+  for (const pair of pairs) {
+    const [provider, name] = JSON.parse(pair) as [string | null, string];
+    db.run('INSERT INTO models (provider, name) VALUES (?, ?) ON CONFLICT DO NOTHING', [
+      provider,
+      name,
+    ]);
   }
 
-  const placeholders = [...names].map(() => '?').join(', ');
+  const names = [...pairs].map((pair) => (JSON.parse(pair) as [string | null, string])[1]);
+  const placeholders = names.map(() => '?').join(', ');
   const rows = db
-    .query(`SELECT id, name FROM models WHERE name IN (${placeholders})`)
-    .all(...names) as { id: number; name: string }[];
+    .query(`SELECT id, provider, name FROM models WHERE name IN (${placeholders})`)
+    .all(...names) as { id: number; provider: string | null; name: string }[];
   const ids = new Map<string, number>();
-  for (const row of rows) ids.set(row.name, row.id);
+  for (const row of rows) ids.set(modelKey(row.provider ?? undefined, row.name), row.id);
   return ids;
 }
 
@@ -188,7 +207,9 @@ function upsertSessionRow(
       s.startedAt ?? null,
       s.endedAt ?? null,
       s.durationMs ?? null,
-      s.modelPrimary === undefined ? null : (modelIds.get(s.modelPrimary) ?? null),
+      s.modelPrimary === undefined
+        ? null
+        : (modelIds.get(modelKey(s.modelPrimaryProvider, s.modelPrimary)) ?? null),
       s.modelChanges ?? null,
       s.modePrimary ?? null,
       s.modeChanges ?? null,
@@ -238,7 +259,9 @@ function replaceSteps(
         step.seq,
         step.at ?? null,
         step.kind,
-        step.model === undefined ? null : (modelIds.get(step.model) ?? null),
+        step.model === undefined
+          ? null
+          : (modelIds.get(modelKey(step.modelProvider, step.model)) ?? null),
         step.toolCategory ?? null,
         step.toolName ?? null,
         step.skillName ?? null,

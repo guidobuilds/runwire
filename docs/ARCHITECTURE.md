@@ -163,7 +163,7 @@ Invariant: per token field, Σ over `call` steps = the session's value.
 ```sql
 harnesses(id PK, display_name, adapter_version, capabilities, imported_version)
 projects(key PK, name, repo_root, worktree, identity)
-models(id PK, name NOT NULL UNIQUE)            -- canonical model identity; name = exact raw harness string
+models(id PK, provider TEXT NULL, name NOT NULL)  -- identity (provider, name); name = exact raw harness string
 sessions(id PK, harness_id → harnesses, project_key → projects, parent_id → sessions, relation, depth, agent_type, spawn_call_id,
          title, cwd, git_branch, git_commit, started_at, ended_at, duration_ms,
          model_primary_id → models, model_changes, mode_primary, mode_changes, effort,
@@ -193,7 +193,7 @@ rollups(session_id PK → sessions, uncached_input, cached_input, cache_write, o
 
 - Typed nullable columns, no JSON blobs: waste-pattern queries (D51) are plain SQL.
 - `sessions` holds exclusive values only. Derivable data (`model.all`, `children[]`, `cwd.all`) is not stored.
-- Model identity is normalized: `models.name` is the exact raw harness model string (the canonical key; reserved names such as `unknown`/`other` are stored as-is), and `steps.model_id` / `sessions.model_primary_id` are hard FKs to `models(id)`. The legacy text columns (`steps.model`, `sessions.model_primary`) no longer exist; a NULL model stays a NULL id.
+- Model identity is normalized: `models.name` is the exact raw harness model string (the canonical key; reserved names such as `unknown`/`other` are stored as-is), and `steps.model_id` / `sessions.model_primary_id` are hard FKs to `models(id)`. The legacy text columns (`steps.model`, `sessions.model_primary`) no longer exist; a NULL model stays a NULL id. Identity is `(provider, name)`: `provider` is the serving provider the harness reported (e.g. `nan`, `openai`, `openai-codex`), NULL when it does not report one (Claude Code). The same name from two providers coexists; the unique constraint lives in two partial unique indexes (`(provider, name)` where provider is not null, `(name)` where it is null) because SQLite UNIQUE treats NULLs as distinct.
 - `harnesses.adapter_version` is the installed adapter metadata, rewritten on every run. `harnesses.imported_version` is a separate nullable completion marker: the adapter mapping version whose full historical import last finished cleanly (D82). The marker is read before the metadata upsert and only advances after a fully clean import, so the two must not be conflated.
 - NULL is the empty state (D72).
 
@@ -299,7 +299,7 @@ known-tolerated warning never causes a retry loop.
 
 Rollups are a table (`rollups`, §5) recomputed by core after each import: inclusive = own row + all descendants for the token fields, `api_calls`, `tool_calls`, `compactions`; `descendants` is a count; `turns` is not rolled up (read it from the root row). Aggregates are SQL views (`project_aggregates`, `harness_aggregates`) over root sessions joined with `rollups`. `importAll` returns an `ImportReport { perAdapter: { discovered, imported, skipped, removed, failed }, durationMs }`.
 
-Foreign-key policy: `sessions.model_primary_id` and `steps.model_id` are hard FKs to `models(id)`, so every distinct raw model string is upserted into `models` by `name` inside the same persist transaction, before the session/step rows, and can never be missing at insert. `sessions.parent_id` and `steps.child_id` stay plain indexed columns with no foreign key: bundles stream in arbitrary order, so a child may be persisted before its parent and a self-referencing FK would reject a valid import. Migrating an existing store to this shape is a guarded one-transaction rebuild: it rebuilds `steps`/`sessions` only when they still carry the text columns (or lack the id columns), runs with `PRAGMA foreign_keys = OFF` (a no-op inside a transaction, so it is toggled outside and restored after), copies every row verbatim (text model resolved to `models.id`, NULL preserved), recreates the dropped indexes, and finally throws if `PRAGMA foreign_key_check` reports any violation rather than silently corrupting the store.
+Foreign-key policy: `sessions.model_primary_id` and `steps.model_id` are hard FKs to `models(id)`, so every distinct (provider, name) pair is upserted into `models` inside the same persist transaction, before the session/step rows, and can never be missing at insert. `sessions.parent_id` and `steps.child_id` stay plain indexed columns with no foreign key: bundles stream in arbitrary order, so a child may be persisted before its parent and a self-referencing FK would reject a valid import. Migrating an existing store to this shape is a guarded one-transaction rebuild: it rebuilds `steps`/`sessions` only when they still carry the text columns (or lack the id columns), runs with `PRAGMA foreign_keys = OFF` (a no-op inside a transaction, so it is toggled outside and restored after), copies every row verbatim (text model resolved to `models.id`, NULL preserved), recreates the dropped indexes, and finally throws if `PRAGMA foreign_key_check` reports any violation rather than silently corrupting the store. The same guarded rebuild applies to a pre-provider `models` table: its inline `UNIQUE(name)` is replaced by the `(provider, name)` body with ids preserved and `provider` NULL, before any insert runs.
 
 ## 7. Privacy
 

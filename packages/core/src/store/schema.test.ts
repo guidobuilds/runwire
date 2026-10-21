@@ -334,11 +334,64 @@ function snapshot(db: Database): string {
   return JSON.stringify({
     sessionColumns: columns(db, 'sessions'),
     stepColumns: columns(db, 'steps'),
-    models: db.query('SELECT id, name FROM models ORDER BY name').all(),
+    models: db.query('SELECT id, provider, name FROM models ORDER BY name').all(),
     sessions: db.query('SELECT * FROM sessions ORDER BY id').all(),
     steps: db.query('SELECT * FROM steps ORDER BY session_id, seq').all(),
   });
 }
+
+describe('migrate(): models provider identity', () => {
+  test('a previous-version DB (models without provider, canonical steps/sessions) rebuilds models losslessly', () => {
+    const db = new Database(':memory:');
+    db.exec('CREATE TABLE models (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE)');
+    db.run("INSERT INTO models (name) VALUES ('gpt-6.1-sol')");
+    db.run("INSERT INTO models (name) VALUES ('claude-opus-5-5')");
+
+    migrate(db);
+
+    expect(columns(db, 'models')).toEqual(['id', 'provider', 'name']);
+    const rows = db.query('SELECT id, provider, name FROM models ORDER BY name').all() as {
+      id: number;
+      provider: string | null;
+      name: string;
+    }[];
+    expect(rows.map((r) => [r.provider, r.name])).toEqual([
+      [null, 'claude-opus-5-5'],
+      [null, 'gpt-6.1-sol'],
+    ]);
+    // The legacy inline UNIQUE(name) is gone: the same name from two providers is legal.
+    db.run("INSERT INTO models (provider, name) VALUES ('openai', 'gpt-6.1-sol')");
+    // NULL-provider names still dedup among themselves.
+    expect(() => db.run("INSERT INTO models (name) VALUES ('claude-opus-5-5')")).toThrow();
+    // Non-NULL (provider, name) pairs dedup too.
+    expect(() =>
+      db.run("INSERT INTO models (provider, name) VALUES ('openai', 'gpt-6.1-sol')"),
+    ).toThrow();
+    expect(db.query('PRAGMA foreign_key_check').all()).toEqual([]);
+    db.close();
+  });
+
+  test('the full-legacy rebuild also comes out with provider NULL on every model row', () => {
+    const db = seedLegacyModelDb();
+    migrate(db);
+    const rows = db.query('SELECT provider, name FROM models ORDER BY name').all() as {
+      provider: string | null;
+      name: string;
+    }[];
+    expect(rows.every((r) => r.provider === null)).toBe(true);
+    expect(rows.map((r) => r.name)).toContain('claude-sonnet-4');
+    db.close();
+  });
+
+  test('running migrate() twice after a models-provider rebuild is a no-op', () => {
+    const db = seedLegacyModelDb();
+    migrate(db);
+    const snap = snapshot(db);
+    migrate(db);
+    expect(snapshot(db)).toEqual(snap);
+    db.close();
+  });
+});
 
 describe('migrate(): models table + model-identity rebuild', () => {
   test('a fresh DB has model_id/model_primary_id and neither text model column', () => {
@@ -348,16 +401,22 @@ describe('migrate(): models table + model-identity rebuild', () => {
     expect(columns(db, 'steps')).not.toContain('model');
     expect(columns(db, 'sessions')).toContain('model_primary_id');
     expect(columns(db, 'sessions')).not.toContain('model_primary');
-    expect(columns(db, 'models')).toEqual(['id', 'name']);
+    expect(columns(db, 'models')).toEqual(['id', 'provider', 'name']);
     expect(
       (db.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[])
         .map((r) => r.name)
         .includes('models'),
     ).toBe(true);
-    // `name` is UNIQUE and `id` auto-assigns.
-    db.run("INSERT INTO models (name) VALUES ('x')");
-    expect(() => db.run("INSERT INTO models (name) VALUES ('x')")).toThrow();
-    const row = db.query("INSERT INTO models (name) VALUES ('y') RETURNING id").get() as {
+    // Identity is (provider, name): same name from two providers is legal; the
+    // same (provider, name) pair is not; NULL-provider names dedup by name.
+    db.run("INSERT INTO models (provider, name) VALUES ('openai', 'x')");
+    expect(() =>
+      db.run("INSERT INTO models (provider, name) VALUES ('openai-codex', 'x')"),
+    ).not.toThrow();
+    expect(() => db.run("INSERT INTO models (provider, name) VALUES ('openai', 'x')")).toThrow();
+    db.run("INSERT INTO models (name) VALUES ('y')");
+    expect(() => db.run("INSERT INTO models (name) VALUES ('y')")).toThrow();
+    const row = db.query("INSERT INTO models (name) VALUES ('z') RETURNING id").get() as {
       id: number;
     };
     expect(Number.isInteger(row.id)).toBe(true);

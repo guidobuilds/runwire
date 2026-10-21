@@ -5,7 +5,7 @@ import { createServer } from './createServer';
 
 /** Idempotently upserts a raw model string and returns its `models.id`. */
 function modelId(db: Database, name: string): number {
-  db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT(name) DO NOTHING', [name]);
+  db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT DO NOTHING', [name]);
   return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
 }
 
