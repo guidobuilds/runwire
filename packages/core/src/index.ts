@@ -4,4 +4,5 @@ export * from './adapter';
 export * from './contract';
 export * from './import';
 export * from './mcp';
+export * from './models/catalog';
 export * from './store';

@@ -228,6 +228,35 @@ profile.
 
 ---
 
+## Lanes (`/profile/lanes`)
+
+- **Query parameters.** `scope` only (`own` | `tree`, default `tree`); strict
+  parsing rejects every other parameter.
+- **One unpaginated response.** Every in-scope call of the session tree in a
+  compact, columnar form (`LaneCalls`: one array per field, same length) sized
+  around 60 bytes per call. `agents` is depth-first, parent before children,
+  siblings by `startedAt`.
+- **Construction rules.** A call is a `kind='call'` step; calls with neither
+  prompt-input nor output tokens are dropped (harness echoes). Tool steps attach
+  to the agent's previous call by `seq`. `compaction` and `model-change` steps
+  attach to the next call, or to the last call with an `after` marker when there
+  is none. `turn`, `harness`, and `mode-change` steps never travel. The call
+  type (`kind`) is decided server-side by tool priority: subagent > MCP > write
+  > exec > read/search > other tool > text only — the client never receives the
+  tool list.
+- **Catalog-backed model fields.** Each entry in `models` carries its context
+  window and tier from the core model catalog (`src/models/catalog.ts`); an
+  unknown model resolves to `null`/`null`, and the UI draws no context % for it
+  and excludes it from tier-based detections. The catalog is configuration, not
+  truth.
+- **Counters.** `callCount` echoes the calls kept; `excludedNullAtCount` counts
+  call steps with `at IS NULL`, which are never placed on a lane.
+- **Metadata only.** Model names, token counts, tool-category counts, error
+  flags, and MCP/skill call counts — never prompts, responses, args, paths,
+  tool output, tool/skill/MCP names, or session titles.
+
+---
+
 ## Route integration (`/sessions/{id}`)
 
 - The header stays **privacy-gated**: `title` is shown only when present and
