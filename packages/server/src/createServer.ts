@@ -6,6 +6,7 @@ import {
   type ListSessionsQuery,
   listHarnesses,
   listSessions,
+  readProfileLanes,
   readProfileMergedEvents,
   readProfileModels,
   readProfileSessionContext,
@@ -239,7 +240,15 @@ const SESSIONS_PREFIX = `${API_PREFIX}/sessions`;
 const SESSIONS_STATS_PREFIX = `${SESSIONS_PREFIX}/stats`;
 const HARNESSES_PREFIX = `${API_PREFIX}/harnesses`;
 const SCAN_PREFIX = `${API_PREFIX}/scan`;
-const PROFILE_ENDPOINTS = ['spawns', 'signals', 'timeline', 'events', 'models', 'context'] as const;
+const PROFILE_ENDPOINTS = [
+  'spawns',
+  'signals',
+  'timeline',
+  'events',
+  'models',
+  'context',
+  'lanes',
+] as const;
 
 type ProfileEndpoint = (typeof PROFILE_ENDPOINTS)[number];
 
@@ -408,6 +417,12 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
             return profile === null
               ? json({ error: 'session not found' }, 404)
               : json({ view: 'timeline', ...profile }, 200);
+          }
+          if (parsed.value.view === 'lanes') {
+            const profile = readProfileLanes(db, id, parsed.value.query);
+            return profile === null
+              ? json({ error: 'session not found' }, 404)
+              : json({ view: 'lanes', ...profile }, 200);
           }
           if (parsed.value.view === 'models') {
             const profile = readProfileModels(db, id);

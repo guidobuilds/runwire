@@ -238,8 +238,18 @@ records per large session), so a Pi timeline needs no "hide harness events by de
 | `skill` | — (**unreachable**, §6.3) | — |
 | `other` | everything else | `lens_diagnostics`, `module_report`, `mem_save`, `mem_session_summary`, `gentle_review`, `project_report` |
 
-Because extensions own the vocabulary, the map is a best-effort prefix table, `other` is a normal
-outcome and never a diagnostic, and no extension name may ever be *required* by a test.
+Because extensions own the vocabulary, the map is a best-effort **exact-name** table, `other` is a
+normal outcome and never a diagnostic, and no extension name may ever be *required* by a test.
+
+Agent Lanes T6 audit: all eight built-ins in §2.3 already map to read/search/write/exec; no
+read/search/exec mapping gaps were found. The synthetic fixtures live at repository-root
+`fixtures/pi/` (not `packages/adapter-pi/fixtures/`) and contain tool calls named `read`, `grep`
+and `subagent_run`, all already mapped. The observed extension vocabulary in §2.3 adds no missing
+read/search/exec names: `read_symbol` is already mapped, while the six names listed under `other`
+remain unclassified rather than inferring semantics from their names. No vocabulary or mapping
+version change is needed. Built-in names are matched exactly; prefixes, case variants and padded
+names are not aliases. Lanes therefore receives real read/search/exec categories for Pi built-ins,
+not a blanket `other` category.
 
 ## 5. The four things that make Pi a new design problem, and the chosen answers
 
@@ -370,6 +380,33 @@ of scope by scanning only `<agentDir>/sessions`, (ii) record `subagent_run` call
 Shipped in v1 as **D81**: only `<agentDir>/sessions` is scanned; `subagent_run`/
 `subagent_list_agents` are emitted as ordinary `agent`-category `tool` steps (delegation counted,
 not linked); `subagents` stays undeclared. The `PiLinkSource` seam is recorded, not implemented.
+
+#### Agent Lanes T6 linkage investigation (S39–S41)
+
+The repository evidence still supports **not linkable**, not child emission:
+
+- `src/discover.ts` walks only project directories immediately under `sessionsRoot(ctx)`;
+  it neither scans extension stores nor groups parent/child files.
+- `src/records.ts` projects through `piAllowlist` before validation. The allowlist excludes
+  arguments and `message.details`; neither records nor compute has a child-session bridge.
+- `src/compute.ts` preserves a tool block's id as `Step.callId`, but emits sessions at depth 0
+  with no `parentId` or `spawnCallId`. A header's `parentSession` becomes fork lineage only.
+- `fixtures/pi/subagents/` is synthetic, not a newly inspected real session. Its parent file's
+  line 3 has an agent tool call (`id: ts`), and line 4 only pairs its result. The extension sibling
+  under `gentle-agents/sessions/` has no parent-session or spawn-call metadata in its header
+  (line 1). Sharing cwd/model/time proximity is not causal linkage.
+- Core's `Session.spawnCallId` is the parent's tool call id (`contract/types.ts`), not the child
+  session id. `store/link.ts` requires both `child.parentId` and a matching `spawnCallId` to fill
+  `Step.childId`; `store/profile-spawns.ts` keeps an agent action without a child candidate as
+  unresolved. Claude Code obtains that evidence from `.meta.json.toolUseId`; OpenCode uses
+  explicit child `parentId` plus `state.metadata.sessionID`. Pi supplies neither equivalent.
+
+Consequently the Pi lane has **agent-kind marks only, no child lanes**. This does not claim that
+extensions never write child sessions: the fixture and earlier reference-machine investigation
+show that they can, but those files are outside Pi's store and cannot be causally linked from the
+available Pi records. S39's child-emission path stays open pending parent approval of a versioned,
+metadata-only extension bridge (D81) or new upstream linkage evidence; do not widen discovery,
+read a task ledger, or infer links to close it. No real home session data was accessed for T6.
 
 Cost of the gap: `rollups.descendants`, inclusive token totals and D51 signal #6 ("root never
 delegates and exhausts its own context") all degrade for Pi sessions.

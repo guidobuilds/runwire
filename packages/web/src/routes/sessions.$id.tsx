@@ -1,6 +1,7 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
-import { AgentGraph } from '@/components/session-profile/agent-graph';
+import { AgentLanes } from '@/components/agent-lanes/agent-lanes';
 import { ContextTable } from '@/components/session-profile/context-table';
 import { EventsTable } from '@/components/session-profile/events-table';
 import { Header, HeaderSkeleton } from '@/components/session-profile/header';
@@ -75,9 +76,10 @@ function SessionProfileRoute() {
   const { id } = Route.useParams();
   const navigate = Route.useNavigate();
   const session = useSession(id);
+  const queryClient = useQueryClient();
   const [refresh, setRefresh] = useState(0);
-  // Whole-tree subagent count, reported by AgentGraph once its full `spawns`
-  // node list is loaded (design.md "Signals accordion (G5)": nodes.length -
+  // Whole-tree subagent count, reported by AgentLanes once its full `lanes`
+  // agent list is loaded (design.md "Signals accordion (G5)": nodes.length -
   // 1, shared from the graph's own already-fetched data, not a second
   // reader). Reset to null on id/refresh change (compared during render, per
   // React's "adjusting state when a prop changes" pattern, rather than an
@@ -120,25 +122,19 @@ function SessionProfileRoute() {
     );
   }
 
-  const rootSession = {
-    agentType: session.data.agentType,
-    endedAt: session.data.endedAt,
-    id: session.data.id,
-    startedAt: session.data.startedAt,
-  };
   return (
     <div className="flex flex-col gap-8 p-4 lg:p-6">
-      <TopBar id={id} onRefresh={() => setRefresh((value) => value + 1)} />
+      <TopBar
+        id={id}
+        onRefresh={() => {
+          setRefresh((value) => value + 1);
+          void queryClient.invalidateQueries({ queryKey: ['session-profile', id, 'lanes'] });
+        }}
+      />
 
       <Header refresh={refresh} session={session.data} />
 
-      <AgentGraph
-        onNodeCount={setSubagentCount}
-        onOpenNode={openNode}
-        refresh={refresh}
-        rootSession={rootSession}
-        sessionId={id}
-      />
+      <AgentLanes onNodeCount={setSubagentCount} onOpenNode={openNode} sessionId={id} />
 
       <ContextTable refresh={refresh} sessionId={id} />
 

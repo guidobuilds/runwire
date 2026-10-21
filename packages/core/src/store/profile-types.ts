@@ -337,3 +337,81 @@ export type ProfileContextResponse = {
   tree: ContextMetrics;
   descendants: readonly ProfileContextDescendant[];
 };
+
+/** Call type for a lanes column, decided server-side by tool priority:
+ * subagent > MCP > write > exec > read/search > other tool > text only. */
+export type LaneCallKind = 'agent' | 'mcp' | 'write' | 'exec' | 'look' | 'other' | 'reply';
+
+/** Lane events attach to the call they precede; `after` marks one appended
+ * past the agent's last call (no next call existed). */
+export type LaneEvent =
+  | {
+      kind: 'compaction';
+      trigger: string | null;
+      preTokens: number | null;
+      postTokens: number | null;
+      after?: true;
+    }
+  | { kind: 'model-change'; from: string | null; to: string | null; after?: true };
+
+/** Columnar per-agent call arrays; every array has the same length. Metadata only. */
+export type LaneCalls = {
+  /** Call sequence within the agent, ascending. */
+  seq: number[];
+  /** ISO timestamps; the client orders globally by these. */
+  at: string[];
+  /** Index into `LanesResponse.models`, -1 when the model is unknown. */
+  model: number[];
+  /** uncached + cached + cacheWrite prompt input; null when not reported. */
+  promptInput: (number | null)[];
+  output: (number | null)[];
+  kind: LaneCallKind[];
+  /** Tool-step count attached to the call. */
+  tools: number[];
+  /** True when every attached tool is read, search, or exec. */
+  mechanical: boolean[];
+  /** Attached tool steps with an error. */
+  failed: number[];
+  mcp: number[];
+  skill: number[];
+  /** Ids of child sessions spawned by this call; null when none. */
+  spawns: (string[] | null)[];
+  /** Compaction / model-change events occurring before this call. */
+  events: (LaneEvent[] | null)[];
+};
+
+/** Metadata-only agent node; it never carries a title, source path, or raw step data. */
+export type LaneAgent = {
+  id: string;
+  parentId: string | null;
+  depth: number;
+  agentType: string | null;
+  /** The parent's spawn tool call that launched this agent. */
+  spawnCallId: string | null;
+  calls: LaneCalls;
+};
+
+export type LaneModel = {
+  name: string;
+  /** From the model catalog; null = no context % is drawn. */
+  contextWindow: number | null;
+  /** From the model catalog; null = excluded from tier-based detections. */
+  tier: 'high' | 'mid' | 'low' | null;
+};
+
+/** One unpaginated response carrying every in-scope call of the session tree
+ * in compact, columnar form (see readProfileLanes). Metadata only: model
+ * names, token counts, tool-category counts, and error flags — never prompts,
+ * responses, args, paths, tool output, tool/skill/MCP names, or titles. */
+export type LanesResponse = {
+  sessionId: string;
+  scope: Scope;
+  /** Depth-first: parent before children, siblings by startedAt. */
+  agents: readonly LaneAgent[];
+  /** The models appearing in the response, with their catalog entry. */
+  models: readonly LaneModel[];
+  /** Total in-scope calls kept (echoed for the client's large-session warning). */
+  callCount: number;
+  /** Call steps with at IS NULL: counted and excluded from lanes. */
+  excludedNullAtCount: number;
+};

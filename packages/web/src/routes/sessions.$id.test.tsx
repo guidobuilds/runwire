@@ -1,10 +1,12 @@
-import type { ApiSessionDetail } from '@runwire/core';
+import type { ApiSessionDetail, LanesResponse } from '@runwire/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse, http } from 'msw';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import tree3 from '@/components/agent-lanes/fixtures/tree3.json';
+import { buildModel } from '@/components/agent-lanes/model';
 import { mockChildSummary, mockSessionDetail } from '@/mocks/handlers';
 import { server } from '@/mocks/node';
 import { mockProfileContextTree } from '@/mocks/session-profile';
@@ -29,7 +31,7 @@ function renderAt(path: string) {
  * through to the real composed handlers, exercising the shipped views. */
 function captureProfileRequests(): URL[] {
   const requests: URL[] = [];
-  for (const endpoint of ['spawns', 'signals', 'timeline', 'events'] as const) {
+  for (const endpoint of ['lanes', 'signals', 'timeline', 'events'] as const) {
     server.use(
       http.get(`/api/sessions/:id/profile/${endpoint}`, ({ request }) => {
         requests.push(new URL(request.url));
@@ -48,14 +50,17 @@ const slashSessionDetail: ApiSessionDetail = {
   name: 'Slash Agent',
 };
 
+afterEach(() => vi.restoreAllMocks());
+
 describe('/sessions/$id route (session profile)', () => {
-  it('composes header, agent graph, token chart, events table and signals accordion in that order', async () => {
+  it('composes header, agent lanes menus, token chart, events table and signals accordion in that order', async () => {
     renderAt(`/sessions/${mockSessionDetail.id}`);
 
     await screen.findByText('Harness signals');
+    await screen.findByRole('button', { name: /Indicators/ });
     const text = document.body.textContent ?? '';
     const iHeader = text.indexOf(mockSessionDetail.name);
-    const iGraph = text.indexOf('Agents');
+    const iGraph = text.indexOf('Indicators');
     const iChart = text.indexOf('Token usage');
     const iTable = text.indexOf('Events');
     const iSignals = text.indexOf('Harness signals');
@@ -187,14 +192,66 @@ describe('/sessions/$id route (session profile)', () => {
       const newViews = new Set(
         requests.slice(countBefore).map((url) => url.pathname.split('/').at(-1)),
       );
-      expect(newViews).toEqual(new Set(['spawns', 'signals', 'timeline', 'events']));
+      expect(newViews).toEqual(new Set(['lanes', 'signals', 'timeline', 'events']));
     });
   });
 
-  it('opening a node from the agent graph navigates with search reset', async () => {
+  it('collapses from the label column and opens a tooltip node with search reset', async () => {
+    const originalRect = HTMLElement.prototype.getBoundingClientRect;
+    const originalWidth = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'clientWidth',
+    )?.get;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.style.contain === 'inline-size'
+        ? new DOMRect(0, 0, 900, 448)
+        : originalRect.call(this);
+    });
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.style.contain === 'inline-size' ? 900 : (originalWidth?.call(this) ?? 0);
+    });
+    const user = userEvent.setup();
+    const child = tree3.agents[1];
+    if (!child) throw new Error('fixture needs a child');
+    const ids = new Map([
+      ['main', mockSessionDetail.id],
+      [child.id, mockChildSummary.id],
+    ]);
+    server.use(
+      http.get('/api/sessions/:id/profile/lanes', () =>
+        HttpResponse.json({
+          ...tree3,
+          sessionId: mockSessionDetail.id,
+          agents: tree3.agents.map((agent) => ({
+            ...agent,
+            id: ids.get(agent.id) ?? agent.id,
+            parentId: agent.parentId === null ? null : (ids.get(agent.parentId) ?? agent.parentId),
+          })),
+        }),
+      ),
+    );
     const { router } = renderAt(`/sessions/${mockSessionDetail.id}?field=cachedInput&page=2`);
-    const rowButton = await screen.findByRole('button', { name: 'Open profile for worker' });
-    fireEvent.click(rowButton);
+    const canvas = await screen.findByLabelText(/Agent lanes:.*calls/);
+    await user.click(screen.getByRole('button', { name: 'Collapse main' }));
+    expect(screen.getByRole('button', { name: 'Expand main' })).toHaveTextContent(
+      `+${tree3.agents.length - 1} hidden`,
+    );
+    await user.click(screen.getByRole('button', { name: 'Expand main' }));
+    const model = buildModel(tree3 as LanesResponse);
+    const first = model.byId.get(child.id)?.cols[0];
+    if (!first) throw new Error('fixture needs a child call');
+    const move = new MouseEvent('pointermove', {
+      bubbles: true,
+      clientX: 168 + ((first.index + 0.5) / model.callCount) * 720,
+      clientY: 26 + 30 + 15,
+    });
+    fireEvent(canvas, move);
+    const tooltip = await screen.findByRole('tooltip');
+    await user.click(within(tooltip).getByRole('button', { name: 'Open' }));
 
     await waitFor(() => {
       expect(router.state.location.pathname).toBe(`/sessions/${mockChildSummary.id}`);
@@ -231,14 +288,15 @@ describe('/sessions/$id route (session profile)', () => {
     expect(router.state.location.pathname).toBe(`/sessions/${encodeURIComponent(SLASH_ID)}`);
   });
 
-  it('mounts the subagent context table after the agent graph and before the token chart', async () => {
+  it('mounts the subagent context table after agent lanes and before the token chart', async () => {
     renderAt(`/sessions/${mockSessionDetail.id}`);
 
     await screen.findByText('Harness signals');
     await screen.findByText('Subagent context');
+    await screen.findByRole('button', { name: /Indicators/ });
 
     const text = document.body.textContent ?? '';
-    const iGraph = text.indexOf('Agents');
+    const iGraph = text.indexOf('Indicators');
     const iContext = text.indexOf('Subagent context');
     const iChart = text.indexOf('Token usage');
     expect(iGraph).toBeGreaterThanOrEqual(0);

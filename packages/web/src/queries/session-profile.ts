@@ -16,6 +16,7 @@ import {
 } from '@tanstack/react-query';
 import {
   fetchSessionProfileContext,
+  fetchSessionProfileLanes,
   fetchSessionProfileMergedEvents,
   fetchSessionProfileModels,
   fetchSessionProfileSignals,
@@ -77,6 +78,8 @@ export const sessionProfileKeys = {
       stableIds(selection.expandedIds),
       selection.refresh ?? 0,
     ] as const,
+  lanes: (id: string, selection: ProfileSignalsSelection) =>
+    ['session-profile', id, 'lanes', selection.scope, selection.refresh ?? 0] as const,
   signals: (id: string, selection: ProfileSignalsSelection) =>
     ['session-profile', id, 'signals', selection.scope, selection.refresh ?? 0] as const,
   timeline: (id: string, selection: ProfileTimelineSelection) =>
@@ -126,6 +129,14 @@ export function sessionProfileSpawnsOptions(id: string, selection: ProfileSpawns
 
 export function useSessionProfileSpawns(id: string, selection: ProfileSpawnsSelection) {
   return useInfiniteQuery(sessionProfileSpawnsOptions(id, selection));
+}
+
+export function sessionProfileLanesOptions(id: string, selection: ProfileSignalsSelection) {
+  return queryOptions({
+    queryKey: sessionProfileKeys.lanes(id, selection),
+    queryFn: ({ signal }) => fetchSessionProfileLanes(id, selection, signal),
+    ...noRefetch,
+  });
 }
 
 export function sessionProfileSignalsOptions(id: string, selection: ProfileSignalsSelection) {

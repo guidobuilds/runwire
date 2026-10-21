@@ -66,6 +66,7 @@ export type ParsedProfileQuery =
   | { view: 'signals'; query: SignalsQuery }
   | { view: 'timeline'; field: TokenField; query: TimelineQuery }
   | { view: 'merged'; query: MergedEventsQuery }
+  | { view: 'lanes'; query: { scope: Scope } }
   | { view: 'models' }
   | { view: 'context' };
 
@@ -89,6 +90,7 @@ const VIEW_KEYS = {
     'model',
     'q',
   ]),
+  lanes: new Set(['scope']),
   models: new Set<string>(),
   context: new Set<string>(),
 } as const;
@@ -162,8 +164,8 @@ export function parseProfileQuery(
     return { ok: true, value: { view: 'spawns', query } };
   }
 
-  if (viewRaw === 'signals') {
-    return { ok: true, value: { view: 'signals', query: { scope } } };
+  if (viewRaw === 'signals' || viewRaw === 'lanes') {
+    return { ok: true, value: { view: viewRaw, query: { scope } } };
   }
 
   if (viewRaw === 'timeline') {
