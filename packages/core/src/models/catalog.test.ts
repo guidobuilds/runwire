@@ -48,12 +48,12 @@ describe('resolveModelCatalog: provider/name cascade', () => {
   });
 
   test('prefix rules still cover names without an exact entry', () => {
-    expect(resolveModelCatalog('nan', 'deepseek-v4-flash')).toEqual({
+    expect(resolveModelCatalog('nan', 'deepseek-v3')).toEqual({
       contextWindow: 128_000,
       tier: 'mid',
     });
-    expect(resolveModelCatalog(null, 'claude-sonnet-5')).toEqual({
-      contextWindow: 200_000,
+    expect(resolveModelCatalog(null, 'claude-sonnet-4')).toEqual({
+      contextWindow: 500_000,
       tier: 'mid',
     });
   });
@@ -139,20 +139,34 @@ describe('model overrides file', () => {
 
 describe('lookupModelCatalog', () => {
   test('known models resolve window and tier by prefix', () => {
-    expect(lookupModelCatalog('claude-sonnet-5')).toEqual({
-      contextWindow: 200_000,
+    // Older generations: prefix covers them with the vendor base windows.
+    expect(lookupModelCatalog('claude-sonnet-4')).toEqual({
+      contextWindow: 500_000,
       tier: 'mid',
     });
     expect(lookupModelCatalog('claude-haiku-4')).toEqual({
       contextWindow: 200_000,
       tier: 'low',
     });
+    expect(lookupModelCatalog('deepseek-v3')).toEqual({
+      contextWindow: 128_000,
+      tier: 'mid',
+    });
+    expect(lookupModelCatalog('gemini-3-flash')).toEqual({
+      contextWindow: 1_000_000,
+      tier: 'high',
+    });
   });
 
-  test('exact entries declared by the user win over prefixes (S3)', () => {
-    expect(lookupModelCatalog('gpt-6.1-sol')).toEqual({
-      contextWindow: 1_050_000,
-      tier: 'high',
+  test('exact entries win over prefixes (S3 + vendor docs 2026-10-21)', () => {
+    // Anthropic: the 5.x generations ship 1M; 4.x Opus 500K.
+    expect(lookupModelCatalog('claude-sonnet-5')).toEqual({
+      contextWindow: 1_000_000,
+      tier: 'mid',
+    });
+    expect(lookupModelCatalog('claude-sonnet-5-5')).toEqual({
+      contextWindow: 1_000_000,
+      tier: 'mid',
     });
     expect(lookupModelCatalog('claude-opus-5')).toEqual({
       contextWindow: 1_000_000,
@@ -162,11 +176,29 @@ describe('lookupModelCatalog', () => {
       contextWindow: 1_000_000,
       tier: 'high',
     });
-  });
-
-  test('matches on the longest configured prefix, not the first', () => {
+    expect(lookupModelCatalog('claude-opus-4-7')).toEqual({
+      contextWindow: 500_000,
+      tier: 'high',
+    });
+    expect(lookupModelCatalog('claude-fable-5-1')).toEqual({
+      contextWindow: 1_000_000,
+      tier: 'high',
+    });
+    expect(lookupModelCatalog('claude-haiku-5-5')).toEqual({
+      contextWindow: 1_000_000,
+      tier: 'low',
+    });
+    // OpenAI: 1,050,000 across 5.5/5.6/6/6.1; gpt-5.1 keeps its declared 400K.
+    expect(lookupModelCatalog('gpt-6.1-sol')).toEqual({
+      contextWindow: 1_050_000,
+      tier: 'high',
+    });
     expect(lookupModelCatalog('gpt-5.6-sol')).toEqual({
-      contextWindow: 400_000,
+      contextWindow: 1_050_000,
+      tier: 'high',
+    });
+    expect(lookupModelCatalog('gpt-5.5')).toEqual({
+      contextWindow: 1_050_000,
       tier: 'high',
     });
     expect(lookupModelCatalog('gpt-5.1')).toEqual({
@@ -175,14 +207,37 @@ describe('lookupModelCatalog', () => {
     });
   });
 
-  test('matches prefixes without a trailing dash in the config', () => {
+  test('DeepSeek V4, GLM-5.3-Flash, Kimi K3 and Gemma 4 resolve their sourced windows', () => {
+    expect(lookupModelCatalog('deepseek-v4-pro')).toEqual({
+      contextWindow: 1_048_576,
+      tier: 'mid',
+    });
+    expect(lookupModelCatalog('deepseek-v4-flash')).toEqual({
+      contextWindow: 1_048_576,
+      tier: 'mid',
+    });
     expect(lookupModelCatalog('glm5.3-flash')).toEqual({
-      contextWindow: 300_000,
+      contextWindow: 1_048_576,
       tier: 'low',
     });
-    expect(lookupModelCatalog('deepseek-v4-pro')).toEqual({
-      contextWindow: 128_000,
-      tier: 'mid',
+    expect(lookupModelCatalog('kimi-k3')).toEqual({
+      contextWindow: 1_000_000,
+      tier: 'high',
+    });
+    expect(lookupModelCatalog('gemma4')).toEqual({
+      contextWindow: 256_000,
+      tier: 'low',
+    });
+  });
+
+  test('matches on the longest configured prefix, not the first', () => {
+    expect(lookupModelCatalog('gpt-5.9-unknown-variant')).toEqual({
+      contextWindow: 1_050_000,
+      tier: 'high',
+    });
+    expect(lookupModelCatalog('gpt-5.1')).toEqual({
+      contextWindow: 400_000,
+      tier: 'high',
     });
   });
 

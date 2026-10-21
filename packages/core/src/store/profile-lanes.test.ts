@@ -225,7 +225,7 @@ describe('readProfileLanes', () => {
     step(3, 'call', { output: 1, model_id: 1 });
     expect(calls().model).toEqual([0, 1, -1, 0]);
     expect(read().models).toEqual([
-      { name: 'claude-opus-4', contextWindow: 200_000, tier: 'high' },
+      { name: 'claude-opus-4', contextWindow: 500_000, tier: 'high' },
       { name: 'unlisted', contextWindow: null, tier: null },
     ]);
   });
