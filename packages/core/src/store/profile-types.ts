@@ -342,13 +342,15 @@ export type ProfileContextResponse = {
  * subagent > MCP > write > exec > read/search > other tool > text only. */
 export type LaneCallKind = 'agent' | 'mcp' | 'write' | 'exec' | 'look' | 'other' | 'reply';
 
-/** Lane events attach to the call they precede; `after` marks one appended past the agent's last call. */
+/** Lane events attach to the call they precede; `after` marks one appended
+ * past the agent's last call (no next call existed). */
 export type LaneEvent =
   | {
       kind: 'compaction';
       trigger: string | null;
       preTokens: number | null;
       postTokens: number | null;
+      after?: true;
     }
   | { kind: 'model-change'; from: string | null; to: string | null; after?: true };
 
