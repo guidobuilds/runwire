@@ -1,0 +1,54 @@
+{
+  "sessions": [
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-0000000000b2",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-03T00:00:00.000Z",
+      "endedAt": "2026-01-03T00:00:02.000Z",
+      "durationMs": 2000,
+      "uncachedInput": 2,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 2,
+      "apiCalls": 2,
+      "costUsd": 0.02,
+      "sourceSize": 607,
+      "sourcePath": ".gentle-shell/agent/gentle-agents/sessions/2026-01-03T00-00-00-000Z_b0000000-0000-7000-8000-0000000000b2.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b2": {
+      "call": 2
+    }
+  },
+  "toolCounts": {
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b2": {}
+  },
+  "diagnostics": {
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b2": [
+      {
+        "level": "info",
+        "code": "branched-tree",
+        "count": 1
+      },
+      {
+        "level": "info",
+        "code": "usage-on-non-assistant",
+        "count": 2
+      },
+      {
+        "level": "info",
+        "code": "duplicate-child",
+        "count": 1
+      },
+      {
+        "level": "info",
+        "code": "unlinked-subagent",
+        "count": 1
+      }
+    ]
+  }
+}

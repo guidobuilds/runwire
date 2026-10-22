@@ -1,0 +1,2 @@
+{"type":"session","version":3,"id":"b0000000-0000-7000-8000-0000000000b1","timestamp":"2026-01-02T00:00:00.000Z","cwd":"/home/u/gs"}
+{"type":"message","id":"g0000001","parentId":null,"timestamp":"2026-01-02T00:00:01.000Z","message":{"role":"assistant","model":"m-a","responseModel":"m-a","timestamp":1000,"usage":{"input":1,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":2,"cost":{"total":0.01}},"content":[]}}

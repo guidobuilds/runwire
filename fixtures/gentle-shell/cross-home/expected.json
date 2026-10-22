@@ -1,0 +1,41 @@
+{
+  "sessions": [
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-0000000000b4",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "relation": "subagent",
+      "depth": 1,
+      "parentId": "pi:b0000000-0000-7000-8000-000000000004",
+      "agentType": "gentle-ai-worker",
+      "initiatorKind": "machine",
+      "initiatorAutomation": "subagent-dispatch",
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-04T01:00:00.000Z",
+      "endedAt": "2026-01-04T01:00:01.000Z",
+      "durationMs": 1000,
+      "modelPrimary": "synthetic-model",
+      "modelChanges": 0,
+      "uncachedInput": 2,
+      "cachedInput": 3,
+      "cacheWrite": 4,
+      "output": 5,
+      "reasoningOutput": 1,
+      "apiCalls": 1,
+      "costUsd": 0.25,
+      "sourceSize": 452,
+      "sourcePath": ".pi/agent/gentle-agents/sessions/2026-01-04T01-00-00-000Z_b0000000-0000-7000-8000-0000000000b4.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b4": {
+      "call": 1
+    }
+  },
+  "toolCounts": {
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b4": {}
+  },
+  "diagnostics": {
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b4": []
+  }
+}

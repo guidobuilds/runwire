@@ -1,0 +1,72 @@
+{
+  "sessions": [
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-000000000008",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-08T00:00:00.000Z",
+      "endedAt": "2026-01-08T00:00:00.000Z",
+      "durationMs": 0,
+      "turns": 1,
+      "sourceSize": 335,
+      "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-08T00-00-00-000Z_b0000000-0000-7000-8000-000000000008.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-000000000088",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-08T01:00:00.000Z",
+      "endedAt": "2026-01-08T01:00:01.000Z",
+      "durationMs": 1000,
+      "modelPrimary": "synthetic-model",
+      "modelChanges": 0,
+      "uncachedInput": 2,
+      "cachedInput": 3,
+      "cacheWrite": 4,
+      "output": 5,
+      "reasoningOutput": 1,
+      "apiCalls": 1,
+      "costUsd": 0.25,
+      "sourceSize": 447,
+      "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-08T01-00-00-000Z_b0000000-0000-7000-8000-000000000088.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "gentle-shell:b0000000-0000-7000-8000-000000000008": {
+      "turn": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-000000000088": {
+      "call": 1
+    }
+  },
+  "toolCounts": {
+    "gentle-shell:b0000000-0000-7000-8000-000000000008": {},
+    "gentle-shell:b0000000-0000-7000-8000-000000000088": {}
+  },
+  "diagnostics": {
+    "gentle-shell:b0000000-0000-7000-8000-000000000008": [
+      {
+        "level": "warn",
+        "code": "malformed-json-line"
+      },
+      {
+        "level": "warn",
+        "code": "malformed-json-line"
+      },
+      {
+        "level": "info",
+        "code": "source-truncated"
+      },
+      {
+        "level": "info",
+        "code": "ledger-invalid",
+        "count": 1
+      }
+    ],
+    "gentle-shell:b0000000-0000-7000-8000-000000000088": []
+  }
+}

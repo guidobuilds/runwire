@@ -1,0 +1,4 @@
+{"type":"session","version":3,"id":"b0000000-0000-7000-8000-000000000008","timestamp":"2026-01-08T00:00:00.000Z","cwd":"/home/u/gs"}
+synthetic broken JSON line
+{"type":"message","id":"m1","parentId":null,"message":{"role":"user","content":[{"type":"text","text":"synthetic valid message"}]}}
+{"type":"message","id":"synthetic truncated
