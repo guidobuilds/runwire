@@ -1,0 +1,8 @@
+{
+  "task": {
+    "id": "task-4",
+    "agent": "gentle-ai-worker",
+    "parentSessionId": "b0000000-0000-7000-8000-000000000004",
+    "sessionPath": "2026-01-04T01-00-00-000Z_b0000000-0000-7000-8000-0000000000b4.jsonl"
+  }
+}

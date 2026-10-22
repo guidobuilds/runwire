@@ -1,0 +1,2 @@
+{"type":"session","version":3,"id":"b0000000-0000-7000-8000-000000000010","timestamp":"2026-01-10T00:00:00.000Z","cwd":"/home/u/gs","parentSession":"2026-01-01T00-00-00-000Z_b0000000-0000-7000-8000-000000000001.jsonl"}
+{"type":"message","id":"f1","parentId":null,"timestamp":"2026-01-10T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"synthetic fork request"}]}}

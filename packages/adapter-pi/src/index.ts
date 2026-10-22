@@ -1,6 +1,9 @@
 import type { Capability, HarnessAdapter } from '@runwire/core';
-import { piAllowlist } from './allowlist';
-import { discover, probe } from './discover';
+import { createGentleShellAdapter } from './gentle-shell';
+import { piAllowlist } from './pi/allowlist';
+import { discover, probe } from './pi/discover';
+
+export { createGentleShellAdapter };
 
 /**
  * Exactly the 14 capabilities Pi can report (docs/adapters/pi.md §6). The six

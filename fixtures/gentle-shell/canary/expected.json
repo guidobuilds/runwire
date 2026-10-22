@@ -1,0 +1,83 @@
+{
+  "sessions": [
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-000000000009",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-09T00:00:00.000Z",
+      "endedAt": "2026-01-09T00:00:11.000Z",
+      "durationMs": 11000,
+      "modelPrimary": "synthetic-model",
+      "modelChanges": 0,
+      "uncachedInput": 2,
+      "cachedInput": 3,
+      "cacheWrite": 4,
+      "output": 5,
+      "reasoningOutput": 1,
+      "turns": 1,
+      "apiCalls": 1,
+      "toolCalls": 1,
+      "compactions": 1,
+      "costUsd": 0.25,
+      "sourceSize": 3218,
+      "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-09T00-00-00-000Z_b0000000-0000-7000-8000-000000000009.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-0000000000b9",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "relation": "subagent",
+      "depth": 1,
+      "parentId": "gentle-shell:b0000000-0000-7000-8000-000000000009",
+      "agentType": "gentle-ai-worker",
+      "spawnCallId": "spawn-9",
+      "initiatorKind": "machine",
+      "initiatorAutomation": "subagent-dispatch",
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-09T01:00:00.000Z",
+      "endedAt": "2026-01-09T01:00:01.000Z",
+      "durationMs": 1000,
+      "modelPrimary": "synthetic-model",
+      "modelChanges": 0,
+      "uncachedInput": 2,
+      "cachedInput": 3,
+      "cacheWrite": 4,
+      "output": 5,
+      "reasoningOutput": 1,
+      "apiCalls": 1,
+      "costUsd": 0.25,
+      "sourceSize": 456,
+      "sourcePath": ".gentle-shell/agent/gentle-agents/sessions/2026-01-09T01-00-00-000Z_b0000000-0000-7000-8000-0000000000b9.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "gentle-shell:b0000000-0000-7000-8000-000000000009": {
+      "turn": 1,
+      "call": 1,
+      "tool": 1,
+      "harness": 6,
+      "compaction": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b9": {
+      "call": 1
+    }
+  },
+  "toolCounts": {
+    "gentle-shell:b0000000-0000-7000-8000-000000000009": {
+      "agent": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b9": {}
+  },
+  "diagnostics": {
+    "gentle-shell:b0000000-0000-7000-8000-000000000009": [
+      {
+        "level": "info",
+        "code": "nested-tool-calls",
+        "count": 1
+      }
+    ],
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b9": []
+  }
+}

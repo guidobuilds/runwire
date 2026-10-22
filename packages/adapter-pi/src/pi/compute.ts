@@ -6,13 +6,14 @@ import type {
   Session,
   SessionBundle,
   Step,
+  ToolCategory,
 } from '@runwire/core';
 import { makeDiagnostic, TOKEN_FIELDS } from '@runwire/core';
 import { sessionIdFromRootFile } from './paths';
 import type { PiRecord } from './schema';
 import { piToolCategory } from './tool-category';
 
-const HARNESS_ID = 'pi';
+const PI_HARNESS_ID = 'pi';
 
 export type ComputeSource = { path: string; sizeBytes: number; mtimeMs: number };
 
@@ -30,6 +31,12 @@ export type ComputeBundleInput = {
   fallbackCwd?: string;
   /** The uuid in the filename, used only for the session-id-mismatch check. */
   headerUuid: string;
+  /** Harness id for `session.harnessId` and the fork prefix; defaults to `pi`. */
+  harnessId?: string;
+  subagent?: { parentId: string; agentType: string; spawnCallId?: string; depth: number };
+  initiator?: { kind: 'human' | 'machine'; surface?: string; automation?: string };
+  toolCategory?: (name: string) => ToolCategory;
+  pi12?: boolean;
   ctx: AdapterContext;
 };
 
@@ -97,6 +104,7 @@ const HARNESS_STEP_NAME: Record<string, string> = {
 export async function computeBundle(input: ComputeBundleInput): Promise<SessionBundle> {
   const { sessionId, source, records, recordDiagnostics, resolveProject, fallbackCwd, headerUuid } =
     input;
+  const HARNESS_ID = input.harnessId ?? PI_HARNESS_ID;
 
   const diagnostics: Diagnostic[] = [...recordDiagnostics];
 
@@ -151,10 +159,21 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
         'No cwd observed in the header; derived from the project directory name',
       ),
     );
+  } else if (!cwd && !fallbackCwd) {
+    // Gentle Shell children live in a flat directory (gentle-shell.md §2), so
+    // there is no dirname fallback; an absent header cwd stays unknown. Pi
+    // always has the dirname fallback, so this never fires for Pi.
+    diagnostics.push(
+      makeDiagnostic('info', 'missing-cwd', 'No cwd observed and no dirname fallback'),
+    );
   }
 
   const forkSource = header?.parentSession;
-  const relation: Session['relation'] = forkSource ? 'fork' : undefined;
+  const relation: Session['relation'] = input.subagent
+    ? 'subagent'
+    : forkSource
+      ? 'fork'
+      : undefined;
   const forkedFrom = forkSource
     ? `${HARNESS_ID}:${sessionIdFromRootFile(basename(forkSource))}`
     : undefined;
@@ -204,6 +223,7 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
   let usageOnNonAssistantCount = 0;
   let tokenArithmeticDriftCount = 0;
   let unpricedModelCount = 0;
+  let nestedToolCallCount = 0;
 
   const pendingByCallId = new Map<string, Step>();
   const pendingTimestampByCallId = new Map<string, number>();
@@ -241,8 +261,13 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
     }
   }
 
-  /** One extra-context `call` step (§5.2): model stays undefined, like Claude's <synthetic>. */
-  function pushExtraCall(at: string | undefined, usage: NonNullable<PiRecord['usage']>): void {
+  /** Extra-context calls have no model unless the entry explicitly supplies one. */
+  function pushExtraCall(
+    at: string | undefined,
+    usage: NonNullable<PiRecord['usage']>,
+    model?: string,
+    modelProvider?: string,
+  ): void {
     const step: Step = {
       sessionId,
       seq: seq++,
@@ -254,6 +279,10 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
       output: usage.output,
       reasoningOutput: usage.reasoning,
     };
+    if (model !== undefined) {
+      step.model = model;
+      step.modelProvider = modelProvider;
+    }
     steps.push(step);
     callStepCount++;
     sumTokens(step);
@@ -273,7 +302,12 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
         if (!message) break;
         const at = normAt(record.timestamp);
 
+        if (message.role === 'assistant' || message.role === 'toolResult') {
+          nestedToolCallCount += message.nestedCalls?.calls?.length ?? 0;
+        }
+
         if (message.role === 'assistant') {
+          if (message.thinkingLevel !== undefined) effort = message.thinkingLevel;
           const resolved = message.responseModel ?? message.model;
           const usage = message.usage;
 
@@ -330,7 +364,7 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
               seq: seq++,
               at,
               kind: 'tool',
-              toolCategory: piToolCategory(block.name),
+              toolCategory: (input.toolCategory ?? piToolCategory)(block.name),
               toolName: block.name,
               callId: block.id,
               model: resolved,
@@ -368,7 +402,9 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
               const startedAt = pendingTimestampByCallId.get(callId);
               pendingTimestampByCallId.delete(callId);
               target.error = message.isError === true;
-              if (startedAt !== undefined && message.timestamp !== undefined) {
+              if (message.durationMs !== undefined) {
+                target.durationMs = message.durationMs;
+              } else if (startedAt !== undefined && message.timestamp !== undefined) {
                 const dur = message.timestamp - startedAt;
                 if (Number.isFinite(dur) && dur >= 0) target.durationMs = dur;
               }
@@ -386,6 +422,26 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
           break;
         }
         break; // bashExecution/custom/branchSummary/compactionSummary: no step
+      }
+
+      case 'usage': {
+        if (input.pi12 && record.usage) {
+          pushExtraCall(normAt(record.timestamp), record.usage, record.modelId, record.provider);
+        }
+        break;
+      }
+
+      case 'context_edit': {
+        if (input.pi12) {
+          steps.push({
+            sessionId,
+            seq: seq++,
+            at: normAt(record.timestamp),
+            kind: 'harness',
+            toolName: 'context-edit',
+          });
+        }
+        break;
       }
 
       case 'compaction': {
@@ -491,6 +547,16 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
   }
 
   // --- aggregated diagnostics ---
+  if (nestedToolCallCount > 0) {
+    diagnostics.push(
+      makeDiagnostic(
+        'info',
+        'nested-tool-calls',
+        `${nestedToolCallCount} nested tool call(s) were not model-issued`,
+        { count: nestedToolCallCount },
+      ),
+    );
+  }
   if (unpairedToolResultCount > 0) {
     diagnostics.push(
       makeDiagnostic(
@@ -564,7 +630,21 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
     projectKey: project.key,
     relation,
     forkedFrom,
-    depth: 0,
+    depth: input.subagent?.depth ?? 0,
+    ...(input.subagent
+      ? {
+          parentId: input.subagent.parentId,
+          agentType: input.subagent.agentType,
+          spawnCallId: input.subagent.spawnCallId,
+        }
+      : {}),
+    ...(input.initiator
+      ? {
+          initiatorKind: input.initiator.kind,
+          initiatorSurface: input.initiator.surface,
+          initiatorAutomation: input.initiator.automation,
+        }
+      : {}),
     cwd,
     startedAt: firstAt,
     endedAt: lastAt,

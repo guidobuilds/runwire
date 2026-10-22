@@ -1,0 +1,80 @@
+{
+  "sessions": [
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-000000000003",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-03T00:00:00.000Z",
+      "endedAt": "2026-01-03T00:00:03.000Z",
+      "durationMs": 3000,
+      "modelPrimary": "synthetic-model",
+      "modelChanges": 0,
+      "uncachedInput": 2,
+      "cachedInput": 3,
+      "cacheWrite": 4,
+      "output": 5,
+      "reasoningOutput": 1,
+      "turns": 1,
+      "apiCalls": 1,
+      "toolCalls": 1,
+      "costUsd": 0.25,
+      "sourceSize": 1021,
+      "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-03T00-00-00-000Z_b0000000-0000-7000-8000-000000000003.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-0000000000b3",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "relation": "subagent",
+      "depth": 1,
+      "parentId": "gentle-shell:b0000000-0000-7000-8000-000000000003",
+      "agentType": "gentle-ai-worker",
+      "spawnCallId": "spawn-3",
+      "initiatorKind": "machine",
+      "initiatorAutomation": "subagent-dispatch",
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-03T01:00:00.000Z",
+      "endedAt": "2026-01-03T01:00:03.000Z",
+      "durationMs": 3000,
+      "modelPrimary": "synthetic-model",
+      "modelChanges": 0,
+      "uncachedInput": 2,
+      "cachedInput": 3,
+      "cacheWrite": 4,
+      "output": 5,
+      "reasoningOutput": 1,
+      "turns": 1,
+      "apiCalls": 1,
+      "toolCalls": 1,
+      "costUsd": 0.25,
+      "sourceSize": 937,
+      "sourcePath": ".gentle-shell/agent/gentle-agents/sessions/2026-01-03T01-00-00-000Z_b0000000-0000-7000-8000-0000000000b3.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "gentle-shell:b0000000-0000-7000-8000-000000000003": {
+      "turn": 1,
+      "call": 1,
+      "tool": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b3": {
+      "turn": 1,
+      "call": 1,
+      "tool": 1
+    }
+  },
+  "toolCounts": {
+    "gentle-shell:b0000000-0000-7000-8000-000000000003": {
+      "agent": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b3": {
+      "read": 1
+    }
+  },
+  "diagnostics": {
+    "gentle-shell:b0000000-0000-7000-8000-000000000003": [],
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b3": []
+  }
+}

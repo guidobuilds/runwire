@@ -1,4 +1,4 @@
-import type { AdapterContext, Diagnostic } from '@runwire/core';
+import type { AdapterContext, Diagnostic, Projection } from '@runwire/core';
 import { makeDiagnostic, project, readLinesRaw } from '@runwire/core';
 import { piAllowlist } from './allowlist';
 import { type PiRecord, piRecordSchema } from './schema';
@@ -40,9 +40,14 @@ export type ReadRecords = {
  * Streams a Pi session file into allowlisted, schema-checked records
  * (docs/adapters/pi.md §7–§8). Pi's extension surface makes unknown entry
  * types and message roles *expected*, so both are aggregated at `info`
- * (unlike a malformed line, which is `warn`).
+ * (unlike a malformed line, which is `warn`). The caller may supply its harness
+ * projection; defaults retain the Pi allowlist and pre-1.2 vocabulary.
  */
-export function readRecords(ctx: AdapterContext, path: string): ReadRecords {
+export function readRecords(
+  ctx: AdapterContext,
+  path: string,
+  options: { pi12?: boolean; allowlist?: Projection } = {},
+): ReadRecords {
   const diagnostics: Diagnostic[] = [];
   let unknownTypeCount = 0;
   let unknownRoleCount = 0;
@@ -66,7 +71,7 @@ export function readRecords(ctx: AdapterContext, path: string): ReadRecords {
         continue;
       }
 
-      const projected = project(raw, piAllowlist);
+      const projected = project(raw, options.allowlist ?? piAllowlist);
       const result = piRecordSchema.safeParse(projected);
       if (!result.success) {
         diagnostics.push(
@@ -78,8 +83,20 @@ export function readRecords(ctx: AdapterContext, path: string): ReadRecords {
       }
 
       const record = result.data;
-      if (record.type && !KNOWN_ENTRY_TYPES.has(record.type)) unknownTypeCount++;
-      if (record.message?.role && !KNOWN_MESSAGE_ROLES.has(record.message.role)) unknownRoleCount++;
+      if (
+        record.type &&
+        !KNOWN_ENTRY_TYPES.has(record.type) &&
+        !(options.pi12 && (record.type === 'usage' || record.type === 'context_edit'))
+      ) {
+        unknownTypeCount++;
+      }
+      if (
+        record.message?.role &&
+        !KNOWN_MESSAGE_ROLES.has(record.message.role) &&
+        !(options.pi12 && record.message.role === 'system')
+      ) {
+        unknownRoleCount++;
+      }
       yield { record, line: lineNumber };
     }
 

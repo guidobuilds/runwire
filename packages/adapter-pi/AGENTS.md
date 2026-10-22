@@ -1,5 +1,8 @@
 - Pi adapter: turns `~/.pi/agent/sessions` JSONL trees into `SessionBundle`s.
   Imports `@runwire/core` only, never another adapter. Owns all Pi harness knowledge (D68).
+- Pi-family package: shared modules live under `src/pi/`; `src/gentle-shell/` adds
+  `createGentleShellAdapter()` ( epic, `docs/adapters/gentle-shell.md`). The CLI
+  registry does not register gentle-shell until its discovery/compute land.
 
 # Checks
 

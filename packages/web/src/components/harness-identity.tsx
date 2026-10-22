@@ -49,7 +49,9 @@ type HarnessIdentityProps = ComponentPropsWithoutRef<'span'> & {
 /** Brand assets sourced from https://thesvg.org/icon/claude-code,
  * https://thesvg.org/icon/opencode, and
  * https://dashboardicons.com/icons/pi-coding-agent. Unknown adapters retain a
- * neutral fallback so imported third-party harnesses never render a broken image. */
+ * neutral fallback so imported third-party harnesses never render a broken image.
+ * Gentle Shell (`gentle-shell`) intentionally uses this neutral CodeXml glyph;
+ * its tooltip/accessible label comes from the harness display name as usual. */
 export function HarnessIdentity({
   harness,
   showId = false,

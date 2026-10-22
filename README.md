@@ -5,9 +5,13 @@ Local, read-only explorer of coding-agent sessions. Reads the session files a ha
 ## Current scope
 
 - `packages/core` — contract types, SQLite store, import orchestrator, contract test kit.
-- `packages/adapter-claude-code` — the Claude Code adapter.
+- `packages/adapter-claude-code`, `packages/adapter-opencode` — Claude Code and OpenCode.
+- `packages/adapter-pi` — Pi and Gentle Shell (two factories, distinct harness identities).
+- `packages/cli`, `packages/server`, `packages/web` — CLI registry, local API and web explorer.
 
-A web front end, an API and more harnesses come later.
+Registered harnesses: Claude Code → OpenCode → Pi → Gentle Shell. Gentle Shell imports its
+isolated-home parents and children from both Gentle and Pi `gentle-agents/sessions` trees.
+Shared Pi-home parents stay attributed to Pi; see [coverage](docs/usage/what-runwire-knows.md).
 
 ## Setup
 
@@ -42,6 +46,7 @@ store and the API port (`packages/web/vite.config.ts` hardcodes 8787, so change 
 ```sh
 bun run runwire import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles]
 bun run runwire discover --adapter claude-code --json
+bun run runwire discover --adapter gentle-shell --json
 ```
 
 `runwire import` runs every registered adapter (or just the one named by `--adapter`) and stores

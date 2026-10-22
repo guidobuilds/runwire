@@ -46,6 +46,9 @@ const messageSchema = z
     responseModel: z.string().optional(),
     responseId: z.string().optional(),
     providerThinkingLevel: z.string().optional(),
+    // Pi 1.2: per-response thinking level and persisted provider/tool durations.
+    thinkingLevel: z.string().optional(),
+    durationMs: z.number().optional(),
     stopReason: z.string().nullable().optional(),
     // Pi stamps messages in epoch ms, unlike the ISO `timestamp` on entries.
     timestamp: z.number().optional(),
@@ -54,6 +57,27 @@ const messageSchema = z
     isError: z.boolean().optional(),
     usage: usageSchema.optional(),
     content: z.array(contentBlockSchema).optional(),
+    // Pi 1.2: bounded metadata of tool-to-tool calls (codemode). `details` is
+    // content everywhere else and stays unmodeled; Gentle Shell's allowlist
+    // projects only `details.gentleAgents` (gentle-shell.md §7).
+    nestedCalls: z
+      .object({
+        complete: z.boolean().optional(),
+        calls: z
+          .array(
+            z
+              .object({
+                name: z.string().optional(),
+                status: z.string().optional(),
+                durationMs: z.number().optional(),
+                argumentsBytes: z.number().optional(),
+              })
+              .passthrough(),
+          )
+          .optional(),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough();
 
@@ -69,6 +93,11 @@ export const piRecordSchema = z
     thinkingLevel: z.string().optional(),
     provider: z.string().optional(),
     modelId: z.string().optional(),
+    // Pi 1.2: `usage` entries carry a `kind` (e.g. "cache_warm") and Gentle
+    // Shell extensions tag `custom`/`custom_message` with a `customType`
+    // namespace (presence only, never the payload).
+    kind: z.string().optional(),
+    customType: z.string().optional(),
     tokensBefore: z.number().optional(),
     fromHook: z.boolean().optional(),
     firstKeptEntryId: z.string().optional(),

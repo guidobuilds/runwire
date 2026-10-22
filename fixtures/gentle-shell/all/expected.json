@@ -1,0 +1,485 @@
+{
+  "sessions": [
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-000000000001",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-01T00:00:00.000Z",
+      "endedAt": "2026-01-01T00:00:04.000Z",
+      "durationMs": 4000,
+      "modelPrimary": "m-a",
+      "modelPrimaryProvider": "anthropic",
+      "modelChanges": 0,
+      "effort": "medium",
+      "uncachedInput": 10,
+      "cachedInput": 20,
+      "cacheWrite": 30,
+      "output": 40,
+      "reasoningOutput": 5,
+      "turns": 1,
+      "apiCalls": 1,
+      "toolCalls": 1,
+      "costUsd": 0.5,
+      "sourceSize": 1179,
+      "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-01T00-00-00-000Z_b0000000-0000-7000-8000-000000000001.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-000000000003",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-03T00:00:00.000Z",
+      "endedAt": "2026-01-03T00:00:03.000Z",
+      "durationMs": 3000,
+      "modelPrimary": "synthetic-model",
+      "modelChanges": 0,
+      "uncachedInput": 2,
+      "cachedInput": 3,
+      "cacheWrite": 4,
+      "output": 5,
+      "reasoningOutput": 1,
+      "turns": 1,
+      "apiCalls": 1,
+      "toolCalls": 1,
+      "costUsd": 0.25,
+      "sourceSize": 1021,
+      "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-03T00-00-00-000Z_b0000000-0000-7000-8000-000000000003.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-000000000006",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-06T00:00:00.000Z",
+      "endedAt": "2026-01-06T00:00:04.000Z",
+      "durationMs": 4000,
+      "modelPrimary": "synthetic-model",
+      "modelChanges": 0,
+      "effort": "high",
+      "uncachedInput": 2,
+      "cachedInput": 3,
+      "cacheWrite": 4,
+      "output": 5,
+      "reasoningOutput": 1,
+      "apiCalls": 1,
+      "toolCalls": 1,
+      "costUsd": 0.25,
+      "sourceSize": 1440,
+      "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-06T00-00-00-000Z_b0000000-0000-7000-8000-000000000006.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-000000000007",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-05T00:00:00.000Z",
+      "endedAt": "2026-01-05T00:00:05.000Z",
+      "durationMs": 5000,
+      "modelPrimary": "synthetic-model",
+      "modelChanges": 0,
+      "uncachedInput": 10,
+      "cachedInput": 15,
+      "cacheWrite": 20,
+      "output": 25,
+      "reasoningOutput": 5,
+      "apiCalls": 5,
+      "toolCalls": 1,
+      "compactions": 1,
+      "costUsd": 1.25,
+      "sourceSize": 1650,
+      "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-05T00-00-00-000Z_b0000000-0000-7000-8000-000000000007.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-000000000008",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-08T00:00:00.000Z",
+      "endedAt": "2026-01-08T00:00:00.000Z",
+      "durationMs": 0,
+      "turns": 1,
+      "sourceSize": 335,
+      "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-08T00-00-00-000Z_b0000000-0000-7000-8000-000000000008.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-000000000009",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-09T00:00:00.000Z",
+      "endedAt": "2026-01-09T00:00:11.000Z",
+      "durationMs": 11000,
+      "modelPrimary": "synthetic-model",
+      "modelChanges": 0,
+      "uncachedInput": 2,
+      "cachedInput": 3,
+      "cacheWrite": 4,
+      "output": 5,
+      "reasoningOutput": 1,
+      "turns": 1,
+      "apiCalls": 1,
+      "toolCalls": 1,
+      "compactions": 1,
+      "costUsd": 0.25,
+      "sourceSize": 3218,
+      "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-09T00-00-00-000Z_b0000000-0000-7000-8000-000000000009.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-000000000010",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "relation": "fork",
+      "forkedFrom": "gentle-shell:b0000000-0000-7000-8000-000000000001",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-10T00:00:00.000Z",
+      "endedAt": "2026-01-10T00:00:01.000Z",
+      "durationMs": 1000,
+      "turns": 1,
+      "sourceSize": 389,
+      "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-10T00-00-00-000Z_b0000000-0000-7000-8000-000000000010.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-000000000088",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-08T01:00:00.000Z",
+      "endedAt": "2026-01-08T01:00:01.000Z",
+      "durationMs": 1000,
+      "modelPrimary": "synthetic-model",
+      "modelChanges": 0,
+      "uncachedInput": 2,
+      "cachedInput": 3,
+      "cacheWrite": 4,
+      "output": 5,
+      "reasoningOutput": 1,
+      "apiCalls": 1,
+      "costUsd": 0.25,
+      "sourceSize": 447,
+      "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-08T01-00-00-000Z_b0000000-0000-7000-8000-000000000088.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-0000000000b0",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "relation": "subagent",
+      "depth": 1,
+      "parentId": "gentle-shell:b0000000-0000-7000-8000-000000000001",
+      "agentType": "gentle-ai-explore",
+      "spawnCallId": "tc1",
+      "initiatorKind": "machine",
+      "initiatorAutomation": "subagent-dispatch",
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-01T01:00:00.000Z",
+      "endedAt": "2026-01-01T01:00:02.000Z",
+      "durationMs": 2000,
+      "modelPrimary": "m-a",
+      "modelChanges": 0,
+      "uncachedInput": 3,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 3,
+      "apiCalls": 2,
+      "costUsd": 0.03,
+      "sourceSize": 709,
+      "sourcePath": ".gentle-shell/agent/gentle-agents/sessions/2026-01-01T01-00-00-000Z_b0000000-0000-7000-8000-0000000000b0.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-0000000000b1",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-02T00:00:00.000Z",
+      "endedAt": "2026-01-02T00:00:01.000Z",
+      "durationMs": 1000,
+      "modelPrimary": "m-a",
+      "modelChanges": 0,
+      "uncachedInput": 1,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 1,
+      "apiCalls": 1,
+      "costUsd": 0.01,
+      "sourceSize": 418,
+      "sourcePath": ".gentle-shell/agent/gentle-agents/sessions/2026-01-02T00-00-00-000Z_b0000000-0000-7000-8000-0000000000b1.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-0000000000b2",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-03T00:00:00.000Z",
+      "endedAt": "2026-01-03T00:00:02.000Z",
+      "durationMs": 2000,
+      "uncachedInput": 2,
+      "cachedInput": 0,
+      "cacheWrite": 0,
+      "output": 2,
+      "apiCalls": 2,
+      "costUsd": 0.02,
+      "sourceSize": 607,
+      "sourcePath": ".gentle-shell/agent/gentle-agents/sessions/2026-01-03T00-00-00-000Z_b0000000-0000-7000-8000-0000000000b2.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-0000000000b3",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "relation": "subagent",
+      "depth": 1,
+      "parentId": "gentle-shell:b0000000-0000-7000-8000-000000000003",
+      "agentType": "gentle-ai-worker",
+      "spawnCallId": "spawn-3",
+      "initiatorKind": "machine",
+      "initiatorAutomation": "subagent-dispatch",
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-03T01:00:00.000Z",
+      "endedAt": "2026-01-03T01:00:03.000Z",
+      "durationMs": 3000,
+      "modelPrimary": "synthetic-model",
+      "modelChanges": 0,
+      "uncachedInput": 2,
+      "cachedInput": 3,
+      "cacheWrite": 4,
+      "output": 5,
+      "reasoningOutput": 1,
+      "turns": 1,
+      "apiCalls": 1,
+      "toolCalls": 1,
+      "costUsd": 0.25,
+      "sourceSize": 937,
+      "sourcePath": ".gentle-shell/agent/gentle-agents/sessions/2026-01-03T01-00-00-000Z_b0000000-0000-7000-8000-0000000000b3.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-0000000000b4",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "relation": "subagent",
+      "depth": 1,
+      "parentId": "pi:b0000000-0000-7000-8000-000000000004",
+      "agentType": "gentle-ai-worker",
+      "initiatorKind": "machine",
+      "initiatorAutomation": "subagent-dispatch",
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-04T01:00:00.000Z",
+      "endedAt": "2026-01-04T01:00:01.000Z",
+      "durationMs": 1000,
+      "modelPrimary": "synthetic-model",
+      "modelChanges": 0,
+      "uncachedInput": 2,
+      "cachedInput": 3,
+      "cacheWrite": 4,
+      "output": 5,
+      "reasoningOutput": 1,
+      "apiCalls": 1,
+      "costUsd": 0.25,
+      "sourceSize": 452,
+      "sourcePath": ".pi/agent/gentle-agents/sessions/2026-01-04T01-00-00-000Z_b0000000-0000-7000-8000-0000000000b4.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-0000000000b9",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "relation": "subagent",
+      "depth": 1,
+      "parentId": "gentle-shell:b0000000-0000-7000-8000-000000000009",
+      "agentType": "gentle-ai-worker",
+      "spawnCallId": "spawn-9",
+      "initiatorKind": "machine",
+      "initiatorAutomation": "subagent-dispatch",
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-09T01:00:00.000Z",
+      "endedAt": "2026-01-09T01:00:01.000Z",
+      "durationMs": 1000,
+      "modelPrimary": "synthetic-model",
+      "modelChanges": 0,
+      "uncachedInput": 2,
+      "cachedInput": 3,
+      "cacheWrite": 4,
+      "output": 5,
+      "reasoningOutput": 1,
+      "apiCalls": 1,
+      "costUsd": 0.25,
+      "sourceSize": 456,
+      "sourcePath": ".gentle-shell/agent/gentle-agents/sessions/2026-01-09T01-00-00-000Z_b0000000-0000-7000-8000-0000000000b9.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "gentle-shell:b0000000-0000-7000-8000-000000000001": {
+      "harness": 1,
+      "turn": 1,
+      "call": 1,
+      "tool": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-000000000003": {
+      "turn": 1,
+      "call": 1,
+      "tool": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-000000000006": {
+      "harness": 1,
+      "call": 1,
+      "tool": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-000000000007": {
+      "call": 5,
+      "tool": 1,
+      "compaction": 1,
+      "harness": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-000000000008": {
+      "turn": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-000000000009": {
+      "turn": 1,
+      "call": 1,
+      "tool": 1,
+      "harness": 6,
+      "compaction": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-000000000010": {
+      "turn": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-000000000088": {
+      "call": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b0": {
+      "call": 2
+    },
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b1": {
+      "call": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b2": {
+      "call": 2
+    },
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b3": {
+      "turn": 1,
+      "call": 1,
+      "tool": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b4": {
+      "call": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b9": {
+      "call": 1
+    }
+  },
+  "toolCounts": {
+    "gentle-shell:b0000000-0000-7000-8000-000000000001": {
+      "agent": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-000000000003": {
+      "agent": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-000000000006": {
+      "exec": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-000000000007": {
+      "read": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-000000000008": {},
+    "gentle-shell:b0000000-0000-7000-8000-000000000009": {
+      "agent": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-000000000010": {},
+    "gentle-shell:b0000000-0000-7000-8000-000000000088": {},
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b0": {},
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b1": {},
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b2": {},
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b3": {
+      "read": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b4": {},
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b9": {}
+  },
+  "diagnostics": {
+    "gentle-shell:b0000000-0000-7000-8000-000000000001": [
+      {
+        "level": "info",
+        "code": "ledger-invalid",
+        "count": 1
+      }
+    ],
+    "gentle-shell:b0000000-0000-7000-8000-000000000003": [],
+    "gentle-shell:b0000000-0000-7000-8000-000000000006": [
+      {
+        "level": "info",
+        "code": "nested-tool-calls",
+        "count": 2
+      }
+    ],
+    "gentle-shell:b0000000-0000-7000-8000-000000000007": [
+      {
+        "level": "info",
+        "code": "usage-on-non-assistant",
+        "count": 4
+      }
+    ],
+    "gentle-shell:b0000000-0000-7000-8000-000000000008": [
+      {
+        "level": "warn",
+        "code": "malformed-json-line"
+      },
+      {
+        "level": "warn",
+        "code": "malformed-json-line"
+      },
+      {
+        "level": "info",
+        "code": "source-truncated"
+      }
+    ],
+    "gentle-shell:b0000000-0000-7000-8000-000000000009": [
+      {
+        "level": "info",
+        "code": "nested-tool-calls",
+        "count": 1
+      }
+    ],
+    "gentle-shell:b0000000-0000-7000-8000-000000000010": [],
+    "gentle-shell:b0000000-0000-7000-8000-000000000088": [],
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b0": [],
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b1": [
+      {
+        "level": "info",
+        "code": "unlinked-subagent",
+        "count": 1
+      }
+    ],
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b2": [
+      {
+        "level": "info",
+        "code": "branched-tree",
+        "count": 1
+      },
+      {
+        "level": "info",
+        "code": "usage-on-non-assistant",
+        "count": 2
+      },
+      {
+        "level": "info",
+        "code": "duplicate-child",
+        "count": 1
+      },
+      {
+        "level": "info",
+        "code": "unlinked-subagent",
+        "count": 1
+      }
+    ],
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b3": [],
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b4": [],
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b9": []
+  }
+}

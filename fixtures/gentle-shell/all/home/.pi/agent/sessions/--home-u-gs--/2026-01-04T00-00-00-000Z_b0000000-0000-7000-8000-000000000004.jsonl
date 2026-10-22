@@ -1,0 +1,2 @@
+{"type":"session","version":3,"id":"b0000000-0000-7000-8000-000000000004","timestamp":"2026-01-04T00:00:00.000Z","cwd":"/home/u/gs"}
+{"type":"message","id":"pi1","parentId":null,"message":{"role":"user","content":[{"type":"text","text":"synthetic Pi-owned parent never read by gentle-shell"}]}}

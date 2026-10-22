@@ -3,9 +3,9 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { AdapterContext, Session, SessionBundle, StepKind, ToolCategory } from '@runwire/core';
 import { createBunFs } from '@runwire/core';
-import { createPiAdapter } from './index';
+import { createPiAdapter } from '../index';
 
-const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', 'fixtures', 'pi');
+const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', '..', 'fixtures', 'pi');
 
 // Every fixture case except all/ (a synthetic union, not a real per-case
 // snapshot target - see all/README.md).
