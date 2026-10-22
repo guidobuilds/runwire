@@ -16,9 +16,28 @@ import { runDiscover } from './commands/discover';
 const REPO_ROOT = resolve(import.meta.dir, '../../..');
 const CLI_SCRIPT = 'packages/cli/src/index.ts';
 
+/**
+ * Adapter home overrides leak from live agent sessions (this suite itself may
+ * run inside Pi or Gentle Shell) and would make discovery scan the real home
+ * instead of the fixtures. Every harness-root env var the adapters honor must
+ * be stripped here, not just PI_*.
+ */
+const ISOLATED_ENV = Object.fromEntries(
+  Object.entries(process.env).filter(
+    ([key]) =>
+      ![
+        'PI_CODING_AGENT_DIR',
+        'PI_CODING_AGENT_SESSION_DIR',
+        'GENTLE_PI_AGENT_HOME',
+        'GENTLE_SHELL_USER_PI_HOME',
+      ].includes(key),
+  ),
+);
+
 async function run(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn([process.execPath, CLI_SCRIPT, ...args], {
     cwd: REPO_ROOT,
+    env: ISOLATED_ENV,
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -242,7 +261,7 @@ describe('runwire import', () => {
           ],
           {
             cwd: REPO_ROOT,
-            env: { ...process.env, HOME: fakeHome },
+            env: { ...ISOLATED_ENV, HOME: fakeHome },
             stdout: 'pipe',
             stderr: 'pipe',
           },
