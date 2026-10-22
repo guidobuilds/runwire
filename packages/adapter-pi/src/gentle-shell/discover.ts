@@ -6,11 +6,12 @@
 // existence check on file NAMES, not a content read.
 import { join } from 'node:path/posix';
 import type { AdapterContext, Diagnostic, Known, SessionBundle } from '@runwire/core';
-import { makeDiagnostic } from '@runwire/core';
+import { makeDiagnostic, project, readLinesRaw } from '@runwire/core';
 import { computeBundle } from '../pi/compute';
 import { decodeProjectDirname, isSessionFile, sessionIdFromRootFile } from '../pi/paths';
 import { resolveProject } from '../pi/project';
 import { readRecords } from '../pi/records';
+import { gentleShellAllowlist } from './allowlist';
 import { type LedgerResult, readLedger } from './ledger';
 import {
   type ChildRoot,
@@ -20,6 +21,7 @@ import {
   sharesParentRoot,
   userPiHome,
 } from './paths';
+import { gentleToolCategory } from './tool-category';
 
 const HARNESS_ID = 'gentle-shell';
 
@@ -94,6 +96,8 @@ type SourceBundleInput = {
   sizeBytes: number;
   mtimeMs: number;
   fallbackCwd?: string;
+  subagent?: Parameters<typeof computeBundle>[0]['subagent'];
+  initiator?: Parameters<typeof computeBundle>[0]['initiator'];
 };
 
 /** Reads + computes one source; a read failure yields a stub bundle instead of throwing. */
@@ -102,7 +106,10 @@ async function computeSourceBundle(
   input: SourceBundleInput,
 ): Promise<SessionBundle> {
   try {
-    const { records: recordStream, result } = readRecords(ctx, input.path);
+    const { records: recordStream, result } = readRecords(ctx, input.path, {
+      pi12: true,
+      allowlist: gentleShellAllowlist,
+    });
     const parsed: Array<{
       record: Parameters<typeof computeBundle>[0]['records'][number]['record'];
       line: number;
@@ -119,6 +126,10 @@ async function computeSourceBundle(
       fallbackCwd: input.fallbackCwd,
       headerUuid: input.headerUuid,
       harnessId: HARNESS_ID,
+      pi12: true,
+      toolCategory: gentleToolCategory,
+      subagent: input.subagent,
+      initiator: input.initiator,
       ctx,
     });
   } catch (err) {
@@ -149,10 +160,14 @@ async function computeSourceBundle(
  * Pi-owned file, S8): `gentle-shell:<uuid>` for the isolated home's parents,
  * `pi:<uuid>` when the file exists under the user Pi home's parent root.
  */
-async function parentIndex(ctx: AdapterContext): Promise<Map<string, 'gentle-shell' | 'pi'>> {
-  const index = new Map<string, 'gentle-shell' | 'pi'>();
+type ParentSource = { harness: 'gentle-shell' | 'pi'; path: string };
+
+async function parentIndex(ctx: AdapterContext): Promise<Map<string, ParentSource>> {
+  const index = new Map<string, ParentSource>();
   const roots: Array<['gentle-shell' | 'pi', string]> = [
-    ['gentle-shell', gentleParentsRoot(ctx)],
+    ...(!sharesParentRoot(ctx)
+      ? [['gentle-shell', gentleParentsRoot(ctx)] as ['gentle-shell', string]]
+      : []),
     ['pi', join(userPiHome(ctx), 'sessions')],
   ];
   for (const [harness, root] of roots) {
@@ -166,7 +181,7 @@ async function parentIndex(ctx: AdapterContext): Promise<Map<string, 'gentle-she
         const uuid = sessionIdFromRootFile(entry);
         // First wins: the gentle home is checked first, and a uuid under both
         // parent roots would be ambiguous anyway.
-        if (!index.has(uuid)) index.set(uuid, harness);
+        if (!index.has(uuid)) index.set(uuid, { harness, path: join(root, name, entry) });
       }
     }
   }
@@ -204,7 +219,7 @@ type ChildCandidate = {
 /** Ledger + parent-prefix state shared by the children pass. */
 type LinkState = {
   ledger: LedgerResult;
-  parents: Map<string, 'gentle-shell' | 'pi'>;
+  parents: Map<string, ParentSource>;
 };
 
 function childDiagnostics(uuid: string, link: LinkState, isDuplicate: boolean): Diagnostic[] {
@@ -231,7 +246,11 @@ function childDiagnostics(uuid: string, link: LinkState, isDuplicate: boolean): 
     );
     return diagnostics;
   }
-  if (task.parentSessionId && !link.parents.has(task.parentSessionId)) {
+  if (
+    task.parentSessionId &&
+    !link.parents.has(task.parentSessionId) &&
+    !link.ledger.byChildUuid.has(task.parentSessionId)
+  ) {
     diagnostics.push(
       makeDiagnostic(
         'info',
@@ -244,12 +263,83 @@ function childDiagnostics(uuid: string, link: LinkState, isDuplicate: boolean): 
   return diagnostics;
 }
 
+/** Retain only spawn identity from owned parents; Pi-owned paths never reach this reader. */
+async function spawnCalls(ctx: AdapterContext, parent: ParentSource): Promise<Map<string, string>> {
+  const calls = new Map<string, string>();
+  if (parent.harness !== HARNESS_ID) return calls;
+  try {
+    for await (const { line } of readLinesRaw(ctx.fs.openStream(parent.path), {
+      truncated: false,
+      oversizedLines: 0,
+    })) {
+      if (!line.includes('gentleAgents')) continue;
+      try {
+        const identity = project(JSON.parse(line), {
+          message: { role: true, toolCallId: true, details: { gentleAgents: { taskId: true } } },
+        }) as {
+          message?: {
+            role?: unknown;
+            toolCallId?: unknown;
+            details?: { gentleAgents?: { taskId?: unknown } };
+          };
+        };
+        const message = identity.message;
+        const taskId = message?.details?.gentleAgents?.taskId;
+        if (
+          message?.role === 'toolResult' &&
+          typeof taskId === 'string' &&
+          typeof message.toolCallId === 'string'
+        )
+          calls.set(taskId, message.toolCallId);
+      } catch {
+        // Malformed lines cannot supply a spawn identity.
+      }
+    }
+  } catch {
+    // A missing/unreadable owned parent leaves spawnCallId unknown.
+  }
+  return calls;
+}
+
+function childDepth(
+  uuid: string,
+  link: LinkState,
+  visited = new Set<string>(),
+): number | undefined {
+  if (visited.has(uuid)) return undefined;
+  visited.add(uuid);
+  const parent = link.ledger.byChildUuid.get(uuid)?.parentSessionId;
+  if (!parent) return undefined;
+  if (link.ledger.byChildUuid.has(parent)) {
+    const depth = childDepth(parent, link, visited);
+    return depth === undefined ? undefined : depth + 1;
+  }
+  return link.parents.has(parent) ? 1 : undefined;
+}
+
 export async function* discover(ctx: AdapterContext, known: Known): AsyncIterable<SessionBundle> {
   const link: LinkState = {
     ledger: await readLedger(ctx, ledgerRoots(ctx)),
     parents: await parentIndex(ctx),
   };
   const touchedRoots: string[] = [];
+  const spawnByParent = new Map<string, Map<string, string>>();
+  let ledgerDiagnosticPending = link.ledger.invalidFiles > 0;
+  function attachLedgerDiagnostic(bundle: SessionBundle): SessionBundle {
+    if (ledgerDiagnosticPending) {
+      bundle.diagnostics = [
+        ...bundle.diagnostics,
+        makeDiagnostic(
+          'info',
+          'ledger-invalid',
+          `${link.ledger.invalidFiles} ledger file(s) were invalid`,
+          { count: link.ledger.invalidFiles },
+        ),
+      ];
+      ledgerDiagnosticPending = false;
+    }
+    return bundle;
+  }
 
   // --- parents (isolated home only) ---
   if (!sharesParentRoot(ctx)) {
@@ -272,14 +362,16 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
           if (!stat) continue;
           if (unchanged(known, path, stat)) continue;
           const uuid = sessionIdFromRootFile(entry);
-          yield await computeSourceBundle(ctx, {
-            sessionId: `${HARNESS_ID}:${uuid}`,
-            headerUuid: uuid,
-            path,
-            sizeBytes: stat.sizeBytes,
-            mtimeMs: stat.mtimeMs,
-            fallbackCwd,
-          });
+          yield attachLedgerDiagnostic(
+            await computeSourceBundle(ctx, {
+              sessionId: `${HARNESS_ID}:${uuid}`,
+              headerUuid: uuid,
+              path,
+              sizeBytes: stat.sizeBytes,
+              mtimeMs: stat.mtimeMs,
+              fallbackCwd,
+            }),
+          );
         }
       }
     }
@@ -329,17 +421,41 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
 
     const extraDiagnostics = childDiagnostics(winner.uuid, link, group.length > 1);
     if (unchanged(known, winner.path, winner.stat)) continue;
+    const task = link.ledger.byChildUuid.get(uuid);
+    const parentUuid = task?.parentSessionId;
+    const parent = parentUuid ? link.parents.get(parentUuid) : undefined;
+    const parentHarness =
+      parent?.harness ??
+      (parentUuid && link.ledger.byChildUuid.has(parentUuid) ? HARNESS_ID : undefined);
+    let spawnCallId: string | undefined;
+    if (parentUuid && parent?.harness === HARNESS_ID && task) {
+      let calls = spawnByParent.get(parentUuid);
+      if (!calls) {
+        calls = await spawnCalls(ctx, parent);
+        spawnByParent.set(parentUuid, calls);
+      }
+      spawnCallId = calls.get(task.id);
+    }
     const bundle = await computeSourceBundle(ctx, {
       sessionId: `${HARNESS_ID}:${uuid}`,
       headerUuid: uuid,
       path: winner.path,
       sizeBytes: winner.stat.sizeBytes,
       mtimeMs: winner.stat.mtimeMs,
+      subagent:
+        task?.agent && parentHarness && parentUuid
+          ? {
+              parentId: `${parentHarness}:${parentUuid}`,
+              agentType: task.agent,
+              spawnCallId,
+              depth: childDepth(uuid, link) ?? 1,
+            }
+          : undefined,
+      initiator: task ? { kind: 'machine', automation: 'subagent-dispatch' } : undefined,
     });
-    // Ledger aggregates are never used (S9); the ledger only tags linkage
-    // diagnostics here so the gap stays visible instead of silent (§5.2).
+    // Ledger aggregates are never used (S9); only identity and linkage diagnostics survive.
     bundle.diagnostics = [...bundle.diagnostics, ...extraDiagnostics];
-    yield bundle;
+    yield attachLedgerDiagnostic(bundle);
   }
 
   // Revalidate every root touched by enumeration (D83): a vanished root means
