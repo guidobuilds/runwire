@@ -12,7 +12,7 @@ import { sessionIdFromRootFile } from './paths';
 import type { PiRecord } from './schema';
 import { piToolCategory } from './tool-category';
 
-const HARNESS_ID = 'pi';
+const PI_HARNESS_ID = 'pi';
 
 export type ComputeSource = { path: string; sizeBytes: number; mtimeMs: number };
 
@@ -30,6 +30,8 @@ export type ComputeBundleInput = {
   fallbackCwd?: string;
   /** The uuid in the filename, used only for the session-id-mismatch check. */
   headerUuid: string;
+  /** Harness id for `session.harnessId` and the fork prefix; defaults to `pi`. */
+  harnessId?: string;
   ctx: AdapterContext;
 };
 
@@ -97,6 +99,7 @@ const HARNESS_STEP_NAME: Record<string, string> = {
 export async function computeBundle(input: ComputeBundleInput): Promise<SessionBundle> {
   const { sessionId, source, records, recordDiagnostics, resolveProject, fallbackCwd, headerUuid } =
     input;
+  const HARNESS_ID = input.harnessId ?? PI_HARNESS_ID;
 
   const diagnostics: Diagnostic[] = [...recordDiagnostics];
 
@@ -150,6 +153,13 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
         'cwd-from-dirname',
         'No cwd observed in the header; derived from the project directory name',
       ),
+    );
+  } else if (!cwd && !fallbackCwd) {
+    // Gentle Shell children live in a flat directory (gentle-shell.md §2), so
+    // there is no dirname fallback; an absent header cwd stays unknown. Pi
+    // always has the dirname fallback, so this never fires for Pi.
+    diagnostics.push(
+      makeDiagnostic('info', 'missing-cwd', 'No cwd observed and no dirname fallback'),
     );
   }
 

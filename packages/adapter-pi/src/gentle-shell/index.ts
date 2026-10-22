@@ -1,6 +1,6 @@
 import type { Capability, HarnessAdapter } from '@runwire/core';
-import { discover, probe } from '../pi/discover';
 import { gentleShellAllowlist } from './allowlist';
+import { discover, probe } from './discover';
 
 /**
  * Exactly the 16 capabilities Gentle Shell can report
@@ -33,11 +33,10 @@ const CAPABILITIES: readonly Capability[] = [
 ];
 
 /**
- * Skeleton factory: same shape as the Pi factory, Gentle Shell
- * identity, capabilities and allowlist. `probe`/`discover` are still the Pi
- * ones and are replaced by the Gentle Shell discovery and compute
- *. The adapter is NOT registered in the CLI registry until ,
- * so nothing imports this at runtime yet.
+ * Factory ( epic): Gentle Shell identity, capabilities and allowlist.
+ * `probe`/`discover` implement the §2/§9 discovery; the compute-side
+ * linkage (`spawnCallId`/`depth`/`initiator`) lands with  and the CLI
+ * registry with , so nothing imports this adapter at runtime yet.
  */
 export function createGentleShellAdapter(): HarnessAdapter {
   return {

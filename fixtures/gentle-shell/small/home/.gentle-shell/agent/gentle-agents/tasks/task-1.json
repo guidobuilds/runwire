@@ -1,0 +1,19 @@
+{
+  "task": {
+    "id": "task-1",
+    "agent": "gentle-ai-explore",
+    "mode": "task",
+    "status": "completed",
+    "cwd": "/home/u/gs",
+    "parentSessionId": "b0000000-0000-7000-8000-000000000001",
+    "sessionPath": "/home/u/.gentle-shell/agent/gentle-agents/sessions/2026-01-01T01-00-00-000Z_b0000000-0000-7000-8000-0000000000b0.jsonl",
+    "model": "m-a",
+    "modelSource": "session",
+    "thinking": "medium",
+    "createdAt": "2026-01-01T01:00:00.000Z",
+    "startedAt": "2026-01-01T01:00:00.100Z",
+    "endedAt": "2026-01-01T01:00:02.500Z",
+    "lastActivityAt": "2026-01-01T01:00:02.500Z"
+  },
+  "thread": { "items": [{ "text": "synthetic child transcript" }] }
+}
