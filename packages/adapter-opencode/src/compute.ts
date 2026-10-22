@@ -120,6 +120,8 @@ export async function computeBundle(input: ComputeSessionInput): Promise<Session
   const modelOrder: string[] = [];
   const modelCounts = new Map<string, number>();
   const modelOutputByName = new Map<string, number>();
+  // First provider observed per model name: feeds modelPrimaryProvider.
+  const modelProviderByName = new Map<string, string>();
 
   let callStepCount = 0;
   let toolCallCount = 0;
@@ -146,9 +148,13 @@ export async function computeBundle(input: ComputeSessionInput): Promise<Session
 
       case 'assistant': {
         const modelId = msg.data.model?.id;
+        const providerId = msg.data.model?.providerID;
         if (modelId) {
           if (!modelCounts.has(modelId)) modelOrder.push(modelId);
           modelCounts.set(modelId, (modelCounts.get(modelId) ?? 0) + 1);
+          if (!modelProviderByName.has(modelId) && providerId !== undefined) {
+            modelProviderByName.set(modelId, providerId);
+          }
         }
 
         const tokens = msg.data.tokens;
@@ -159,6 +165,7 @@ export async function computeBundle(input: ComputeSessionInput): Promise<Session
             at,
             kind: 'call',
             model: modelId,
+            modelProvider: providerId,
             uncachedInput: tokens.input,
             cachedInput: tokens.cache?.read,
             cacheWrite: tokens.cache?.write,
@@ -196,6 +203,7 @@ export async function computeBundle(input: ComputeSessionInput): Promise<Session
               callId: part.id,
               error: part.state?.status === 'error',
               model: modelId ?? undefined,
+              modelProvider: modelId !== undefined ? providerId : undefined,
             };
             if (toolCompleted !== undefined && toolCreated !== undefined) {
               const dur = toolCompleted - toolCreated;
@@ -342,6 +350,7 @@ export async function computeBundle(input: ComputeSessionInput): Promise<Session
     endedAt: isoFromMs(lastAt),
     durationMs: firstAt !== undefined && lastAt !== undefined ? lastAt - firstAt : undefined,
     modelPrimary,
+    modelPrimaryProvider: modelPrimary ? modelProviderByName.get(modelPrimary) : undefined,
     modelChanges: modelChanges > 0 ? modelChanges : undefined,
     // mode / effort / git / initiator are not stored per OpenCode session.
     uncachedInput,

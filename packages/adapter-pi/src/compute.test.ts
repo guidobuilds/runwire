@@ -78,6 +78,7 @@ function assistant(opts: {
   ms?: number;
   model?: string;
   responseModel?: string;
+  provider?: string;
   stopReason?: string;
   usage?: Record<string, unknown> | null;
   content?: unknown[];
@@ -89,6 +90,7 @@ function assistant(opts: {
       role: 'assistant',
       model: opts.model,
       responseModel: opts.responseModel,
+      provider: opts.provider,
       stopReason: opts.stopReason,
       timestamp: opts.ms,
       usage: opts.usage === null ? undefined : (opts.usage ?? usage()),
@@ -247,6 +249,48 @@ describe('computeBundle: tool pairing', () => {
     );
     expect(bundle.diagnostics.find((d) => d.code === 'unpaired-tool-result')?.count).toBe(1);
     expect(bundle.diagnostics.find((d) => d.code === 'unanswered-tool-call')?.count).toBe(1);
+  });
+});
+
+describe('computeBundle: model provider', () => {
+  test('message.provider flows to call/tool steps and the session primary', async () => {
+    const bundle = await computeBundle(
+      baseInput([
+        header(),
+        assistant({
+          at: '2026-01-01T00:00:01.000Z',
+          ms: 1000,
+          model: 'glm5.3-flash',
+          provider: 'nan',
+          content: [{ type: 'toolCall', id: 'c1', name: 'read' }],
+        }),
+        toolResult({ at: '2026-01-01T00:00:02.000Z', ms: 2000, toolCallId: 'c1' }),
+        assistant({
+          at: '2026-01-01T00:00:03.000Z',
+          ms: 3000,
+          model: 'gpt-6.1-sol',
+          provider: 'openai-codex',
+        }),
+      ]),
+    );
+    const calls = bundle.steps.filter((s) => s.kind === 'call');
+    expect(calls.map((s) => [s.model, s.modelProvider])).toEqual([
+      ['glm5.3-flash', 'nan'],
+      ['gpt-6.1-sol', 'openai-codex'],
+    ]);
+    const tools = bundle.steps.filter((s) => s.kind === 'tool');
+    expect(tools.map((s) => [s.model, s.modelProvider])).toEqual([['glm5.3-flash', 'nan']]);
+    expect(bundle.session.modelPrimary).toBe('glm5.3-flash');
+    expect(bundle.session.modelPrimaryProvider).toBe('nan');
+  });
+
+  test('a message without provider keeps modelProvider absent (claude-style regressions)', async () => {
+    const bundle = await computeBundle(
+      baseInput([header(), assistant({ at: '2026-01-01T00:00:01.000Z', ms: 1000, model: 'm1' })]),
+    );
+    const call = bundle.steps.find((s) => s.kind === 'call');
+    expect(call?.modelProvider).toBeUndefined();
+    expect(bundle.session.modelPrimaryProvider).toBeUndefined();
   });
 });
 

@@ -245,10 +245,15 @@ profile.
   > exec > read/search > other tool > text only — the client never receives the
   tool list.
 - **Catalog-backed model fields.** Each entry in `models` carries its context
-  window and tier from the core model catalog (`src/models/catalog.ts`); an
-  unknown model resolves to `null`/`null`, and the UI draws no context % for it
-  and excludes it from tier-based detections. The catalog is configuration, not
-  truth.
+  window and tier from the core model catalog (`src/models/catalog.ts`),
+  resolved per `(provider, name)` at request time in a cascade: exact
+  `provider/model` → exact name → prefix → `null`/`null` (the UI then draws no
+  context % and excludes the model from tier-based detections). The same model
+  name through two providers can resolve to different windows and gets two
+  `LaneModel` rows. Users override exact entries via `~/.runwire/models.json`
+  (a list of `{provider?, model, contextWindow}` objects) — re-read on every
+  request, so edits apply without a restart; overrides beat built-ins at exact
+  match only. The catalog is configuration, not truth.
 - **Counters.** `callCount` echoes the calls kept; `excludedNullAtCount` counts
   call steps with `at IS NULL`, which are never placed on a lane.
 - **Metadata only.** Model names, token counts, tool-category counts, error

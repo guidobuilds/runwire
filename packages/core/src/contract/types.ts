@@ -48,6 +48,8 @@ export type Session = {
   endedAt?: string;
   durationMs?: number;
   modelPrimary?: string;
+  /** Serving provider of `modelPrimary` (e.g. 'nan', 'openai'); NULL when the harness does not report one (Claude Code). */
+  modelPrimaryProvider?: string;
   modelChanges?: number;
   modePrimary?: string;
   modeChanges?: number;
@@ -107,6 +109,8 @@ export type Step = {
   kind: StepKind;
   /** call; tool (the emitting assistant message's model, absent for <synthetic>) */
   model?: string;
+  /** Serving provider of `model`; pairs with `model` the way `modelPrimaryProvider` pairs with `modelPrimary`. */
+  modelProvider?: string;
   /** tool; harness uses toolName = event name */
   toolCategory?: ToolCategory;
   toolName?: string;

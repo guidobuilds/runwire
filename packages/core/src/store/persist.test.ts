@@ -322,6 +322,108 @@ describe('persistBundle: titles (D7)', () => {
   });
 });
 
+describe('persistBundle: model provider identity (models table + FK ids)', () => {
+  test('the same model name from two providers gets two rows and per-provider FK ids', () => {
+    const { db } = storeWithFakeHarness();
+    persistWithTitles(
+      db,
+      bundle({ modelPrimary: 'gpt-6.1-sol', modelPrimaryProvider: 'openai' }, [
+        {
+          sessionId: 'fake:s1',
+          seq: 0,
+          kind: 'call',
+          model: 'gpt-6.1-sol',
+          modelProvider: 'openai',
+        },
+        {
+          sessionId: 'fake:s1',
+          seq: 1,
+          kind: 'call',
+          model: 'gpt-6.1-sol',
+          modelProvider: 'openai-codex',
+        },
+      ]),
+    );
+
+    const models = db.query('SELECT id, provider, name FROM models ORDER BY provider').all() as {
+      id: number;
+      provider: string | null;
+      name: string;
+    }[];
+    expect(models.map((m) => [m.provider, m.name])).toEqual([
+      ['openai', 'gpt-6.1-sol'],
+      ['openai-codex', 'gpt-6.1-sol'],
+    ]);
+
+    const openaiRow = models.find((m) => m.provider === 'openai');
+    const codexRow = models.find((m) => m.provider === 'openai-codex');
+    if (openaiRow === undefined || codexRow === undefined) throw new Error('expected both rows');
+
+    const session = db
+      .query('SELECT model_primary_id FROM sessions WHERE id = ?')
+      .get('fake:s1') as { model_primary_id: number | null };
+    expect(session.model_primary_id).toBe(openaiRow.id);
+
+    const steps = db
+      .query('SELECT seq, model_id FROM steps WHERE session_id = ? ORDER BY seq')
+      .all('fake:s1') as { seq: number; model_id: number | null }[];
+    expect(steps).toEqual([
+      { seq: 0, model_id: openaiRow.id },
+      { seq: 1, model_id: codexRow.id },
+    ]);
+  });
+
+  test('a model without provider keeps NULL and dedups by name (claude-code style)', () => {
+    const { db } = storeWithFakeHarness();
+    persistWithTitles(db, bundle({ id: 'fake:s1', modelPrimary: 'claude-opus-5-5' }));
+    persistWithTitles(
+      db,
+      bundle({ id: 'fake:s2', sourcePath: '/fake/s2.jsonl', modelPrimary: 'claude-opus-5-5' }),
+    );
+
+    const models = db.query('SELECT id, provider, name FROM models').all() as {
+      id: number;
+      provider: string | null;
+      name: string;
+    }[];
+    expect(models).toEqual([{ id: expect.any(Number), provider: null, name: 'claude-opus-5-5' }]);
+  });
+
+  test('the same name with and without provider are distinct rows', () => {
+    const { db } = storeWithFakeHarness();
+    persistWithTitles(
+      db,
+      bundle({ modelPrimary: 'glm5.3-flash', modelPrimaryProvider: 'nan' }, [
+        { sessionId: 'fake:s1', seq: 0, kind: 'call', model: 'glm5.3-flash', modelProvider: 'nan' },
+      ]),
+    );
+    persistWithTitles(
+      db,
+      bundle({ id: 'fake:s2', sourcePath: '/fake/s2.jsonl', modelPrimary: 'glm5.3-flash' }),
+    );
+
+    const models = db.query('SELECT provider, name FROM models ORDER BY provider').all() as {
+      provider: string | null;
+      name: string;
+    }[];
+    expect(models.map((m) => [m.provider, m.name])).toEqual([
+      [null, 'glm5.3-flash'],
+      ['nan', 'glm5.3-flash'],
+    ]);
+  });
+
+  test('re-persisting a provider bundle adds no duplicate models rows', () => {
+    const { db } = storeWithFakeHarness();
+    const b = bundle({ modelPrimary: 'glm5.3-flash', modelPrimaryProvider: 'nan' }, [
+      { sessionId: 'fake:s1', seq: 0, kind: 'call', model: 'glm5.3-flash', modelProvider: 'nan' },
+    ]);
+    persistWithTitles(db, b);
+    persistWithTitles(db, b);
+
+    expect((db.query('SELECT name FROM models').all() as { name: string }[]).length).toBe(1);
+  });
+});
+
 describe('persistBundle: model identity (models table + FK ids)', () => {
   test('upserts distinct raw model strings and writes model_primary_id/model_id', () => {
     const { db } = storeWithFakeHarness();

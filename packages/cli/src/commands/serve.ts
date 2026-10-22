@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite';
-import type { AdapterContext, HarnessAdapter, ImportReport } from '@runwire/core';
-import { importAll, openStore } from '@runwire/core';
+import { homedir } from 'node:os';
+import type { AdapterContext, HarnessAdapter, ImportReport, ModelOverride } from '@runwire/core';
+import { importAll, modelsOverridesPath, openStore, readModelOverrides } from '@runwire/core';
 import { createServer, DEFAULT_HOST, DEFAULT_PORT } from '@runwire/server';
 import { adapters as defaultAdapters } from '../adapters';
 import { createContext, defaultDbPath, ensureDbDir, resolveUserPath } from '../context';
@@ -25,6 +26,7 @@ type ServeServerOptions = {
   port: number;
   allowNonLocal?: boolean;
   scan: () => Promise<ImportReport>;
+  modelOverrides: () => readonly ModelOverride[];
 };
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1']);
@@ -88,12 +90,16 @@ export async function runServe(opts: ServeOptions, deps: ServeDeps = {}): Promis
   // `--no-titles` must reach this context so a web scan obeys the same privacy
   // rule as `runwire import` (D7): what was never written cannot leak.
   const ctx = (deps.createContext ?? createContext)({ titles: opts.titles });
+  // Model overrides are re-read per request: the loader closure only
+  // resolves the path; the file read happens when the server handles a request.
+  const overridesPath = modelsOverridesPath(ctx.home ?? homedir());
   const server = (deps.createServer ?? createServer)({
     db,
     host,
     port,
     allowNonLocal: expose,
     scan: () => importAll({ adapters: deps.adapters ?? defaultAdapters, db, ctx }),
+    modelOverrides: () => readModelOverrides(overridesPath),
   });
   console.error(`runwire serve listening on http://${formatHost(host)}:${server.port}`);
 

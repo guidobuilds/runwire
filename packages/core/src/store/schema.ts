@@ -15,12 +15,22 @@ import type { Database } from 'bun:sqlite';
 // `sessions.model_primary`) are eliminated by a shape-guarded rebuild in
 // `migrate()`. `models.name` is the exact raw harness model string (the
 // canonical key; reserved names such as 'unknown'/'other' are stored as-is).
+// Identity is `(provider, name)`: `provider` is the serving provider the
+// harness reported (e.g. 'nan', 'openai', 'openai-codex'); NULL when the
+// harness does not report one (Claude Code — Anthropic implicit). The same
+// model name from two providers must coexist (e.g. a proxy vs the first-party
+// API), so the unique constraint lives in two partial indexes (created in
+// `migrate()`) instead of the table body: SQLite UNIQUE treats NULLs as
+// distinct, and NULL-provider names must still dedup by name.
+
+const MODELS_TABLE_BODY = `(
+  id INTEGER PRIMARY KEY,
+  provider TEXT,
+  name TEXT NOT NULL
+)`;
 
 const MODELS_TABLE = `
-CREATE TABLE IF NOT EXISTS models (
-  id INTEGER PRIMARY KEY,
-  name TEXT NOT NULL UNIQUE
-);
+CREATE TABLE IF NOT EXISTS models ${MODELS_TABLE_BODY};
 `;
 
 // Canonical column/shape bodies shared by the DDL (fresh DBs) and the
@@ -334,6 +344,34 @@ function buildCopySql(
  * reject), then restored, and `foreign_key_check` runs last: any violation
  * throws so a corrupt rebuild can never commit silently.
  */
+/**
+ * Shape-guarded rebuild of `models` for DBs created before provider identity
+ *: the legacy body had an inline `name TEXT NOT NULL UNIQUE`, which
+ * cannot be dropped without a table rebuild and would reject the same model
+ * name from two providers. The dance mirrors `rebuildModelIdentity`: ids are
+ * preserved (the copy keeps `id`), `provider` comes out NULL (no harness has
+ * reported one yet), and inbound FKs from `steps`/`sessions` survive the
+ * DROP/RENAME because `foreign_keys` is off while the tables swap. Any
+ * leftover violation throws via the post-rebuild `foreign_key_check` in
+ * `rebuildModelIdentity` (which runs after this on every legacy path).
+ */
+function rebuildModelsProvider(db: Database): void {
+  if (tableColumns(db, 'models').has('provider')) return;
+
+  const foreignKeysWasOn =
+    (db.query('PRAGMA foreign_keys').get() as { foreign_keys: number } | null)?.foreign_keys === 1;
+
+  db.exec('PRAGMA foreign_keys = OFF');
+  const run = db.transaction(() => {
+    db.exec(`CREATE TABLE models_new ${MODELS_TABLE_BODY}`);
+    db.exec('INSERT INTO models_new (id, provider, name) SELECT id, NULL, name FROM models');
+    db.exec('DROP TABLE models');
+    db.exec('ALTER TABLE models_new RENAME TO models');
+  });
+  run();
+  db.exec(`PRAGMA foreign_keys = ${foreignKeysWasOn ? 'ON' : 'OFF'}`);
+}
+
 function rebuildModelIdentity(db: Database): void {
   const rebuildSteps =
     tableColumns(db, 'steps').has('model') || !tableColumns(db, 'steps').has('model_id');
@@ -414,6 +452,10 @@ function rebuildModelIdentity(db: Database): void {
 /** Idempotent: every statement is IF NOT EXISTS, so running this twice is a no-op. */
 export function migrate(db: Database): void {
   db.exec(DDL);
+  // Provider identity: a pre-provider `models` table (inline
+  // `UNIQUE(name)`) is rebuilt to the `(provider, name)` body before anything
+  // inserts into it. A fresh DB (or a second `migrate()`) is a no-op.
+  rebuildModelsProvider(db);
   // Source-identity split (design §2.4): additive nullable columns + backfill
   // + UNIQUE index on the effective source id. The backfill runs BEFORE the
   // UNIQUE INDEX so no NULL source_id exists at index time. A second
@@ -458,6 +500,16 @@ export function migrate(db: Database): void {
     'CREATE INDEX IF NOT EXISTS idx_sessions_root_started ON sessions(started_at, id) WHERE parent_id IS NULL',
   );
   db.exec('CREATE INDEX IF NOT EXISTS idx_steps_session_id ON steps(session_id)');
+  // The two partial unique indexes are the (provider, name) identity: SQLite
+  // UNIQUE treats NULLs as distinct, so NULL-provider names need their own
+  // index to dedup among themselves. Created AFTER the rebuilds, like every
+  // other index here; idempotent (IF NOT EXISTS).
+  db.exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_models_provider_name ON models(provider, name) WHERE provider IS NOT NULL',
+  );
+  db.exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_models_name_no_provider ON models(name) WHERE provider IS NULL',
+  );
   db.exec(
     'CREATE INDEX IF NOT EXISTS idx_steps_session_kind_model ON steps(session_id, kind, model_id)',
   );

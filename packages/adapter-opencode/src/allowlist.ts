@@ -21,7 +21,7 @@ import type { Projection } from '@runwire/core';
 export const opencodeAllowlist: Projection = {
   type: true,
   role: true,
-  model: { id: true },
+  model: { id: true, providerID: true },
   previous: { id: true },
   time: { created: true, completed: true, streamed: true },
   tokens: {

@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { lookupModelCatalog } from '../models/catalog';
+import { type ModelOverride, resolveModelCatalog } from '../models/catalog';
 import { profileScopeCte, profileScopeParams } from './profile-scope';
 import type {
   LaneAgent,
@@ -24,6 +24,7 @@ type StepRow = {
   at: string | null;
   kind: string;
   model: string | null;
+  model_provider: string | null;
   tool_category: string | null;
   call_id: string | null;
   error: number | null;
@@ -49,7 +50,7 @@ const NODES_SQL = `
   ORDER BY s.started_at ASC, s.id COLLATE BINARY
 `;
 const STEPS_SQL = `
-  SELECT st.session_id, st.seq, st.at, st.kind, m.name AS model,
+  SELECT st.session_id, st.seq, st.at, st.kind, m.name AS model, m.provider AS model_provider,
     st.tool_category, st.call_id, st.error,
     st.uncached_input, st.cached_input, st.cache_write, st.output,
     st.compaction_trigger, st.pre_tokens, st.post_tokens, st.from_value, st.to_value
@@ -107,7 +108,7 @@ function emptyCalls(): LaneCalls {
 function assemble(
   rows: readonly StepRow[],
   children: ReadonlyMap<string, string[]>,
-  modelIndex: (name: string | null) => number,
+  modelIndex: (name: string | null, provider: string | null) => number,
 ): { calls: LaneCalls; excluded: number } {
   const calls = emptyCalls();
   let current: number | null = null;
@@ -123,7 +124,7 @@ function assemble(
       current = calls.seq.length;
       calls.seq.push(row.seq);
       calls.at.push(row.at);
-      calls.model.push(modelIndex(row.model));
+      calls.model.push(modelIndex(row.model, row.model_provider));
       calls.promptInput.push(
         hasInput
           ? (row.uncached_input ?? 0) + (row.cached_input ?? 0) + (row.cache_write ?? 0)
@@ -186,6 +187,7 @@ export function readProfileLanes(
   db: Database,
   sessionId: string,
   query: { scope: Scope },
+  modelOverrides: readonly ModelOverride[] = [],
 ): LanesResponse | null {
   const prefix = profileScopeCte(query.scope);
   const params = profileScopeParams(sessionId);
@@ -215,13 +217,17 @@ export function readProfileLanes(
   }
   const models: LaneModel[] = [];
   const modelIndices = new Map<string, number>();
-  const modelIndex = (name: string | null): number => {
+  const modelIndex = (name: string | null, provider: string | null): number => {
     if (name === null) return -1;
-    const existing = modelIndices.get(name);
+    // Identity is (provider, name): the same name through two
+    // providers can resolve to different windows via overrides, so both get
+    // their own LaneModel row.
+    const key = JSON.stringify([provider, name]);
+    const existing = modelIndices.get(key);
     if (existing !== undefined) return existing;
     const index = models.length;
-    models.push({ name, ...lookupModelCatalog(name) });
-    modelIndices.set(name, index);
+    models.push({ name, ...resolveModelCatalog(provider, name, modelOverrides) });
+    modelIndices.set(key, index);
     return index;
   };
   const agents: LaneAgent[] = [];
