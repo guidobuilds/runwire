@@ -11,6 +11,7 @@ Structure-only inspection (keys, record types, counts) of the harness data prese
 | Grok Build | per-session directory under `~/.grok/sessions/<url-encoded cwd>/<uuid>/` | 14 | per turn in `updates.jsonl` | `subagents/<id>/meta.json` | later |
 | OpenCode | SQLite `~/.local/share/opencode/{opencode.db, opencode-tui-v2.db}` (WAL) | 73 (59 current + 14 legacy) | per API call (from `session_message.data.tokens`) | `session_v2.parent_id` / `session.parent_id` | **M?** (adapter built 2026-09-05) |
 | Pi | `~/.pi/agent/sessions/<encoded cwd>/<timestamp>_<uuidv7>.jsonl` (one append-only JSONL tree per session) | 1 file / 371 records on the reference machine (2026-09-08) | per API call (one message per call; extra usage on compaction/branch_summary/toolResult) | extension-dispatched only; unlinkable (gentle-agents/) | adapter built 2026-09-10 (D78–D81) |
+| Gentle Shell | own Pi home: `~/.gentle-shell/agent/sessions/…` (shape A), the user's Pi home (shapes B/C); children flat under `<agent>/gentle-agents/sessions/`; ledger `<agent>/gentle-agents/tasks/<id>.json` | 30 files (isolated) + 332 (Pi home) on 2026-10-22 | per API call; children are their own sessions; ledger token/cost aggregates duplicate them | **linkable** via the task ledger (`parentSessionId` + `sessionPath` + parent `subagent_run` result), capped at 200 tasks | implemented 2026-10-22 (D84–D88; `adapters/gentle-shell.md`) |
 | Antigravity | no local trajectory store found | — | — | — | dropped (D11) |
 
 ## Claude Code
@@ -76,6 +77,46 @@ See [adapters/pi.md](adapters/pi.md) for the full mapping. Key facts:
   open extension vocabulary; unknown names degrade to `other` (D31).
 - **Capabilities:** 14 of 20 declarable; nothing is persisted for `version`, `initiator`, `git`,
   `mode` or `title`, and there are no built-in subagents (D78/D79/D81).
+- **Version drift:** the reference machine also runs Pi **1.2.0** (pinned by Gentle Shell), which
+  keeps format `version: 3` but adds `system` messages, `usage` and `context_edit` entries,
+  per-message `durationMs` and `toolResult.nestedCalls`. The Pi adapter still targets 0.85.1 and
+  would ignore the new `usage` entries (undercount), report `system` as an unknown role and miss
+  the direct tool durations — see [adapters/gentle-shell.md](adapters/gentle-shell.md) §3.
+
+## Gentle Shell
+
+See [adapters/gentle-shell.md](adapters/gentle-shell.md) for the full mapping. Key facts:
+
+- **It is a Pi-native shell, not a new format.** `gentle-pi` pins an upstream
+  `@earendil-works/pi-coding-agent` (1.2.0 on the reference machine) and keeps sessions as Pi v3
+  JSONL. The harness identity is not in the header.
+- **Three homes:** isolated `~/.gentle-shell/agent` (default), installed into `~/.pi/agent`
+  (Path B), and `--link` reusing `~/.pi/agent` (shape C). The `gentle-agents/` tree always lives
+  under the active agent home.
+- **Implemented (2026-10-22).** `createGentleShellAdapter()` ships alongside Pi in
+  `packages/adapter-pi`, registered after Pi. Home-scoped attribution (D88): isolated-home
+  parents and both homes' `gentle-agents/sessions` trees are `gentle-shell`; shared Pi-home
+  parents remain `pi`. No cross-read: spawn call ids are resolved only from Gentle Shell-owned
+  parents, never from `pi:` parent files.
+- **Subagents are linkable.** Children are full Pi sessions under
+  `<agent>/gentle-agents/sessions/` (flat dir, no `parentSession` header). The ledger
+  `gentle-agents/tasks/<id>.json` carries `parentSessionId`, `sessionPath`, `agent`, `mode` and
+  the duplicated `tokens`/`cost`/`turns`/`toolCalls` aggregates. `spawnCallId` comes from the
+  Gentle Shell-owned parent's `subagent_run` tool result (`details.gentleAgents.taskId`).
+  Ledger aggregates are never used; only link metadata leaves the ledger projection.
+- **The ledger is capped** at `history_max_tasks` (default 200, global). On the reference machine
+  15/16 children were linkable in the isolated home but only 200/315 in the Pi home.
+- **Children coverage (structure-only snapshot, 2026-10-22):** the isolated home has 14 parent
+  and 16 child files (15 linkable); the Pi home has 17 parent and 315 child files (200 linkable).
+  Both child trees are now covered, including unlinked children (counted as roots, not dropped).
+  The remaining attribution gap is shared-home parents: they stay `pi`. If exact re-attribution
+  becomes necessary, evaluate B′ (fingerprint + negative cache) before C (family contract).
+- **Implementation validation (later live snapshot, counts only):** 17 isolated-home parents,
+  19 isolated-home children and 315 Pi-home children imported (351 Gentle Shell sessions).
+  Resolved links: 17 isolated + 154 Pi-home; spawn call ids: 17 isolated, 0 Pi-home (no cross-read).
+  A fresh full import includes the `gentle-shell` harness row with all 16 capabilities.
+- **Capabilities:** 16 of 20 (Pi's 14 + `subagents` + `initiator`); `mode`, `version`, `title`
+  and `git` remain unavailable (machine-global or not persisted per session).
 
 ## Antigravity
 
