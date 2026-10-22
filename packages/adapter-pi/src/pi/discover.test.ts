@@ -4,7 +4,7 @@ import type { AdapterContext, Known, RunwireFs, SessionBundle } from '@runwire/c
 import { createBunFs, createMemoryFs } from '@runwire/core';
 import { discover, probe } from './discover';
 
-const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', 'fixtures', 'pi');
+const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', '..', 'fixtures', 'pi');
 const SMALL_UUID = 'a1000000-0000-7000-8000-000000000001';
 
 function ctxFor(name: string, overrides: Partial<AdapterContext> = {}): AdapterContext {
