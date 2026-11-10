@@ -98,6 +98,7 @@ type SourceBundleInput = {
   fallbackCwd?: string;
   subagent?: Parameters<typeof computeBundle>[0]['subagent'];
   initiator?: Parameters<typeof computeBundle>[0]['initiator'];
+  knownSessionUuids?: Parameters<typeof computeBundle>[0]['knownSessionUuids'];
 };
 
 /** Reads + computes one source; a read failure yields a stub bundle instead of throwing. */
@@ -130,6 +131,7 @@ async function computeSourceBundle(
       toolCategory: gentleToolCategory,
       subagent: input.subagent,
       initiator: input.initiator,
+      knownSessionUuids: input.knownSessionUuids,
       ctx,
     });
   } catch (err) {
@@ -341,6 +343,46 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
     return bundle;
   }
 
+  /**
+   * Revalidate every root touched by enumeration (D83): a vanished root means
+   * the enumeration was partial; throwing keeps history and clears the
+   * completed-refresh marker instead of pruning. Called before the first child
+   * is emitted as well as at the end, because child candidates are statted
+   * before the first bundle (fork resolution needs their uuids) and a root that
+   * vanished since must throw, never emit a stale or stub bundle.
+   */
+  async function revalidateTouchedRoots(): Promise<void> {
+    for (const root of touchedRoots) {
+      const stat = await ctx.fs.stat(root);
+      if (!stat?.isDirectory) throw enumeratedDirVanished(root);
+    }
+  }
+
+  // --- children candidates (filesystem only) ---
+  // Enumerated before the first bundle so `knownUuids` (parents ∪ children) is
+  // complete when a Pi 1.5.0 `parentSession` header resolves. Dispatch order
+  // below is unchanged: parents first, then children.
+  const candidates: ChildCandidate[] = [];
+  for (const { home, root } of childrenRoots(ctx)) {
+    const rootStat = await ctx.fs.stat(root);
+    if (!rootStat?.isDirectory) continue;
+    touchedRoots.push(root);
+    for (const entry of [...(await ctx.fs.readdir(root))].sort()) {
+      if (!isSessionFile(entry)) continue;
+      const path = join(root, entry);
+      const stat = await ctx.fs.stat(path);
+      if (!stat) continue;
+      candidates.push({ uuid: sessionIdFromRootFile(entry), path, stat, home });
+    }
+  }
+
+  // An imported uuid is either a parent file or a child candidate; a fork header
+  // naming anything else degrades to a diagnostic (see compute.ts).
+  const knownUuids = new Set<string>([
+    ...link.parents.keys(),
+    ...candidates.map((candidate) => candidate.uuid),
+  ]);
+
   // --- parents (isolated home only) ---
   if (!sharesParentRoot(ctx)) {
     const root = gentleParentsRoot(ctx);
@@ -370,6 +412,7 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
               sizeBytes: stat.sizeBytes,
               mtimeMs: stat.mtimeMs,
               fallbackCwd,
+              knownSessionUuids: knownUuids,
             }),
           );
         }
@@ -377,20 +420,7 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
     }
   }
 
-  // --- children: flat directories, deduped by uuid across homes ---
-  const candidates: ChildCandidate[] = [];
-  for (const { home, root } of childrenRoots(ctx)) {
-    const rootStat = await ctx.fs.stat(root);
-    if (!rootStat?.isDirectory) continue;
-    touchedRoots.push(root);
-    for (const entry of [...(await ctx.fs.readdir(root))].sort()) {
-      if (!isSessionFile(entry)) continue;
-      const path = join(root, entry);
-      const stat = await ctx.fs.stat(path);
-      if (!stat) continue;
-      candidates.push({ uuid: sessionIdFromRootFile(entry), path, stat, home });
-    }
-  }
+  await revalidateTouchedRoots();
 
   const byUuid = new Map<string, ChildCandidate[]>();
   for (const candidate of candidates) {
@@ -452,17 +482,12 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
             }
           : undefined,
       initiator: task ? { kind: 'machine', automation: 'subagent-dispatch' } : undefined,
+      knownSessionUuids: knownUuids,
     });
     // Ledger aggregates are never used (S9); only identity and linkage diagnostics survive.
     bundle.diagnostics = [...bundle.diagnostics, ...extraDiagnostics];
     yield attachLedgerDiagnostic(bundle);
   }
 
-  // Revalidate every root touched by enumeration (D83): a vanished root means
-  // the enumeration was partial; throwing keeps history and clears the
-  // completed-refresh marker instead of pruning.
-  for (const root of touchedRoots) {
-    const stat = await ctx.fs.stat(root);
-    if (!stat?.isDirectory) throw enumeratedDirVanished(root);
-  }
+  await revalidateTouchedRoots();
 }

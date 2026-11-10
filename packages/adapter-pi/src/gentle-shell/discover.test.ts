@@ -181,6 +181,123 @@ describe('gentle-shell compute and linkage', () => {
   });
 });
 
+function deltaContext(files: Record<string, string>): AdapterContext {
+  return { ...contextForFixture('small'), home: '/home/u', fs: createMemoryFs({ files }) };
+}
+
+const SESSIONS = '/home/u/.gentle-shell/agent/sessions/--project--';
+const sessionFile = (stamp: string, uuid: string) => `${SESSIONS}/${stamp}_${uuid}.jsonl`;
+const lines = (records: unknown[]) => `${records.map((r) => JSON.stringify(r)).join('\n')}\n`;
+
+describe('gentle-shell Pi 1.5.0 delta', () => {
+  test('session_info and context_edit are observed as harness steps, never as unknown types', async () => {
+    const path = sessionFile('2026-01-11T00-00-00-000Z', 'delta');
+    const ctx = deltaContext({
+      [path]: lines([
+        { type: 'session', version: 3, id: 'delta', cwd: '/project' },
+        {
+          type: 'session_info',
+          id: 'd1',
+          parentId: null,
+          timestamp: '2026-01-11T00:00:01.000Z',
+          name: 'RUNWIRE_CANARY_NAME',
+        },
+        {
+          type: 'context_edit',
+          id: 'd2',
+          parentId: 'd1',
+          timestamp: '2026-01-11T00:00:02.000Z',
+          targetId: 'd1',
+          replacement: 'RUNWIRE_CANARY_CONTEXT',
+        },
+        {
+          type: 'message',
+          id: 'd3',
+          parentId: 'd2',
+          timestamp: '2026-01-11T00:00:03.000Z',
+          message: { role: 'user', content: 'RUNWIRE_CANARY_PROMPT' },
+        },
+      ]),
+    });
+
+    const [bundle] = await collect(ctx);
+    expect(bundle?.steps.map((s) => s.toolName ?? s.kind)).toEqual([
+      'session-info',
+      'context-edit',
+      'turn',
+    ]);
+    expect(bundle?.diagnostics).toEqual([]);
+    expect(JSON.stringify(bundle)).not.toContain('RUNWIRE_CANARY');
+  });
+
+  test('a parentSession naming an imported session yields a fork link with no parentId', async () => {
+    const parent = sessionFile('2026-01-11T01-00-00-000Z', 'fork-parent');
+    const fork = sessionFile('2026-01-11T02-00-00-000Z', 'fork-child');
+    const ctx = deltaContext({
+      [parent]: lines([
+        { type: 'session', version: 3, id: 'fork-parent', cwd: '/project' },
+        {
+          type: 'message',
+          id: 'p1',
+          parentId: null,
+          timestamp: '2026-01-11T01:00:01.000Z',
+          message: { role: 'user' },
+        },
+      ]),
+      [fork]: lines([
+        {
+          type: 'session',
+          version: 3,
+          id: 'fork-child',
+          cwd: '/project',
+          parentSession: parent,
+        },
+        {
+          type: 'message',
+          id: 'f1',
+          parentId: null,
+          timestamp: '2026-01-11T02:00:01.000Z',
+          message: { role: 'user' },
+        },
+      ]),
+    });
+
+    const bundles = await collect(ctx);
+    const child = bundles.find((b) => b.session.id === 'gentle-shell:fork-child');
+    expect(child?.session).toMatchObject({
+      relation: 'fork',
+      forkedFrom: 'gentle-shell:fork-parent',
+      depth: 0,
+    });
+    expect(child?.session.parentId).toBeUndefined();
+    expect(child?.diagnostics).toEqual([]);
+  });
+
+  test('an unresolvable parentSession reports an info diagnostic instead of throwing', async () => {
+    const path = sessionFile('2026-01-11T03-00-00-000Z', 'orphan-fork');
+    const ctx = deltaContext({
+      [path]: lines([
+        {
+          type: 'session',
+          version: 3,
+          id: 'orphan-fork',
+          cwd: '/project',
+          parentSession: sessionFile('2026-01-11T00-00-00-000Z', 'never-imported'),
+        },
+      ]),
+    });
+
+    const [bundle] = await collect(ctx);
+    expect(bundle?.session.id).toBe('gentle-shell:orphan-fork');
+    expect(bundle?.session.relation).toBeUndefined();
+    expect(bundle?.session.forkedFrom).toBeUndefined();
+    expect(bundle?.diagnostics).toMatchObject([
+      { level: 'info', code: 'unresolved-parent-session', count: 1 },
+    ]);
+    expect(JSON.stringify(bundle)).not.toContain('never-imported');
+  });
+});
+
 describe('gentle-shell discovery', () => {
   test('probe returns every candidate root, even the missing ones', async () => {
     const ctx = contextForFixture('small');

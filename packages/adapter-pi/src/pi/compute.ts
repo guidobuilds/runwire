@@ -37,6 +37,13 @@ export type ComputeBundleInput = {
   initiator?: { kind: 'human' | 'machine'; surface?: string; automation?: string };
   toolCategory?: (name: string) => ToolCategory;
   pi12?: boolean;
+  /**
+   * Uuids of the sessions the caller is importing. Gentle Shell passes these so
+   * a Pi 1.5.0 `parentSession` header only becomes a fork link when its basename
+   * names an imported session; Pi omits them and keeps linking unconditionally
+   * (pi.md §5.3: a deleted parent file must not orphan the fork).
+   */
+  knownSessionUuids?: ReadonlySet<string>;
   ctx: AdapterContext;
 };
 
@@ -168,15 +175,32 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
     );
   }
 
+  // Pi 1.5.0 headers may carry `parentSession` (fork/clone). The parent is
+  // referenced by its file path, so only the basename carries the uuid.
   const forkSource = header?.parentSession;
+  const forkUuid = forkSource ? sessionIdFromRootFile(basename(forkSource)) : undefined;
+  // Absent `knownSessionUuids` (the Pi adapter) keeps the unconditional link.
+  const knownUuids = input.knownSessionUuids;
+  const forkResolved =
+    forkUuid !== undefined && (knownUuids === undefined || knownUuids.has(forkUuid));
   const relation: Session['relation'] = input.subagent
     ? 'subagent'
-    : forkSource
+    : forkResolved
       ? 'fork'
       : undefined;
-  const forkedFrom = forkSource
-    ? `${HARNESS_ID}:${sessionIdFromRootFile(basename(forkSource))}`
-    : undefined;
+  const forkedFrom =
+    forkResolved && forkUuid !== undefined ? `${HARNESS_ID}:${forkUuid}` : undefined;
+  if (forkSource && !forkResolved) {
+    // Diagnostics carry counts only, never the referenced path.
+    diagnostics.push(
+      makeDiagnostic(
+        'info',
+        'unresolved-parent-session',
+        'The header parentSession names no imported session',
+        { count: 1 },
+      ),
+    );
+  }
 
   const project: Project = cwd
     ? await resolveProject(cwd)

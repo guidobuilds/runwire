@@ -9,13 +9,27 @@ const usageProjection: Projection = {
   cacheWrite: true,
   reasoning: true,
   totalTokens: true,
-  cost: { input: true, output: true, cacheRead: true, cacheWrite: true, total: true },
+  cost: {
+    input: true,
+    output: true,
+    cacheRead: true,
+    cacheWrite: true,
+    total: true,
+    // Pi 1.5.0: whether the provider itself reported the total (a boolean, so
+    // it leaks no rates or content).
+    totalFromProvider: true,
+  },
 };
 
 /**
  * The only fields this adapter is permitted to read from a raw Pi v3 record
  * (docs/adapters/gentle-shell.md §7). Same base as `piAllowlist` plus the Pi 1.2
- * additions and the Gentle Shell extension metadata.
+ * and Pi 1.5.0 additions and the Gentle Shell extension metadata.
+ *
+ * Pi 1.5.0 adds metadata only: assistant `message.rawStopReason` (provider
+ * stop-reason string, never message text), `usage.cost.totalFromProvider` and
+ * `custom_message.display` (both booleans). `providerThinkingLevel` was already
+ * projected before that delta and is left untouched until real data confirms it.
  *
  * Excluded, each with its content hazard (gentle-shell.md §7 table) — the Pi
  * exclusions above plus:
@@ -38,6 +52,12 @@ export const gentleShellAllowlist: Projection = {
   // Pi 1.2 / Gentle Shell entry-level metadata.
   kind: true,
   customType: true,
+  // Pi 1.5.0: whether a custom_message is surfaced in the TUI (boolean; the
+  // `content` it would surface stays excluded).
+  display: true,
+  // Same shared projection as `message.usage`, so a compaction/branch entry
+  // usage carries `cost.totalFromProvider` too.
+  usage: usageProjection,
   message: {
     // Spell the whole envelope out so nothing silently diverges from
     // `piAllowlist`; the shared usage projection keeps the token/cost leaves
@@ -53,6 +73,8 @@ export const gentleShellAllowlist: Projection = {
     thinkingLevel: true,
     durationMs: true,
     stopReason: true,
+    // Pi 1.5.0: the provider's own stop-reason string (metadata, not text).
+    rawStopReason: true,
     timestamp: true,
     toolCallId: true,
     toolName: true,
