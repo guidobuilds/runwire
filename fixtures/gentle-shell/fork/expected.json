@@ -5,26 +5,68 @@
       "harnessId": "gentle-shell",
       "projectKey": "/home/u/gs",
       "relation": "fork",
-      "forkedFrom": "gentle-shell:b0000000-0000-7000-8000-000000000001",
+      "forkedFrom": "gentle-shell:b0000000-0000-7000-8000-0000000000f1",
       "depth": 0,
       "cwd": "/home/u/gs",
       "startedAt": "2026-01-10T00:00:00.000Z",
       "endedAt": "2026-01-10T00:00:01.000Z",
       "durationMs": 1000,
       "turns": 1,
-      "sourceSize": 389,
+      "sourceSize": 440,
       "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-10T00-00-00-000Z_b0000000-0000-7000-8000-000000000010.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-0000000000f1",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-01T00:00:00.000Z",
+      "endedAt": "2026-01-01T00:00:01.000Z",
+      "durationMs": 1000,
+      "turns": 1,
+      "sourceSize": 310,
+      "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-01T00-00-00-000Z_b0000000-0000-7000-8000-0000000000f1.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-0000000000f2",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-11T00:00:00.000Z",
+      "endedAt": "2026-01-11T00:00:01.000Z",
+      "durationMs": 1000,
+      "turns": 1,
+      "sourceSize": 447,
+      "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-11T00-00-00-000Z_b0000000-0000-7000-8000-0000000000f2.jsonl"
     }
   ],
   "stepCounts": {
     "gentle-shell:b0000000-0000-7000-8000-000000000010": {
       "turn": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-0000000000f1": {
+      "turn": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-0000000000f2": {
+      "turn": 1
     }
   },
   "toolCounts": {
-    "gentle-shell:b0000000-0000-7000-8000-000000000010": {}
+    "gentle-shell:b0000000-0000-7000-8000-000000000010": {},
+    "gentle-shell:b0000000-0000-7000-8000-0000000000f1": {},
+    "gentle-shell:b0000000-0000-7000-8000-0000000000f2": {}
   },
   "diagnostics": {
-    "gentle-shell:b0000000-0000-7000-8000-000000000010": []
+    "gentle-shell:b0000000-0000-7000-8000-000000000010": [],
+    "gentle-shell:b0000000-0000-7000-8000-0000000000f1": [],
+    "gentle-shell:b0000000-0000-7000-8000-0000000000f2": [
+      {
+        "level": "info",
+        "code": "unresolved-parent-session",
+        "count": 1
+      }
+    ]
   }
 }

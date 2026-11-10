@@ -71,3 +71,132 @@ describe('gentleShellAllowlist: Pi 1.5 metadata', () => {
     expect(out).toEqual({ type: 'session_info' });
   });
 });
+
+// 4.x extension metadata (S3): one custom entry can carry an orchestrator marker
+// and a spawn-link corroboration; everything else in `data` stays unread.
+const PUBLISHED_STATE = 'gentle-agents.published-state';
+const REVIEW_RECEIPT = 'gentle-pi.review-reminder-receipt/v1';
+
+describe('gentleShellAllowlist: 4.x custom metadata', () => {
+  test('published-state keeps a bounded presence marker and never its state prose', () => {
+    const out = project(
+      {
+        type: 'custom',
+        customType: PUBLISHED_STATE,
+        data: {
+          schema: 3,
+          sessionId: 'b1',
+          recordedAt: '2026-01-11T00:00:00.000Z',
+          cwd: '/project',
+          source: 'subagent',
+          ownerReply: 'RUNWIRE_CANARY_OWNER_REPLY',
+          authority: 'orchestrator',
+          state: { summary: 'RUNWIRE_CANARY_STATE' },
+          aliases: {
+            initialAlias: 'RUNWIRE_CANARY_ALIAS_A',
+            currentAlias: 'RUNWIRE_CANARY_ALIAS_B',
+          },
+        },
+      },
+      gentleShellAllowlist,
+    ) as Rec;
+
+    // `aliases` is projected with an EMPTY rule: the marker keeps the aliases
+    // object only when it is an object, and collapses every alias id, so the
+    // orchestrator marker is presence-only for the alias values.
+    expect(out).toEqual({
+      type: 'custom',
+      customType: PUBLISHED_STATE,
+      data: {
+        schema: 3,
+        recordedAt: '2026-01-11T00:00:00.000Z',
+        authority: 'orchestrator',
+        source: 'subagent',
+        aliases: {},
+      },
+    });
+    expect(JSON.stringify(out)).not.toContain('RUNWIRE_CANARY');
+  });
+
+  test('review-reminder receipt keeps only the spawn identity discover corroborates', () => {
+    const out = project(
+      {
+        type: 'custom',
+        customType: REVIEW_RECEIPT,
+        data: {
+          kind: 'review',
+          sessionId: 'b1',
+          root: '/project',
+          id: 'r1',
+          source: 'subagent',
+          toolName: 'subagent_run',
+          toolCallId: 'tc9',
+          taskId: 'task-9',
+          writerModelId: 'RUNWIRE_CANARY_MODEL',
+          writerEffort: 'high',
+        },
+      },
+      gentleShellAllowlist,
+    ) as Rec;
+
+    expect(out.data).toEqual({ source: 'subagent', toolCallId: 'tc9', taskId: 'task-9' });
+    expect(JSON.stringify(out)).not.toContain('RUNWIRE_CANARY');
+  });
+
+  test('every other observed extension customType stays presence-only', () => {
+    const driven = project(
+      {
+        type: 'custom',
+        customType: 'synthetic-extension',
+        data: { schema: 1, recordedAt: '2026-01-11T00:00:00.000Z' },
+      },
+      gentleShellAllowlist,
+    ) as Rec;
+    // The mechanism is per-key, not per-type: a handful of metadata keys is
+    // projected for every customType, so they are chosen to be safe anywhere.
+    expect(driven.data).toEqual({ schema: 1, recordedAt: '2026-01-11T00:00:00.000Z' });
+    const hazard = {
+      title: 'RUNWIRE_CANARY_TITLE',
+      text: 'RUNWIRE_CANARY_TEXT',
+      prompt: 'RUNWIRE_CANARY_PROMPT',
+      result: 'RUNWIRE_CANARY_RESULT',
+      before: { content: 'RUNWIRE_CANARY_BEFORE' },
+      after: { content: 'RUNWIRE_CANARY_AFTER' },
+    };
+    for (const customType of [
+      'gentle-pi.session-worktree/v1',
+      'gentle-pi.session-change/v1',
+      'gentle-agents.stale-result',
+      'gentle-agents.result',
+      'gentle-agents.message',
+      'gentle-todo-state',
+    ]) {
+      const out = project(
+        { type: 'custom', customType, data: hazard },
+        gentleShellAllowlist,
+      ) as Rec;
+      // An empty `data` marker is presence only: none of the bounded keys are in
+      // these payloads, so nothing but the object itself survives.
+      expect(out, customType).toEqual({ type: 'custom', customType, data: {} });
+      expect(JSON.stringify(out), customType).not.toContain('RUNWIRE_CANARY');
+    }
+
+    // S3c: exploration-budget is a custom_message whose `details` stay unread.
+    const budget = project(
+      {
+        type: 'custom_message',
+        customType: 'gentle-pi.exploration-budget',
+        display: true,
+        content: 'RUNWIRE_CANARY_CONTENT',
+        details: hazard,
+      },
+      gentleShellAllowlist,
+    ) as Rec;
+    expect(budget).toEqual({
+      type: 'custom_message',
+      customType: 'gentle-pi.exploration-budget',
+      display: true,
+    });
+    expect(JSON.stringify(budget)).not.toContain('RUNWIRE_CANARY');
+  });
+});

@@ -5,7 +5,7 @@
 // never reads another adapter's files (S8): parent resolution below is an
 // existence check on file NAMES, not a content read.
 import { join } from 'node:path/posix';
-import type { AdapterContext, Diagnostic, Known, SessionBundle } from '@runwire/core';
+import type { AdapterContext, Diagnostic, Known, Projection, SessionBundle } from '@runwire/core';
 import { makeDiagnostic, project, readLinesRaw } from '@runwire/core';
 import { computeBundle } from '../pi/compute';
 import { decodeProjectDirname, isSessionFile, sessionIdFromRootFile } from '../pi/paths';
@@ -265,34 +265,71 @@ function childDiagnostics(uuid: string, link: LinkState, isDuplicate: boolean): 
   return diagnostics;
 }
 
+/**
+ * Spawn identity of one parent session (gentle-shell.md §5.1, S3b).
+ * `receiptOnly` holds the task ids whose toolCallId came ONLY from a
+ * `review-reminder-receipt` entry, so the caller can report the count without
+ * naming anything.
+ */
+type SpawnCalls = { calls: Map<string, string>; receiptOnly: Set<string> };
+
+/** The 4.x receipt that corroborates a subagent spawn (S3b). */
+const RECEIPT_CUSTOM_TYPE = 'gentle-pi.review-reminder-receipt/v1';
+
+/**
+ * Identity projection for the parent scan: the `gentleAgents` toolResult
+ * identity is the primary source, a subagent receipt the secondary one. Every
+ * other receipt key (`root`, `id`, `toolName`, `writerModelId`,
+ * `writerEffort`) and every other custom payload stays unread.
+ */
+const SPAWN_LINK_PROJECTION: Projection = {
+  message: { role: true, toolCallId: true, details: { gentleAgents: { taskId: true } } },
+  customType: true,
+  data: { source: true, taskId: true, toolCallId: true },
+};
+
+type SpawnIdentity = {
+  message?: {
+    role?: unknown;
+    toolCallId?: unknown;
+    details?: { gentleAgents?: { taskId?: unknown } };
+  };
+  customType?: unknown;
+  data?: { source?: unknown; taskId?: unknown; toolCallId?: unknown };
+};
+
 /** Retain only spawn identity from owned parents; Pi-owned paths never reach this reader. */
-async function spawnCalls(ctx: AdapterContext, parent: ParentSource): Promise<Map<string, string>> {
-  const calls = new Map<string, string>();
-  if (parent.harness !== HARNESS_ID) return calls;
+async function spawnCalls(ctx: AdapterContext, parent: ParentSource): Promise<SpawnCalls> {
+  const primary = new Map<string, string>();
+  const secondary = new Map<string, string>();
+  if (parent.harness !== HARNESS_ID) return { calls: primary, receiptOnly: new Set<string>() };
   try {
     for await (const { line } of readLinesRaw(ctx.fs.openStream(parent.path), {
       truncated: false,
       oversizedLines: 0,
     })) {
-      if (!line.includes('gentleAgents')) continue;
+      if (!line.includes('gentleAgents') && !line.includes(RECEIPT_CUSTOM_TYPE)) continue;
       try {
-        const identity = project(JSON.parse(line), {
-          message: { role: true, toolCallId: true, details: { gentleAgents: { taskId: true } } },
-        }) as {
-          message?: {
-            role?: unknown;
-            toolCallId?: unknown;
-            details?: { gentleAgents?: { taskId?: unknown } };
-          };
-        };
+        const identity = project(JSON.parse(line), SPAWN_LINK_PROJECTION) as SpawnIdentity;
         const message = identity.message;
         const taskId = message?.details?.gentleAgents?.taskId;
         if (
           message?.role === 'toolResult' &&
           typeof taskId === 'string' &&
           typeof message.toolCallId === 'string'
-        )
-          calls.set(taskId, message.toolCallId);
+        ) {
+          primary.set(taskId, message.toolCallId);
+          continue;
+        }
+        const data = identity.data;
+        if (
+          identity.customType === RECEIPT_CUSTOM_TYPE &&
+          data?.source === 'subagent' &&
+          typeof data.taskId === 'string' &&
+          typeof data.toolCallId === 'string'
+        ) {
+          if (!secondary.has(data.taskId)) secondary.set(data.taskId, data.toolCallId);
+        }
       } catch {
         // Malformed lines cannot supply a spawn identity.
       }
@@ -300,7 +337,15 @@ async function spawnCalls(ctx: AdapterContext, parent: ParentSource): Promise<Ma
   } catch {
     // A missing/unreadable owned parent leaves spawnCallId unknown.
   }
-  return calls;
+
+  // Primary wins: a receipt only fills a slot the toolResult identity left empty.
+  const receiptOnly = new Set<string>();
+  for (const [taskId, toolCallId] of secondary) {
+    if (primary.has(taskId)) continue;
+    primary.set(taskId, toolCallId);
+    receiptOnly.add(taskId);
+  }
+  return { calls: primary, receiptOnly };
 }
 
 function childDepth(
@@ -325,7 +370,7 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
     parents: await parentIndex(ctx),
   };
   const touchedRoots: string[] = [];
-  const spawnByParent = new Map<string, Map<string, string>>();
+  const spawnByParent = new Map<string, SpawnCalls>();
   let ledgerDiagnosticPending = link.ledger.invalidFiles > 0;
   function attachLedgerDiagnostic(bundle: SessionBundle): SessionBundle {
     if (ledgerDiagnosticPending) {
@@ -459,12 +504,23 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
       (parentUuid && link.ledger.byChildUuid.has(parentUuid) ? HARNESS_ID : undefined);
     let spawnCallId: string | undefined;
     if (parentUuid && parent?.harness === HARNESS_ID && task) {
-      let calls = spawnByParent.get(parentUuid);
-      if (!calls) {
-        calls = await spawnCalls(ctx, parent);
-        spawnByParent.set(parentUuid, calls);
+      let spawn = spawnByParent.get(parentUuid);
+      if (!spawn) {
+        spawn = await spawnCalls(ctx, parent);
+        spawnByParent.set(parentUuid, spawn);
       }
-      spawnCallId = calls.get(task.id);
+      spawnCallId = spawn.calls.get(task.id);
+      if (spawnCallId !== undefined && spawn.receiptOnly.has(task.id)) {
+        // Count only: the receipt that supplied the link is never named (S7).
+        extraDiagnostics.push(
+          makeDiagnostic(
+            'info',
+            'receipt-spawn-link',
+            'Spawn linkage resolved only from a review-reminder receipt entry',
+            { count: 1 },
+          ),
+        );
+      }
     }
     const bundle = await computeSourceBundle(ctx, {
       sessionId: `${HARNESS_ID}:${uuid}`,
