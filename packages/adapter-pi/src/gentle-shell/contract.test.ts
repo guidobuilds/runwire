@@ -50,7 +50,7 @@ describe('gentle-shell fixture behavior', () => {
 
   test('subagents use only linkage metadata, never ledger aggregates', async () => {
     const bundles = await collect('subagents');
-    expect(bundles).toHaveLength(2);
+    expect(bundles).toHaveLength(3);
     const parent = bundles.find((b) => b.session.id === id('3'));
     const child = bundles.find((b) => b.session.id === id('b3'));
     expect(parent?.session.initiatorKind).toBeUndefined();
@@ -74,6 +74,46 @@ describe('gentle-shell fixture behavior', () => {
     });
     expect(JSON.stringify(bundles)).not.toContain('987654321');
     expect(child?.diagnostics).toEqual([]);
+  });
+
+  test('a subagent receipt corroborates the spawn identity no toolResult carries', async () => {
+    const bundles = await collect('subagents');
+    const child = bundles.find((b) => b.session.id === id('b5'));
+    expect(child?.session).toMatchObject({
+      parentId: id('3'),
+      relation: 'subagent',
+      agentType: 'gentle-ai-verify',
+      depth: 1,
+      spawnCallId: 'spawn-5',
+      initiatorKind: 'machine',
+    });
+    // Count only: the receipt that supplied the identity is never named.
+    expect(child?.diagnostics).toMatchObject([
+      { level: 'info', code: 'receipt-spawn-link', count: 1 },
+    ]);
+    expect(bundles.find((b) => b.session.id === id('b3'))?.diagnostics).toEqual([]);
+  });
+
+  test('published-state keeps only its bounded marker; budget details stay unread', async () => {
+    const bundles = await collect('published-state');
+    expect(bundles).toHaveLength(1);
+    const bundle = bundles[0] as SessionBundle;
+    expect(bundle.session).toMatchObject({ id: id('c7'), depth: 0, turns: 1 });
+    expect(bundle.steps.filter((s) => s.kind === 'harness').map((s) => s.toolName)).toEqual([
+      'custom',
+      'custom-message',
+    ]);
+    expect(bundle.diagnostics).toEqual([]);
+    const serialized = JSON.stringify(bundle);
+    for (const leaked of [
+      'synthetic published state prose',
+      'synthetic owner reply',
+      'synthetic-initial-alias',
+      'synthetic budget notice',
+      'synthetic budget detail',
+    ]) {
+      expect(serialized, leaked).not.toContain(leaked);
+    }
   });
 
   test('cross-home links to Pi without opening Pi-owned session content', async () => {

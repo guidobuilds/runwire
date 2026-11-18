@@ -7,8 +7,8 @@
       "depth": 0,
       "cwd": "/home/u/gs",
       "startedAt": "2026-01-03T00:00:00.000Z",
-      "endedAt": "2026-01-03T00:00:03.000Z",
-      "durationMs": 3000,
+      "endedAt": "2026-01-03T00:00:06.000Z",
+      "durationMs": 6000,
       "modelPrimary": "synthetic-model",
       "modelChanges": 0,
       "uncachedInput": 2,
@@ -18,9 +18,9 @@
       "reasoningOutput": 1,
       "turns": 1,
       "apiCalls": 1,
-      "toolCalls": 1,
+      "toolCalls": 2,
       "costUsd": 0.25,
-      "sourceSize": 1021,
+      "sourceSize": 2009,
       "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-03T00-00-00-000Z_b0000000-0000-7000-8000-000000000003.jsonl"
     },
     {
@@ -51,30 +51,69 @@
       "costUsd": 0.25,
       "sourceSize": 937,
       "sourcePath": ".gentle-shell/agent/gentle-agents/sessions/2026-01-03T01-00-00-000Z_b0000000-0000-7000-8000-0000000000b3.jsonl"
+    },
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-0000000000b5",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "relation": "subagent",
+      "depth": 1,
+      "parentId": "gentle-shell:b0000000-0000-7000-8000-000000000003",
+      "agentType": "gentle-ai-verify",
+      "spawnCallId": "spawn-5",
+      "initiatorKind": "machine",
+      "initiatorAutomation": "subagent-dispatch",
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-03T02:00:00.000Z",
+      "endedAt": "2026-01-03T02:00:02.000Z",
+      "durationMs": 2000,
+      "modelPrimary": "synthetic-model",
+      "modelChanges": 0,
+      "uncachedInput": 1,
+      "output": 2,
+      "reasoningOutput": 0,
+      "turns": 1,
+      "apiCalls": 1,
+      "costUsd": 0.125,
+      "sourceSize": 636,
+      "sourcePath": ".gentle-shell/agent/gentle-agents/sessions/2026-01-03T02-00-00-000Z_b0000000-0000-7000-8000-0000000000b5.jsonl"
     }
   ],
   "stepCounts": {
     "gentle-shell:b0000000-0000-7000-8000-000000000003": {
       "turn": 1,
       "call": 1,
-      "tool": 1
+      "tool": 2,
+      "harness": 1
     },
     "gentle-shell:b0000000-0000-7000-8000-0000000000b3": {
       "turn": 1,
       "call": 1,
       "tool": 1
+    },
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b5": {
+      "turn": 1,
+      "call": 1
     }
   },
   "toolCounts": {
     "gentle-shell:b0000000-0000-7000-8000-000000000003": {
-      "agent": 1
+      "agent": 2
     },
     "gentle-shell:b0000000-0000-7000-8000-0000000000b3": {
       "read": 1
-    }
+    },
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b5": {}
   },
   "diagnostics": {
     "gentle-shell:b0000000-0000-7000-8000-000000000003": [],
-    "gentle-shell:b0000000-0000-7000-8000-0000000000b3": []
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b3": [],
+    "gentle-shell:b0000000-0000-7000-8000-0000000000b5": [
+      {
+        "level": "info",
+        "code": "receipt-spawn-link",
+        "count": 1
+      }
+    ]
   }
 }

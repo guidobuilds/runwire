@@ -1,0 +1,15 @@
+{
+  "task": {
+    "id": "task-5",
+    "agent": "gentle-ai-verify",
+    "parentSessionId": "b0000000-0000-7000-8000-000000000003",
+    "sessionPath": "2026-01-03T02-00-00-000Z_b0000000-0000-7000-8000-0000000000b5.jsonl",
+    "tokens": 987654321,
+    "cost": 987654321,
+    "turns": 987654321,
+    "toolCalls": 987654321,
+    "prompt": "synthetic task prompt",
+    "result": "synthetic task result"
+  },
+  "thread": { "items": [{ "text": "synthetic child transcript" }] }
+}

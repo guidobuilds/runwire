@@ -1,0 +1,2 @@
+{"type":"session","version":3,"id":"b0000000-0000-7000-8000-0000000000f2","timestamp":"2026-01-11T00:00:00.000Z","cwd":"/home/u/gs","parentSession":"/home/u/.gentle-shell/agent/sessions/--home-u-gs--/2026-01-11T00-00-00-000Z_b0000000-0000-7000-8000-0000000000ef.jsonl"}
+{"type":"message","id":"f3","parentId":null,"timestamp":"2026-01-11T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"synthetic orphan fork request"}]}}

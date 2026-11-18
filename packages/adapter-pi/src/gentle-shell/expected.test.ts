@@ -9,6 +9,7 @@ const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', '..', 'fixtures', 
 const CASES = [
   'small',
   'subagents',
+  'published-state',
   'unlinked',
   'cross-home',
   'duplicate',

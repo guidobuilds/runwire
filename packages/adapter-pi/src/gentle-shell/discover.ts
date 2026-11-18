@@ -5,7 +5,7 @@
 // never reads another adapter's files (S8): parent resolution below is an
 // existence check on file NAMES, not a content read.
 import { join } from 'node:path/posix';
-import type { AdapterContext, Diagnostic, Known, SessionBundle } from '@runwire/core';
+import type { AdapterContext, Diagnostic, Known, Projection, SessionBundle } from '@runwire/core';
 import { makeDiagnostic, project, readLinesRaw } from '@runwire/core';
 import { computeBundle } from '../pi/compute';
 import { decodeProjectDirname, isSessionFile, sessionIdFromRootFile } from '../pi/paths';
@@ -98,6 +98,7 @@ type SourceBundleInput = {
   fallbackCwd?: string;
   subagent?: Parameters<typeof computeBundle>[0]['subagent'];
   initiator?: Parameters<typeof computeBundle>[0]['initiator'];
+  knownSessionUuids?: Parameters<typeof computeBundle>[0]['knownSessionUuids'];
 };
 
 /** Reads + computes one source; a read failure yields a stub bundle instead of throwing. */
@@ -130,6 +131,7 @@ async function computeSourceBundle(
       toolCategory: gentleToolCategory,
       subagent: input.subagent,
       initiator: input.initiator,
+      knownSessionUuids: input.knownSessionUuids,
       ctx,
     });
   } catch (err) {
@@ -263,34 +265,71 @@ function childDiagnostics(uuid: string, link: LinkState, isDuplicate: boolean): 
   return diagnostics;
 }
 
+/**
+ * Spawn identity of one parent session (gentle-shell.md §5.1, S3b).
+ * `receiptOnly` holds the task ids whose toolCallId came ONLY from a
+ * `review-reminder-receipt` entry, so the caller can report the count without
+ * naming anything.
+ */
+type SpawnCalls = { calls: Map<string, string>; receiptOnly: Set<string> };
+
+/** The 4.x receipt that corroborates a subagent spawn (S3b). */
+const RECEIPT_CUSTOM_TYPE = 'gentle-pi.review-reminder-receipt/v1';
+
+/**
+ * Identity projection for the parent scan: the `gentleAgents` toolResult
+ * identity is the primary source, a subagent receipt the secondary one. Every
+ * other receipt key (`root`, `id`, `toolName`, `writerModelId`,
+ * `writerEffort`) and every other custom payload stays unread.
+ */
+const SPAWN_LINK_PROJECTION: Projection = {
+  message: { role: true, toolCallId: true, details: { gentleAgents: { taskId: true } } },
+  customType: true,
+  data: { source: true, taskId: true, toolCallId: true },
+};
+
+type SpawnIdentity = {
+  message?: {
+    role?: unknown;
+    toolCallId?: unknown;
+    details?: { gentleAgents?: { taskId?: unknown } };
+  };
+  customType?: unknown;
+  data?: { source?: unknown; taskId?: unknown; toolCallId?: unknown };
+};
+
 /** Retain only spawn identity from owned parents; Pi-owned paths never reach this reader. */
-async function spawnCalls(ctx: AdapterContext, parent: ParentSource): Promise<Map<string, string>> {
-  const calls = new Map<string, string>();
-  if (parent.harness !== HARNESS_ID) return calls;
+async function spawnCalls(ctx: AdapterContext, parent: ParentSource): Promise<SpawnCalls> {
+  const primary = new Map<string, string>();
+  const secondary = new Map<string, string>();
+  if (parent.harness !== HARNESS_ID) return { calls: primary, receiptOnly: new Set<string>() };
   try {
     for await (const { line } of readLinesRaw(ctx.fs.openStream(parent.path), {
       truncated: false,
       oversizedLines: 0,
     })) {
-      if (!line.includes('gentleAgents')) continue;
+      if (!line.includes('gentleAgents') && !line.includes(RECEIPT_CUSTOM_TYPE)) continue;
       try {
-        const identity = project(JSON.parse(line), {
-          message: { role: true, toolCallId: true, details: { gentleAgents: { taskId: true } } },
-        }) as {
-          message?: {
-            role?: unknown;
-            toolCallId?: unknown;
-            details?: { gentleAgents?: { taskId?: unknown } };
-          };
-        };
+        const identity = project(JSON.parse(line), SPAWN_LINK_PROJECTION) as SpawnIdentity;
         const message = identity.message;
         const taskId = message?.details?.gentleAgents?.taskId;
         if (
           message?.role === 'toolResult' &&
           typeof taskId === 'string' &&
           typeof message.toolCallId === 'string'
-        )
-          calls.set(taskId, message.toolCallId);
+        ) {
+          primary.set(taskId, message.toolCallId);
+          continue;
+        }
+        const data = identity.data;
+        if (
+          identity.customType === RECEIPT_CUSTOM_TYPE &&
+          data?.source === 'subagent' &&
+          typeof data.taskId === 'string' &&
+          typeof data.toolCallId === 'string'
+        ) {
+          if (!secondary.has(data.taskId)) secondary.set(data.taskId, data.toolCallId);
+        }
       } catch {
         // Malformed lines cannot supply a spawn identity.
       }
@@ -298,7 +337,15 @@ async function spawnCalls(ctx: AdapterContext, parent: ParentSource): Promise<Ma
   } catch {
     // A missing/unreadable owned parent leaves spawnCallId unknown.
   }
-  return calls;
+
+  // Primary wins: a receipt only fills a slot the toolResult identity left empty.
+  const receiptOnly = new Set<string>();
+  for (const [taskId, toolCallId] of secondary) {
+    if (primary.has(taskId)) continue;
+    primary.set(taskId, toolCallId);
+    receiptOnly.add(taskId);
+  }
+  return { calls: primary, receiptOnly };
 }
 
 function childDepth(
@@ -323,7 +370,7 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
     parents: await parentIndex(ctx),
   };
   const touchedRoots: string[] = [];
-  const spawnByParent = new Map<string, Map<string, string>>();
+  const spawnByParent = new Map<string, SpawnCalls>();
   let ledgerDiagnosticPending = link.ledger.invalidFiles > 0;
   function attachLedgerDiagnostic(bundle: SessionBundle): SessionBundle {
     if (ledgerDiagnosticPending) {
@@ -340,6 +387,46 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
     }
     return bundle;
   }
+
+  /**
+   * Revalidate every root touched by enumeration (D83): a vanished root means
+   * the enumeration was partial; throwing keeps history and clears the
+   * completed-refresh marker instead of pruning. Called before the first child
+   * is emitted as well as at the end, because child candidates are statted
+   * before the first bundle (fork resolution needs their uuids) and a root that
+   * vanished since must throw, never emit a stale or stub bundle.
+   */
+  async function revalidateTouchedRoots(): Promise<void> {
+    for (const root of touchedRoots) {
+      const stat = await ctx.fs.stat(root);
+      if (!stat?.isDirectory) throw enumeratedDirVanished(root);
+    }
+  }
+
+  // --- children candidates (filesystem only) ---
+  // Enumerated before the first bundle so `knownUuids` (parents ∪ children) is
+  // complete when a Pi 1.5.0 `parentSession` header resolves. Dispatch order
+  // below is unchanged: parents first, then children.
+  const candidates: ChildCandidate[] = [];
+  for (const { home, root } of childrenRoots(ctx)) {
+    const rootStat = await ctx.fs.stat(root);
+    if (!rootStat?.isDirectory) continue;
+    touchedRoots.push(root);
+    for (const entry of [...(await ctx.fs.readdir(root))].sort()) {
+      if (!isSessionFile(entry)) continue;
+      const path = join(root, entry);
+      const stat = await ctx.fs.stat(path);
+      if (!stat) continue;
+      candidates.push({ uuid: sessionIdFromRootFile(entry), path, stat, home });
+    }
+  }
+
+  // An imported uuid is either a parent file or a child candidate; a fork header
+  // naming anything else degrades to a diagnostic (see compute.ts).
+  const knownUuids = new Set<string>([
+    ...link.parents.keys(),
+    ...candidates.map((candidate) => candidate.uuid),
+  ]);
 
   // --- parents (isolated home only) ---
   if (!sharesParentRoot(ctx)) {
@@ -370,6 +457,7 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
               sizeBytes: stat.sizeBytes,
               mtimeMs: stat.mtimeMs,
               fallbackCwd,
+              knownSessionUuids: knownUuids,
             }),
           );
         }
@@ -377,20 +465,7 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
     }
   }
 
-  // --- children: flat directories, deduped by uuid across homes ---
-  const candidates: ChildCandidate[] = [];
-  for (const { home, root } of childrenRoots(ctx)) {
-    const rootStat = await ctx.fs.stat(root);
-    if (!rootStat?.isDirectory) continue;
-    touchedRoots.push(root);
-    for (const entry of [...(await ctx.fs.readdir(root))].sort()) {
-      if (!isSessionFile(entry)) continue;
-      const path = join(root, entry);
-      const stat = await ctx.fs.stat(path);
-      if (!stat) continue;
-      candidates.push({ uuid: sessionIdFromRootFile(entry), path, stat, home });
-    }
-  }
+  await revalidateTouchedRoots();
 
   const byUuid = new Map<string, ChildCandidate[]>();
   for (const candidate of candidates) {
@@ -429,12 +504,23 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
       (parentUuid && link.ledger.byChildUuid.has(parentUuid) ? HARNESS_ID : undefined);
     let spawnCallId: string | undefined;
     if (parentUuid && parent?.harness === HARNESS_ID && task) {
-      let calls = spawnByParent.get(parentUuid);
-      if (!calls) {
-        calls = await spawnCalls(ctx, parent);
-        spawnByParent.set(parentUuid, calls);
+      let spawn = spawnByParent.get(parentUuid);
+      if (!spawn) {
+        spawn = await spawnCalls(ctx, parent);
+        spawnByParent.set(parentUuid, spawn);
       }
-      spawnCallId = calls.get(task.id);
+      spawnCallId = spawn.calls.get(task.id);
+      if (spawnCallId !== undefined && spawn.receiptOnly.has(task.id)) {
+        // Count only: the receipt that supplied the link is never named (S7).
+        extraDiagnostics.push(
+          makeDiagnostic(
+            'info',
+            'receipt-spawn-link',
+            'Spawn linkage resolved only from a review-reminder receipt entry',
+            { count: 1 },
+          ),
+        );
+      }
     }
     const bundle = await computeSourceBundle(ctx, {
       sessionId: `${HARNESS_ID}:${uuid}`,
@@ -452,17 +538,12 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
             }
           : undefined,
       initiator: task ? { kind: 'machine', automation: 'subagent-dispatch' } : undefined,
+      knownSessionUuids: knownUuids,
     });
     // Ledger aggregates are never used (S9); only identity and linkage diagnostics survive.
     bundle.diagnostics = [...bundle.diagnostics, ...extraDiagnostics];
     yield attachLedgerDiagnostic(bundle);
   }
 
-  // Revalidate every root touched by enumeration (D83): a vanished root means
-  // the enumeration was partial; throwing keeps history and clears the
-  // completed-refresh marker instead of pruning.
-  for (const root of touchedRoots) {
-    const stat = await ctx.fs.stat(root);
-    if (!stat?.isDirectory) throw enumeratedDirVanished(root);
-  }
+  await revalidateTouchedRoots();
 }

@@ -18,6 +18,9 @@ Evidence base:
   isolated home, 332 in the Pi home, plus the task ledgers. Only keys, record types, counts and
   numeric aggregates were read; no prompt, response, code, tool I/O or reasoning was retained.
   Appendix A has the numbers.
+- Delta scan, 2026-11-10: `gentle-pi` **4.7.0** + **Pi 1.5.0** on the same machine. Structure-only
+  again — entry types, `customType` names, ledger `task` key sets, counts and boolean metadata;
+  no prompt, response, state prose or tool I/O retained. §3.1 is the delta.
 - The existing Pi adapter (`docs/adapters/pi.md`) targets Pi **0.85.1**. Pi 1.2.0 keeps the same
   session format version (`3`) but adds record types and message fields; §3 lists the delta.
 
@@ -25,7 +28,8 @@ Evidence base:
 
 Gentle Shell (`gentle-shell`, npm package `gentle-pi`) is a **Pi-native shell**: it does not
 fork Pi and does not define a new session format. It pins an upstream
-`@earendil-works/pi-coding-agent` (1.2.0 on the reference machine) and adds an extension layer
+`@earendil-works/pi-coding-agent` (1.2.0 at the 2026-10-22 investigation, 1.5.0 in the
+2026-11-10 delta scan) and adds an extension layer
 (focused subagents, native review, ODD workflow, todos, profiles, permission modes, skills) on
 top of Pi's own session store.
 
@@ -79,24 +83,25 @@ Pi-owned. Children from both homes' `gentle-agents/` trees are included.
 
 ### 2.1 The record model
 
-Entries are Pi v3 (`id`, `parentId`, `timestamp`, `type`). Observed `type`s in real data:
-`session`, `message`, `model_change`, `thinking_level_change`, `custom`, `custom_message`, and
-`context_edit`. The full Pi 1.2 model also defines `usage`, `compaction`, `branch_summary`,
-`label` and `session_info`.
+Entries are Pi v3 (`id`, `parentId`, `timestamp`, `type`). Observed `type`s in real data
+(2026-11-10 scan): `session`, `message`, `model_change`, `thinking_level_change`, `custom`,
+`custom_message`, `context_edit`, `compaction` and `session_info`. The Pi 1.5.0 model also defines
+`usage`, `branch_summary` and `label`; none of the three has been observed yet.
 
 | `type` | Payload that matters to Runwire | Content that must never be read |
 |---|---|---|
-| `session` (header) | format `version` (3), `id` (uuidv7), `timestamp`, `cwd`, `parentSession?` | — |
-| `message` | `role`, per-role metadata (§4), usage | text, thinking, tool args, tool output, `details`, images |
+| `session` (header) | format `version` (3), `id` (uuidv7), `timestamp`, `cwd`, `parentSession?` (a fork link only when its uuid is imported, D89) | — |
+| `message` | `role`, per-role metadata (§4), `stopReason`, Pi 1.5.0 `rawStopReason`, usage and its `cost.totalFromProvider` flag | text, thinking, tool args, tool output, `details`, images |
 | `model_change` | `provider`, `modelId` | — |
 | `thinking_level_change` | `thinkingLevel` | — |
-| `custom` | *presence only*; `customType` namespace for fingerprinting, never `data` | `data` (todo titles, session-change diffs, curated state prose, search results) |
-| `custom_message` | *presence only*; `customType` only | `content`, `details` (except the allowlisted `gentleAgents` identity, §5) |
-| `usage` (Pi 1.2) | `kind`, `provider`, `model`, `usage` — spend outside an assistant message (e.g. cache warm) | — |
-| `context_edit` (Pi 1.2) | *presence only* | `replacement` (context content), `targetId` pointer |
-| `compaction` | `tokensBefore`, `usage?`, `fromHook?`, `firstKeptEntryId` | `summary`, `details`, `systemMessage` |
-| `branch_summary` | `usage?` | `summary`, `details` |
-| `label`, `session_info` | *presence only* | `label`, `name` (user-authored) |
+| `custom` | *presence + `customType` namespace* for fingerprinting; the only projected payload is the bounded marker in §7 (published-state `schema`/`recordedAt`/`authority`, alias presence, receipt `source`/`taskId`/`toolCallId`) | the rest of `data` (todo titles, session-change diffs, curated state prose, search results) |
+| `custom_message` | *presence + `customType`*; Pi 1.5.0 `display` (boolean) | `content`, `details` (except the allowlisted `gentleAgents` identity, §5) |
+| `usage` (Pi 1.2) | `kind`, `provider`, `model`, `usage` — spend outside an assistant message (e.g. cache warm). Still unobserved. | — |
+| `context_edit` | *presence only*; observed in 4.7 data (2026-11-10) | `replacement` (context content), the `targetId` pointer |
+| `compaction` | `tokensBefore`, `usage?`, `fromHook?`, `firstKeptEntryId`; observed in 4.7 data | `summary`, `details`, `systemMessage` |
+| `branch_summary` | `usage?`. Still unobserved. | `summary`, `details` |
+| `label` | *presence only*. Still unobserved. | `label` |
+| `session_info` | *presence only*; observed in 4.7 data (3 entries in the scan) | `name` (user-authored, D78) |
 
 Message roles: `system` (new in Pi 1.2), `user`, `assistant`, `toolResult`, plus the
 coding-agent ones (`bashExecution`, `custom`, `branchSummary`, `compactionSummary`).
@@ -111,6 +116,14 @@ coding-agent ones (`bashExecution`, `custom`, `branchSummary`, `compactionSummar
 |---|---|
 | `id`, `agent`, `mode` (`task`/`background`), `status`, `cwd`, `parentSessionId`, `sessionPath`, `model`, `modelSource`, `thinking`, `createdAt`, `startedAt`, `endedAt`, `lastActivityAt` | `prompt`, `result`, `error`, `label`, `lastStep`, `sddPreflightContext`, `sddRemediation`, and the whole `thread.items[]` (`text`, tool `args`, `output`) |
 | | `tokens`, `cost`, `turns`, `toolCalls` — **duplicated aggregates, excluded**, see §5.3 |
+
+**4.7 key set (2026-11-10 scan, S4).** The keys a `task` record actually carries:
+`agent, cost, createdAt, cwd, endedAt, error, id, label, lastActivityAt, lastStep, mode, model,
+modelSource, parentSessionId, prompt, result, sessionPath, startedAt, status, thinking, tokens,
+toolCalls, turns`. `modelSource` is present; `sddRemediation` and `sddPreflightContext` are
+**absent** — they are optional additive keys that the shape reader tolerates by construction (it
+reads `id`, `agent`, `parentSessionId`, `sessionPath` and nothing else), not keys this adapter
+expects. Link metadata stays identity-only (S9).
 
 The ledger is capped: `history_max_tasks` defaults to **200** and is global, pruned on every
 task save. It is the *only* structural link from a child session to its parent and its task id;
@@ -137,6 +150,32 @@ change. What is new:
 The Pi adapter's current behaviour on Gentle Shell data was verified: it yields bundles and
 parses every file; it only reports the expected informational diagnostics
 (`unknown-message-role`, `unused-model-change`, `unpriced-model`).
+
+### 3.1 The 4.7.0 / Pi 1.5.0 delta (2026-11-10)
+
+Structure-only rescan of the same machine after Gentle Shell moved to `gentle-pi` **4.7.0** with
+**Pi 1.5.0**. The session format version is still `3`. What the scan found and what the adapter
+does about it:
+
+| Finding (counts and key names only) | Adapter response |
+|---|---|
+| Entry types observed for the first time: `context_edit` (≥ 11 in isolated-home parents), `compaction`, `session_info` (3). `usage`, `branch_summary` and `label` are still unobserved. | `context_edit` and `session_info` are *known* types: one `harness` step carrying the entry type, no payload, never `unknown-entry-type` (§4.3). `compaction` gains nothing beyond the Pi 1.2 fold. The three unobserved types keep their Pi 1.2 handling and require no fixture. |
+| Three metadata fields in live records: assistant `message.rawStopReason` (string), `message.usage.cost.totalFromProvider` (boolean), `custom_message.display` (boolean). | All three are in the allowlist (§7) and in neither `capabilities` nor a step: they are metadata, not text. `rawStopReason` is the provider's own stop-reason string; the other two are booleans. `providerThinkingLevel` was already projected before this delta and is left untouched — nothing was invented for it. |
+| Pi 1.5.0 headers may carry `parentSession` (fork/clone). Zero live occurrences in the scan — children still write no parent — so this is tolerance only. | A `parentSession` whose basename uuid names an **imported** session becomes `relation: "fork"` + `forkedFrom` (D89). Anything else imports as a root with an info `unresolved-parent-session` and no relation; the referenced path is never echoed into a bundle. |
+| `gentle-agents.published-state` (`custom`): `data` keys `schema, sessionId, recordedAt, cwd, source, ownerReply, authority, state, aliases`. | A bounded orchestrator-state marker (D90): `schema`, `recordedAt`, `authority` are projected as values; `aliases` survives as an object with every alias id collapsed, i.e. presence without the values. `state` prose, `ownerReply`, `sessionId` and `cwd` are never read. |
+| `gentle-pi.review-reminder-receipt/v1` (`custom`, `source: 'subagent'`) carries `taskId` + `toolCallId`. | Secondary spawn-linkage source (D90, §5.1): it fills `spawnCallId` only where no `gentleAgents` `toolResult` supplied one, and such a resolution emits an info `receipt-spawn-link` (count only). The toolResult identity always wins. |
+| `gentle-pi.exploration-budget` (`custom_message` with `details`). | Presence only, like every other extension `custom_message`: `customType` and `display` survive, `content` and `details` do not. |
+| The other live `customType`s are unchanged: `gentle-pi.session-worktree/v1`, `gentle-pi.session-change/v1`, `gentle-agents.stale-result`, `gentle-agents.result`, `gentle-agents.message`, `gentle-todo-state`. | Presence only. |
+| Ledger `task` key set (S4). | §2.2 records the observed keys and the two absent optional ones. |
+| `items[].kind` ∈ `text\|thinking\|note\|tool` in the task thread; `limits {maxItems: 400, maxOutputChars: 16000}`. | Unchanged: the thread is never read (§2.2, §5.3). |
+
+**Caveat: the projection is per key, not per `customType`.** `project()` cannot express "inside
+`gentle-agents.published-state`, `schema` is metadata and `state` is content" — a key is
+projectable only when it is metadata under *every* observed `customType`. That is why
+`data.aliases` is an empty rule (presence-only; the mechanism cannot turn a string leaf into a
+boolean, and alias ids have unknown length) and why `data.state` stays out entirely. §7 lists each
+surviving key next to its hazard; a per-`customType` projection is the follow-up if a future
+`customType` reuses one of those key names for content.
 
 ## 4. What Runwire can obtain
 
@@ -169,7 +208,7 @@ parses every file; it only reports the expected informational diagnostics
 | `costUsd` | Σ `usage.cost.total` | Harness-reported; 0 for unpriced models (nan) → `unpriced-model` |
 | `relation` / `parentId` / `agentType` / `spawnCallId` / `depth` | task ledger + parent tool results | §5 |
 | `initiatorKind` / `initiatorAutomation` | child sessions only | `machine` / `subagent-dispatch`; parents stay NULL (unknown) |
-| `forkedFrom` | `header.parentSession` | Fork of a session: `gentle-shell:<uuid>`; `relation: "fork"`, not `parentId` |
+| `forkedFrom` | `header.parentSession` | Fork of an **imported** session: `gentle-shell:<uuid>` with `relation: "fork"`, never `parentId`. Optional in Pi 1.5.0; a `parentSession` that names no imported session leaves a root plus `unresolved-parent-session` (D89) |
 | `sourcePath` / `sourceSize` / `sourceMtime` | the file and its `stat` | `sourceId`/`sourceLocator` stay undefined (filesystem source, as Pi) |
 | `title`, `modePrimary`, `harnessVersion*`, `gitBranch`, `gitCommit`, `resumed` | **unavailable** | §6 |
 
@@ -187,7 +226,7 @@ parses every file; it only reports the expected informational diagnostics
 | `system` message | *no step* (v1) | prompt/tool loadout, content-bearing; recognised so it is not reported as unknown |
 | `type: "model_change"` | *no step* | folded into model resolution |
 | `type: "thinking_level_change"` | `harness` `thinking-level-change` | |
-| `custom` / `custom_message` / `label` / `session_info` / `branch_summary` / `context_edit` | `harness` with the **entry type only** | never `customType` payload, `data`, `content` or `replacement` |
+| `custom` / `custom_message` / `label` / `session_info` / `branch_summary` / `context_edit` | `harness` with the **entry type only**; the bounded `custom.data` marker (§3.1) is projected but never becomes a step | never `customType` payload, `data` beyond that marker, `content` or `replacement` |
 | `session` header | *no step* | timestamps + project |
 
 Pi 1.2 persists per-message `durationMs`, so `steps.toolDurations` no longer depends on a
@@ -253,7 +292,7 @@ For each `gentle-agents/tasks/<id>.json`:
 | `agentType` | `task.agent` — a closed-ish vocabulary of `agents/*.md` names (`gentle-ai-explore`, `gentle-ai-verify`, `gentle-ai-worker`, `review-*`, …) |
 | `relation` | `"subagent"` |
 | `depth` | parent depth + 1; resolve the `parentSessionId` graph transitively (a child can itself be a parent) |
-| `spawnCallId` | the parent's `toolResult` for `subagent_run` whose `details.gentleAgents.taskId === task.id`, using that message's `toolCallId` |
+| `spawnCallId` | the parent's `toolResult` for `subagent_run` whose `details.gentleAgents.taskId === task.id`, using that message's `toolCallId`; secondarily a `review-reminder-receipt` entry (D90, below) |
 
 `spawnCallId` is the only field that requires reading the **parent** session file: the task
 record does not store the spawn call id. It is what lets core fill `steps.child_id` and connect
@@ -265,6 +304,15 @@ never opens another adapter's files; the upstream ask in §5.4.1 is the real fix
 `subagent_run` results without `details.gentleAgents` (failed launches) carry no task id and are
 counted as ordinary `agent`-category tool steps. `subagent_list_agents`,
 `subagent_continue`, `subagent_send_message`, etc. are also ordinary `agent`-category steps.
+
+**Secondary source (2026-11-10, D90).** A `gentle-pi.review-reminder-receipt/v1` custom entry in
+the same parent can still name the spawn: with `data.source === 'subagent'` it carries `taskId` and
+`toolCallId`. The adapter uses it only when the `toolResult` identity supplied nothing for that
+task id — the primary source always wins — and reports the resolution with an info
+`receipt-spawn-link` (count only; the receipt is never named). Every other receipt key (`root`,
+`id`, `toolName`, `writerModelId`, `writerEffort`) and every other `custom.data` field stays
+unread. The no-cross-read rule is unchanged: a Pi-owned parent is never opened, so a child of a
+`pi:` parent keeps `spawnCallId` NULL either way.
 
 ### 5.2 What the ledger cannot give, and the measured gap
 
@@ -352,34 +400,35 @@ re-read forever. (Decision recorded in Linear , 2026-10-22 challenge.)
 ## 7. Implemented allowlist
 
 ```ts
-// Pi v3 base (same shape as adapter-pi) + Pi 1.2 + Gentle Shell metadata.
+// Abridged: what the 4.7 delta adds on top of the Pi base in src/gentle-shell/allowlist.ts.
 export const gentleShellAllowlist: Projection = {
-  // header
-  type: true, version: true, id: true, parentId: true, timestamp: true,
-  cwd: true, parentSession: true,
+  ...piAllowlist,                          // header, envelope, usage, toolCall blocks
   // entry-level metadata
-  thinkingLevel: true, provider: true, modelId: true, kind: true,   // kind: usage entries
-  tokensBefore: true, fromHook: true, firstKeptEntryId: true,
-  usage: { input: true, output: true, cacheRead: true, cacheWrite: true,
-           reasoning: true, totalTokens: true,
-           cost: { input: true, output: true, cacheRead: true, cacheWrite: true, total: true } },
-  // message envelope
+  kind: true, customType: true,            // kind: usage entries
+  display: true,                           // Pi 1.5.0 custom_message.display (boolean)
+  usage: usageProjection,                   // the shared usage sub-projection, see below
+  // custom entries: the ONLY data projection (bounded marker, per-key rule in §3.1)
+  data: {
+    schema: true, recordedAt: true, authority: true,   // gentle-agents.published-state
+    aliases: {},                                       // presence only: every alias id collapses
+    source: true, taskId: true, toolCallId: true,      // review-reminder-receipt spawn identity
+  },
+  // Pi 1.5.0 additions inside the Pi base envelope
   message: {
-    role: true, api: true, provider: true, model: true, responseModel: true,
-    responseId: true, providerThinkingLevel: true, thinkingLevel: true,
-    stopReason: true, timestamp: true, durationMs: true,
-    toolCallId: true, toolName: true, isError: true,
-    usage: { /* as above */ },
-    content: [{ type: true, id: true, name: true }],       // toolCall blocks only
+    ...piAllowlist.message,
+    rawStopReason: true,                   // provider stop-reason string, not text
+    usage: { ...usageProjection, cost: { ...usageProjection.cost, totalFromProvider: true } },
     nestedCalls: { calls: [{ name: true, status: true, durationMs: true, argumentsBytes: true }],
                    complete: true },
     // the ONLY details projection: subagent identity, no prompt/result/diff/todo text
     details: { gentleAgents: { taskId: true, agent: true, mode: true, status: true, cwd: true } },
   },
-  // custom / custom_message: presence + namespace only, never data/content
-  customType: true,
 };
 ```
+
+The envelope fields are spelled out in the source (shared `usage` sub-projection, `content`
+limited to toolCall `{ type, id, name }`) so the Gentle Shell allowlist cannot silently diverge
+from `piAllowlist`; the block above shows only what the 4.7 delta adds there.
 
 The ledger gets its own projection (it is not a session record):
 
@@ -401,8 +450,8 @@ Excluded hazards, each real in this data:
 | `message.content[].data` (images) | base64 image payloads |
 | `toolResult.content`, `toolResult.details` | tool output; `edit` puts `diff` and `patch`; `todo` puts task titles/notes; `ask_user_*` puts question/options/custom response; `bash` puts truncation previews |
 | `toolResult.errorMessage`, `diagnostics`, `nestedCalls[].arguments / error` | provider errors and nested tool input |
-| `custom.data` | `gentle-todo-state` (task titles), `gentle-pi.session-change/v1` (path + before/after text = code diffs), `gentle-agents.published-state` (curated objective/progress/blockers), `web-search-results` (answers/URLs), `gentle-jobs.notice` |
-| `custom_message.content / details` | `gentle-agents.result` (child answer), `gentle-agents.wake`, job notices |
+| `custom.data` | `gentle-todo-state` (task titles), `gentle-pi.session-change/v1` (path + before/after text = code diffs), `gentle-agents.published-state` (`state` prose, `ownerReply`, `sessionId`, `cwd`), `web-search-results` (answers/URLs), `gentle-jobs.notice`; also every receipt key except `source`/`taskId`/`toolCallId` |
+| `custom_message.content / details` | `gentle-agents.result` (child answer), `gentle-agents.wake`, job notices, `gentle-pi.exploration-budget` `details` |
 | `context_edit.replacement`, `compaction.summary / details / systemMessage`, `branch_summary.summary / details` | rewritten context, full summaries |
 | `label.label`, `session_info.name` | user-authored text |
 | ledger `prompt / result / error / label / lastStep / thread`; `transcripts/*.md` | child prompt/answer/transcript |
@@ -425,6 +474,8 @@ Excluded hazards, each real in this data:
 | `unpriced-model` | info | tokens with `cost.total === 0` (nan here) |
 | `unlinked-subagent` | info | child session with no matching ledger task (pruned or missing) |
 | `orphan-parent` | info | ledger `parentSessionId` resolves to no imported parent file |
+| `unresolved-parent-session` | info | header `parentSession` names no imported session: root session, no `forkedFrom` (D89) |
+| `receipt-spawn-link` | info | `spawnCallId` resolved only from a `review-reminder-receipt` entry (D90) |
 | `ledger-invalid` | info | unparseable/invalid task file, aggregated |
 | `duplicate-child` | info | the same child uuid found under two homes; one bundle emitted |
 | `session-read-failed` | error | stub bundle instead of throwing |
@@ -489,7 +540,8 @@ fixtures/gentle-shell/<case>/home/.gentle-shell/agent/…
 | Case | Purpose |
 |---|---|
 | `small/` | one parent, linear, monotonic timestamps: `timing`, tool durations, zero diagnostics |
-| `subagents/` | parent + child + ledger: `parentId`, `relation`, `agentType`, `spawnCallId`, `steps.child_id` after import; ledger aggregates ignored |
+| `subagents/` | parent + child + ledger: `parentId`, `relation`, `agentType`, `spawnCallId`, `steps.child_id` after import; ledger aggregates ignored. The second child is linked only by a `review-reminder-receipt` entry, which must emit `receipt-spawn-link` while the toolResult-linked child stays quiet |
+| `published-state/` | `gentle-agents.published-state` custom entry + `gentle-pi.exploration-budget` custom_message: `custom` harness steps, none of the `data`/`content` text in a bundle |
 | `unlinked/` | child with no ledger task: root + `unlinked-subagent`; still counted |
 | `cross-home/` | child under a Pi home whose parent is imported as `pi:<uuid>` (shape A's cross-link) |
 | `extra-usage/` | `usage` entry, `toolResult.usage`, `compaction`/`branch_summary` usage: Σ-over-`call` invariant |
@@ -531,6 +583,13 @@ fixtures/gentle-shell/<case>/home/.gentle-shell/agent/…
    name “Gentle Shell”. The web intentionally uses its neutral glyph with this display label.
 7. **Unavailable signals** — `mode`, `version`, `title`, `git` stay undeclared (D87); header
    version 3 is a format version, not a CLI release.
+8. **Fork links only to imported sessions (2026-11-10)** — a Pi 1.5.0 header `parentSession`
+   becomes `relation: "fork"` only when its uuid is one of the sessions being imported; anything
+   else is a root plus `unresolved-parent-session` (D89). This keeps the adapter from claiming a
+   link to a `pi:` session it does not own.
+9. **4.x metadata sources (2026-11-10)** — the receipt is a secondary spawn-linkage source and the
+   toolResult identity always wins; `gentle-agents.published-state` is projected as a bounded
+   presence marker, never its `state` prose (D90).
 
 ## Implementation validation (2026-10-22)
 

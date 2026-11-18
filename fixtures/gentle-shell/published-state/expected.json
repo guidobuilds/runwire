@@ -1,0 +1,29 @@
+{
+  "sessions": [
+    {
+      "id": "gentle-shell:b0000000-0000-7000-8000-0000000000c7",
+      "harnessId": "gentle-shell",
+      "projectKey": "/home/u/gs",
+      "depth": 0,
+      "cwd": "/home/u/gs",
+      "startedAt": "2026-01-13T00:00:00.000Z",
+      "endedAt": "2026-01-13T00:00:03.000Z",
+      "durationMs": 3000,
+      "turns": 1,
+      "sourceSize": 1083,
+      "sourcePath": ".gentle-shell/agent/sessions/--home-u-gs--/2026-01-13T00-00-00-000Z_b0000000-0000-7000-8000-0000000000c7.jsonl"
+    }
+  ],
+  "stepCounts": {
+    "gentle-shell:b0000000-0000-7000-8000-0000000000c7": {
+      "turn": 1,
+      "harness": 2
+    }
+  },
+  "toolCounts": {
+    "gentle-shell:b0000000-0000-7000-8000-0000000000c7": {}
+  },
+  "diagnostics": {
+    "gentle-shell:b0000000-0000-7000-8000-0000000000c7": []
+  }
+}

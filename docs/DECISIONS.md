@@ -18,7 +18,7 @@ Numbered `D<n>`; numbers are stable. Only decisions still in force are listed; t
 | 17 | Fixtures | Redacted real sessions committed under `fixtures/<harness>/`. |
 | 19 | Refresh | Manual rescan only. No file watching. |
 | 21 | Schema strictness | Loose Zod schemas (optional fields, passthrough). Version-gated field maps inside one adapter. Unknown record types are counted, not errors. |
-| 25 | Harness order | Claude Code → Codex → Grok Build → OpenCode → Pi → Gentle Shell. (OpenCode shipped 2026-09-05; Pi shipped 2026-09-10 with D78–D81; Gentle Shell 2026-10-22 with D84–D88; Codex/Grok remain planned.) |
+| 25 | Harness order | Claude Code → Codex → Grok Build → OpenCode → Pi → Gentle Shell. (OpenCode shipped 2026-09-05; Pi shipped 2026-09-10 with D78–D81; Gentle Shell 2026-10-22 with D84–D88 and its 4.7.0/Pi 1.5.0 delta 2026-11-10 with D89–D90; Codex/Grok remain planned.) |
 | 26 | Docs | Under `docs/`. |
 | 27 | Name / license | Runwire, MIT. |
 | 31 | Tool categories | Each adapter maps tool names to `read`, `write`, `exec`, `search`, `plan`, `agent`, `web`, `mcp`, `skill`, `other`. Tool inputs/outputs never leave the adapter. |
@@ -69,6 +69,13 @@ Numbered `D<n>`; numbers are stable. Only decisions still in force are listed; t
 | 86 | Gentle Shell initiator | Declare `initiator`: children are `machine` / `subagent-dispatch`; parents stay NULL (unknown). The full `adapterContract` on `fixtures/gentle-shell/all` accepts this mix, including all-NULL parents; no Pi-parity fallback is needed. |
 | 87 | Gentle Shell unavailable signals | Do not declare `mode`, `version`, `title` or `git`. Header version 3 is a format version, not a CLI version. No per-session permission mode, harness-generated title or git branch/commit is persisted; user-authored names remain excluded (D7/D78). |
 | 88 | Home-scoped attribution | Decision 1 / option A: `~/.pi/agent/sessions` belongs to `pi`; the Gentle home's `sessions` and every configured `gentle-agents/sessions` tree belong to `gentle-shell`. Shared-home parents remain `pi` even when launched by Gentle Shell: this is a documented attribution gap, not a fingerprint split. If exact historical re-attribution becomes necessary, evaluate B′ (fingerprint + negative cache) before C (harness-family contract). `spawnCallId` is derived only from gentle-shell-owned parents; for `pi:` parents it stays NULL. No cross-read of another adapter's session files (S8). See [adapters/gentle-shell.md §5–§6](adapters/gentle-shell.md#5-subagents--the-reason-this-is-a-separate-harness). |
+
+## Gentle Shell 4.7.0 / Pi 1.5.0 delta (2026-11-10)
+
+| # | Topic | Decision |
+|---|---|---|
+| 89 | Fork links only to imported sessions | A Pi 1.5.0 header `parentSession` (fork/clone) becomes `relation: 'fork'` + `forkedFrom` **only when** its basename uuid is one of the sessions this adapter is importing (its own parents plus every child candidate, both enumerated before the first bundle so the uuid set is complete). Otherwise the session imports as a root with an info `unresolved-parent-session` (count only; the referenced path never enters a bundle) and no relation. Rationale: in shapes B/C the referenced uuid can belong to a `pi:` session this adapter deliberately does not own (D88), so linking it would claim another harness's row; a link to a row that is never imported is worse than an honest diagnostic. Contrast Pi, which keeps linking unconditionally because there the parent file is always Pi's own ([adapters/pi.md §5.3](adapters/pi.md)). |
+| 90 | 4.x metadata: secondary receipt linkage and bounded published-state marker | (a) `gentle-pi.review-reminder-receipt/v1` entries with `data.source === 'subagent'` are a **secondary** spawn-identity source, used only where the parent's `gentleAgents` `toolResult` supplied no `spawnCallId` for that task id; the primary identity always wins. A receipt-derived link emits `receipt-spawn-link` (info, count only), so a weaker link is visible without being named. No cross-read is added: a `pi:` parent is never opened (D88). (b) `gentle-agents.published-state` is projected as a **bounded presence marker** — `schema`, `recordedAt`, `authority` values plus `aliases` presence-only (an empty projection rule collapses every alias id); `state` prose, `ownerReply`, `sessionId` and `cwd` are never read. The projection mechanism is per key, not per `customType`, so only keys that are metadata under every observed customType are projected at all; a per-customType projection would be a separate change. |
 
 ## Proposed (not implemented)
 

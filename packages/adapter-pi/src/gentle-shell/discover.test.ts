@@ -181,6 +181,225 @@ describe('gentle-shell compute and linkage', () => {
   });
 });
 
+function deltaContext(files: Record<string, string>): AdapterContext {
+  return { ...contextForFixture('small'), home: '/home/u', fs: createMemoryFs({ files }) };
+}
+
+const SESSIONS = '/home/u/.gentle-shell/agent/sessions/--project--';
+const sessionFile = (stamp: string, uuid: string) => `${SESSIONS}/${stamp}_${uuid}.jsonl`;
+const lines = (records: unknown[]) => `${records.map((r) => JSON.stringify(r)).join('\n')}\n`;
+
+describe('gentle-shell Pi 1.5.0 delta', () => {
+  test('session_info and context_edit are observed as harness steps, never as unknown types', async () => {
+    const path = sessionFile('2026-01-11T00-00-00-000Z', 'delta');
+    const ctx = deltaContext({
+      [path]: lines([
+        { type: 'session', version: 3, id: 'delta', cwd: '/project' },
+        {
+          type: 'session_info',
+          id: 'd1',
+          parentId: null,
+          timestamp: '2026-01-11T00:00:01.000Z',
+          name: 'RUNWIRE_CANARY_NAME',
+        },
+        {
+          type: 'context_edit',
+          id: 'd2',
+          parentId: 'd1',
+          timestamp: '2026-01-11T00:00:02.000Z',
+          targetId: 'd1',
+          replacement: 'RUNWIRE_CANARY_CONTEXT',
+        },
+        {
+          type: 'message',
+          id: 'd3',
+          parentId: 'd2',
+          timestamp: '2026-01-11T00:00:03.000Z',
+          message: { role: 'user', content: 'RUNWIRE_CANARY_PROMPT' },
+        },
+      ]),
+    });
+
+    const [bundle] = await collect(ctx);
+    expect(bundle?.steps.map((s) => s.toolName ?? s.kind)).toEqual([
+      'session-info',
+      'context-edit',
+      'turn',
+    ]);
+    expect(bundle?.diagnostics).toEqual([]);
+    expect(JSON.stringify(bundle)).not.toContain('RUNWIRE_CANARY');
+  });
+
+  test('a parentSession naming an imported session yields a fork link with no parentId', async () => {
+    const parent = sessionFile('2026-01-11T01-00-00-000Z', 'fork-parent');
+    const fork = sessionFile('2026-01-11T02-00-00-000Z', 'fork-child');
+    const ctx = deltaContext({
+      [parent]: lines([
+        { type: 'session', version: 3, id: 'fork-parent', cwd: '/project' },
+        {
+          type: 'message',
+          id: 'p1',
+          parentId: null,
+          timestamp: '2026-01-11T01:00:01.000Z',
+          message: { role: 'user' },
+        },
+      ]),
+      [fork]: lines([
+        {
+          type: 'session',
+          version: 3,
+          id: 'fork-child',
+          cwd: '/project',
+          parentSession: parent,
+        },
+        {
+          type: 'message',
+          id: 'f1',
+          parentId: null,
+          timestamp: '2026-01-11T02:00:01.000Z',
+          message: { role: 'user' },
+        },
+      ]),
+    });
+
+    const bundles = await collect(ctx);
+    const child = bundles.find((b) => b.session.id === 'gentle-shell:fork-child');
+    expect(child?.session).toMatchObject({
+      relation: 'fork',
+      forkedFrom: 'gentle-shell:fork-parent',
+      depth: 0,
+    });
+    expect(child?.session.parentId).toBeUndefined();
+    expect(child?.diagnostics).toEqual([]);
+  });
+
+  test('an unresolvable parentSession reports an info diagnostic instead of throwing', async () => {
+    const path = sessionFile('2026-01-11T03-00-00-000Z', 'orphan-fork');
+    const ctx = deltaContext({
+      [path]: lines([
+        {
+          type: 'session',
+          version: 3,
+          id: 'orphan-fork',
+          cwd: '/project',
+          parentSession: sessionFile('2026-01-11T00-00-00-000Z', 'never-imported'),
+        },
+      ]),
+    });
+
+    const [bundle] = await collect(ctx);
+    expect(bundle?.session.id).toBe('gentle-shell:orphan-fork');
+    expect(bundle?.session.relation).toBeUndefined();
+    expect(bundle?.session.forkedFrom).toBeUndefined();
+    expect(bundle?.diagnostics).toMatchObject([
+      { level: 'info', code: 'unresolved-parent-session', count: 1 },
+    ]);
+    expect(JSON.stringify(bundle)).not.toContain('never-imported');
+  });
+});
+
+describe('gentle-shell 4.x extension metadata (S3b)', () => {
+  const CHILDREN = '/home/u/.gentle-shell/agent/gentle-agents/sessions';
+  const TASKS = '/home/u/.gentle-shell/agent/gentle-agents/tasks';
+  const childFile = '2026-01-12T01-00-00-000Z_child.jsonl';
+  const parentPath = sessionFile('2026-01-12T00-00-00-000Z', 'parent');
+
+  /** One parent (records below) and the `task-9` child it spawned. */
+  function spawnContext(parentRecords: unknown[]): AdapterContext {
+    return deltaContext({
+      [parentPath]: lines([
+        { type: 'session', version: 3, id: 'parent', cwd: '/project' },
+        ...parentRecords,
+      ]),
+      [`${CHILDREN}/${childFile}`]: lines([
+        { type: 'session', version: 3, id: 'child', cwd: '/project' },
+      ]),
+      [`${TASKS}/task-9.json`]: JSON.stringify({
+        task: {
+          id: 'task-9',
+          agent: 'worker',
+          parentSessionId: 'parent',
+          sessionPath: childFile,
+        },
+      }),
+    });
+  }
+
+  const receipt = (id: string, data: Record<string, unknown>) => ({
+    type: 'custom',
+    id,
+    parentId: null,
+    timestamp: '2026-01-12T00:00:05.000Z',
+    customType: 'gentle-pi.review-reminder-receipt/v1',
+    data,
+  });
+  const subagentReceipt = (id: string, taskId: string, toolCallId: string) =>
+    receipt(id, {
+      kind: 'review',
+      sessionId: 'parent',
+      root: '/project',
+      id: `rec-${id}`,
+      source: 'subagent',
+      toolName: 'subagent_run',
+      toolCallId,
+      taskId,
+      writerModelId: 'RUNWIRE_CANARY_WRITER_MODEL',
+      writerEffort: 'RUNWIRE_CANARY_WRITER_EFFORT',
+    });
+
+  test('a subagent receipt corroborates spawn linkage when no toolResult carries it', async () => {
+    const bundles = await collect(spawnContext([subagentReceipt('r1', 'task-9', 'tc-receipt')]));
+    const child = bundles.find((b) => b.session.id === 'gentle-shell:child');
+
+    expect(child?.session.spawnCallId).toBe('tc-receipt');
+    expect(child?.diagnostics.filter((d) => d.code === 'receipt-spawn-link')).toMatchObject([
+      { level: 'info', count: 1 },
+    ]);
+    expect(JSON.stringify(bundles)).not.toContain('RUNWIRE_CANARY');
+  });
+
+  test('the toolResult identity stays primary over a receipt for the same task', async () => {
+    const bundles = await collect(
+      spawnContext([
+        {
+          type: 'message',
+          id: 'm2',
+          parentId: null,
+          timestamp: '2026-01-12T00:00:04.000Z',
+          message: {
+            role: 'toolResult',
+            toolCallId: 'tc-primary',
+            details: { gentleAgents: { taskId: 'task-9' } },
+          },
+        },
+        subagentReceipt('r1', 'task-9', 'tc-receipt'),
+      ]),
+    );
+    const child = bundles.find((b) => b.session.id === 'gentle-shell:child');
+
+    expect(child?.session.spawnCallId).toBe('tc-primary');
+    expect(child?.diagnostics.some((d) => d.code === 'receipt-spawn-link')).toBe(false);
+  });
+
+  test('receipts that do not corroborate a subagent link never supply one', async () => {
+    const bundles = await collect(
+      spawnContext([
+        // Not a subagent receipt.
+        receipt('r1', { source: 'parent', taskId: 'task-9', toolCallId: 'tc-parent' }),
+        // Missing half of the identity.
+        receipt('r2', { source: 'subagent', taskId: 'task-9' }),
+        receipt('r3', { source: 'subagent', toolCallId: 'tc-x' }),
+        // A link for another task never fills this task's slot.
+        subagentReceipt('r4', 'task-other', 'tc-other'),
+      ]),
+    );
+    const child = bundles.find((b) => b.session.id === 'gentle-shell:child');
+
+    expect(child?.session.spawnCallId).toBeUndefined();
+    expect(child?.diagnostics.some((d) => d.code === 'receipt-spawn-link')).toBe(false);
+  });
+});
+
 describe('gentle-shell discovery', () => {
   test('probe returns every candidate root, even the missing ones', async () => {
     const ctx = contextForFixture('small');
