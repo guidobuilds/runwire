@@ -48,10 +48,17 @@ export async function detectDbKind(ctx: AdapterContext, origin: DbOrigin): Promi
       "SELECT name FROM sqlite_master WHERE type = 'table'",
     );
     const names = new Set(tables.map((t) => t.name));
+    if (process.env.RUNWIRE_DEBUG === '1') {
+      console.error('DEBUG-TABLES', JSON.stringify({ path, names: [...names] }));
+    }
     if (names.has('session_v2')) return 'current';
     if (names.has('session') && !names.has('session_v2')) return 'legacy';
     return 'not-opencode';
-  } catch {
+  } catch (e) {
+    console.error(
+      'DEBUG-OPEN-THROW',
+      JSON.stringify({ path, code: (e as { code?: string }).code, message: String(e) }),
+    );
     return 'unreadable';
   } finally {
     reader?.close();
