@@ -22,11 +22,14 @@ async function discover(id: string, fixture: string) {
     ],
     {
       cwd: root,
-      env: Object.fromEntries(
-        Object.entries(process.env).filter(
-          ([key]) => !key.startsWith('PI_') && !key.startsWith('GENTLE_'),
+      env: {
+        ...Object.fromEntries(
+          Object.entries(process.env).filter(
+            ([key]) => !key.startsWith('PI_') && !key.startsWith('GENTLE_'),
+          ),
         ),
-      ),
+        RUNWIRE_DEBUG: '1',
+      },
       stdout: 'pipe',
       stderr: 'pipe',
     },
