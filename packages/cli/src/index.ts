@@ -142,14 +142,23 @@ async function main(argv: string[]): Promise<number> {
   return 2;
 }
 
+async function flushStdio(): Promise<void> {
+  await Promise.all([
+    new Promise<void>((resolve) => process.stdout.write('', () => resolve())),
+    new Promise<void>((resolve) => process.stderr.write('', () => resolve())),
+  ]);
+}
+
 if (import.meta.main) {
   main(process.argv.slice(2)).then(
-    (code) => {
-      process.exitCode = code;
+    async (code) => {
+      await flushStdio();
+      process.exit(code);
     },
-    (e) => {
+    async (e) => {
       console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
-      process.exitCode = 1;
+      await flushStdio();
+      process.exit(1);
     },
   );
 }
