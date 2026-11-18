@@ -23,7 +23,7 @@ describe('probe', () => {
     const result = await probe(ctxFor('all'));
     expect(result.installed).toBe(true);
     expect(result.roots).toHaveLength(1);
-    expect(result.roots[0]).toContain('.local/share/opencode');
+    expect(result.roots[0]).toContain(join('.local', 'share', 'opencode'));
     expect(result.notes.some((n) => n.includes('current'))).toBe(true);
     expect(result.notes.some((n) => n.includes('legacy'))).toBe(true);
   });

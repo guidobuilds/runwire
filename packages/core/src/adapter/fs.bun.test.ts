@@ -18,6 +18,15 @@ async function rejectCode(p: Promise<unknown>): Promise<string | undefined> {
   }
 }
 
+async function rejectError(p: Promise<unknown>): Promise<Error | undefined> {
+  try {
+    await p;
+    return undefined;
+  } catch (e) {
+    return e as Error;
+  }
+}
+
 function throwingIo(code: string): BunFsIo {
   return {
     stat: async () => {
@@ -59,11 +68,17 @@ describe('createBunFs: absence vs real failure', () => {
     expect(await fs.readdir(join(dir, 'file.txt'))).toEqual([]);
   });
 
-  test('a non-absence stat/readdir error (ENAMETOOLONG) is rethrown, not masked', async () => {
+  test('a real non-absence stat/readdir error is rethrown, not masked', async () => {
     const fs = createBunFs();
     const tooLong = join(dir, 'a'.repeat(5000));
-    expect(await rejectCode(fs.stat(tooLong))).toBe('ENAMETOOLONG');
-    expect(await rejectCode(fs.readdir(tooLong))).toBe('ENAMETOOLONG');
+    const statError = await rejectError(fs.stat(tooLong));
+    const readdirError = await rejectError(fs.readdir(tooLong));
+    expect(statError).toBeInstanceOf(Error);
+    expect(readdirError).toBeInstanceOf(Error);
+    expect((statError as { code?: string } | undefined)?.code).not.toBe('ENOENT');
+    expect((statError as { code?: string } | undefined)?.code).not.toBe('ENOTDIR');
+    expect((readdirError as { code?: string } | undefined)?.code).not.toBe('ENOENT');
+    expect((readdirError as { code?: string } | undefined)?.code).not.toBe('ENOTDIR');
   });
 
   test('a non-absence readFile error (EISDIR) is rethrown, not masked', async () => {

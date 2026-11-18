@@ -29,9 +29,9 @@ describe('paths', () => {
   test('opencodeDataDir / opencodeDbPath resolve under the home', () => {
     const ctx = ctxFor('small');
     const dataDir = opencodeDataDir(ctx);
-    expect(dataDir).toContain('.local/share/opencode');
-    expect(opencodeDbPath(ctx, 'current')).toBe(`${dataDir}/opencode.db`);
-    expect(opencodeDbPath(ctx, 'legacy')).toBe(`${dataDir}/opencode-tui-v2.db`);
+    expect(dataDir).toContain(join('.local', 'share', 'opencode'));
+    expect(opencodeDbPath(ctx, 'current')).toBe(join(dataDir, 'opencode.db'));
+    expect(opencodeDbPath(ctx, 'legacy')).toBe(join(dataDir, 'opencode-tui-v2.db'));
   });
 
   test('sourceIdFor and sourceLocatorFor are origin-scoped', () => {

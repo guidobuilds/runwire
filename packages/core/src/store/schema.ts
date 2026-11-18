@@ -136,7 +136,9 @@ CREATE TABLE IF NOT EXISTS rollups (
 
 CREATE INDEX IF NOT EXISTS idx_diagnostics_session_id ON diagnostics(session_id);
 CREATE INDEX IF NOT EXISTS idx_session_tool_counts_session_id ON session_tool_counts(session_id);
+`;
 
+const VIEWS_DDL = `
 CREATE VIEW IF NOT EXISTS project_aggregates AS
 SELECT
   p.key AS project_key,
@@ -333,6 +335,7 @@ function rebuildModelIdentity(db: Database): void {
 
   db.exec('PRAGMA foreign_keys = OFF');
   const run = db.transaction(() => {
+    db.exec('DROP VIEW IF EXISTS project_aggregates; DROP VIEW IF EXISTS harness_aggregates;');
     if (modelArms.length > 0) {
       db.exec(`INSERT OR IGNORE INTO models(name) ${modelArms.join(' UNION ')}`);
     }
@@ -361,6 +364,8 @@ function rebuildModelIdentity(db: Database): void {
       db.exec('DROP TABLE sessions');
       db.exec('ALTER TABLE sessions_new RENAME TO sessions');
     }
+
+    db.exec(VIEWS_DDL);
   });
   run();
   db.exec(`PRAGMA foreign_keys = ${foreignKeysWasOn ? 'ON' : 'OFF'}`);
@@ -375,6 +380,7 @@ function rebuildModelIdentity(db: Database): void {
 
 export function migrate(db: Database): void {
   db.exec(DDL);
+  db.exec(VIEWS_DDL);
   rebuildModelsProvider(db);
   ensureColumn(db, 'sessions', 'source_id', 'TEXT');
   ensureColumn(db, 'sessions', 'source_locator', 'TEXT');

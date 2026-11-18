@@ -84,8 +84,9 @@ describe('runServe', () => {
     const code = await p;
 
     expect(code).toBe(0);
-    expect(ensureDbDir).toHaveBeenCalledWith('/fake/home/.runwire/runwire.db');
-    expect(openStore).toHaveBeenCalledWith('/fake/home/.runwire/runwire.db');
+    const expectedDb = resolve('/fake/home/.runwire/runwire.db');
+    expect(ensureDbDir).toHaveBeenCalledWith(expectedDb);
+    expect(openStore).toHaveBeenCalledWith(expectedDb);
     expect(captured[0]?.host).toBe('127.0.0.1');
     expect(captured[0]?.port).toBe(8787);
     expect(stopMock).toHaveBeenCalled();
