@@ -27,7 +27,19 @@ export type DbKind = 'current' | 'legacy' | 'not-opencode' | 'unreadable';
 
 export async function detectDbKind(ctx: AdapterContext, origin: DbOrigin): Promise<DbKind> {
   const path = opencodeDbPath(ctx, origin);
-  const stat = await ctx.fs.stat(path);
+  let stat: Awaited<ReturnType<AdapterContext['fs']['stat']>>;
+  try {
+    stat = await ctx.fs.stat(path);
+  } catch (e) {
+    console.error(
+      'DEBUG-DETECT-THROW',
+      JSON.stringify({ path, code: (e as { code?: string }).code, message: String(e) }),
+    );
+    throw e;
+  }
+  if (process.env.RUNWIRE_DEBUG === '1') {
+    console.error('DEBUG-DETECT', JSON.stringify({ path, stat: stat ?? null }));
+  }
   if (!stat) return 'not-opencode';
   let reader: SqliteReader | undefined;
   try {
