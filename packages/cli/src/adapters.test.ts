@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createGentleShellAdapter, createPiAdapter } from '@runwire/adapter-pi';
@@ -55,6 +56,20 @@ test.each(['claude-code', 'opencode', 'pi', 'gentle-shell'])(
   '%s stays reachable through discover with valid NDJSON and no stderr',
   async (id) => {
     const result = await discover(id, `fixtures/${id}/small/home`);
+    if (id === 'opencode') {
+      const absolute = resolve(root, 'fixtures/opencode/small/home');
+      const second = await discover(id, absolute);
+      console.error(
+        'DEBUG-OPENCODE',
+        JSON.stringify({
+          cwd: root,
+          absolute,
+          dbExists: existsSync(`${absolute}/.local/share/opencode/opencode.db`),
+          relative: { code: result.code, out: result.stdout.slice(0, 120), err: result.stderr },
+          absoluteRun: { code: second.code, out: second.stdout.slice(0, 120), err: second.stderr },
+        }),
+      );
+    }
     expect(result.code).toBe(0);
     expect(result.stderr).toBe('');
     const lines = result.stdout.trim().split('\n');
