@@ -26,6 +26,9 @@ export async function runDiscover(opts: DiscoverOptions): Promise<number> {
   const ctx = createContext({ home: opts.home, titles: opts.titles });
   let failed = false;
   for await (const bundle of adapter.discover(ctx, new Map())) {
+    if (process.env.RUNWIRE_DEBUG === '1') {
+      console.error('DEBUG-BUNDLE', bundle.session.id);
+    }
     const result = validateBundle(bundle);
     if (!result.ok) {
       console.error(

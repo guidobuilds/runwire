@@ -120,6 +120,9 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
       const k = known.get(sourceId);
       if (k !== undefined && k.size === sourceSize && k.mtime === sourceMtime) continue;
 
+      if (process.env.RUNWIRE_DEBUG === '1') {
+        console.error('DEBUG-YIELD', sourceId);
+      }
       yield await computeSessionBundle({
         harnessId: HARNESS_ID,
         origin,
