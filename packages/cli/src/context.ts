@@ -1,9 +1,7 @@
-import { existsSync } from 'node:fs';
-import { statSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { AdapterContext, Logger } from '@runwire/core';
 import { createBunFs } from '@runwire/core';
 
