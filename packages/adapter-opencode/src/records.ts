@@ -112,6 +112,20 @@ export async function readOrigin(ctx: AdapterContext, origin: DbOrigin): Promise
       sessions.push(mapSessionRow(parsed));
     }
 
+    if (process.env.RUNWIRE_DEBUG === '1') {
+      console.error(
+        'DEBUG-ROWS',
+        JSON.stringify({
+          origin,
+          kind,
+          sessionRows: sessionRows.length,
+          sessions: sessions.length,
+          diagnostics: diagnostics.map((d) => d.code),
+          firstKeys: sessionRows[0] ? Object.keys(sessionRows[0]) : [],
+        }),
+      );
+    }
+
     const messageRows = reader.all<Record<string, unknown>>(
       'SELECT session_id, seq, type, data FROM session_message',
     );
