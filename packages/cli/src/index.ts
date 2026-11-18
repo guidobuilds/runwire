@@ -9,7 +9,9 @@ const USAGE = `Usage:
   runwire discover --adapter <id> [--home <dir>] [--json] [--no-titles]
   runwire serve [--db <path>] [--host <host>] [--port <n>] [--no-titles] [--expose]
 
-Known adapters: ${adapters.map((a) => a.id).join(', ')}`;
+Known adapters: ${adapters.map((a) => a.id).join(', ')}
+
+Runwire is early beta: flags, output and the database schema may change.`;
 
 async function main(argv: string[]): Promise<number> {
   const [subcommand, ...rest] = argv;
