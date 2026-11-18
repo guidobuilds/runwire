@@ -432,7 +432,6 @@ describe('computeBundle: identity and tree', () => {
         }),
       ]),
     );
-    // The header carries an id but is not a node: roots=1, leaves=1.
     expect(bundle.diagnostics.some((d) => d.code === 'branched-tree')).toBe(false);
   });
 
@@ -456,7 +455,6 @@ describe('computeBundle: identity and tree', () => {
         }),
       ]),
     );
-    // Two real roots (u1, u2); the unreferenced header is not counted.
     const diag = bundle.diagnostics.find((d) => d.code === 'branched-tree');
     expect(diag?.count).toBe(1);
   });

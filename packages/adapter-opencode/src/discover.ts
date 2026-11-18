@@ -21,12 +21,6 @@ function sanitizeErrorMessage(err: unknown): string {
   return oneLine.length > 180 ? `${oneLine.slice(0, 177)}...` : oneLine;
 }
 
-/**
- * Computes one session, converting any throw inside `computeBundle` (e.g. a
- * project resolve failure) into a `source-read-failed` stub. Matches the JSONL
- * adapters' `computeSourceBundle` (M3): `discover` must not abort the whole
- * origin because one session's fold threw.
- */
 async function computeSessionBundle(input: ComputeSessionInput): Promise<SessionBundle> {
   try {
     return await computeBundle(input);
@@ -106,19 +100,6 @@ async function countSessions(ctx: AdapterContext, path: string): Promise<number>
   }
 }
 
-/**
- * Streams one metadata-only `SessionBundle` per session across BOTH origins
- * (current then legacy), sorted by id within each origin, skipping a source
- * whose `sourceId` matches `known` at `{size,mtime}`. A bad row is carried as
- * a content-free diagnostic; a session whose fold throws yields a
- * `source-read-failed` stub so the rest of the origin still streams. An origin
- * whose DB exists but cannot be opened or queried is fatal: after logging the
- * fixed `opencode: origin <origin> read failed (source-read-failed)` line,
- * `discover` throws `Error('opencode <origin> source-read-failed')` with code
- * `source-read-failed`, so core records `report.error` and skips
- * `removeVanished` for this adapter. A healthy empty origin (missing DB, or a
- * readable DB with no OpenCode tables) yields no bundles and does not throw.
- */
 export async function* discover(ctx: AdapterContext, known: Known): AsyncIterable<SessionBundle> {
   for (const origin of OPENCODE_ORIGINS) {
     const records = await readOrigin(ctx, origin);
@@ -153,20 +134,6 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
   }
 }
 
-/**
- * Explicit per-source existence check (design §2.6). Returns `false` (delete)
- * only when the session id is confirmed absent in a successfully-read DB;
- * returns `true` (retain) otherwise.
- *
- * Adapter-only hardening for M1: `fs.stat` collapses "missing" and "I/O error"
- * (EACCES/EIO) into `undefined`, so it is never consulted here. Opening a
- * missing/unreadable/corrupt/locked DB throws, and any open/read error retains
- * — a transient error never mass-deletes. Consequence: a truly deleted
- * `opencode.db` retains its rows until core `stat` can distinguish ENOENT
- * (ARCHITECTURE §6 priority). This delete path is only ever reached after a
- * full successful discovery (importAll skips removal on a mid-stream
- * `discover` throw).
- */
 export async function sourceExists(
   ctx: AdapterContext,
   source: { sourceId: string; sourceLocator?: string },
@@ -190,12 +157,10 @@ export async function sourceExists(
       : names.has('session')
         ? 'session'
         : undefined;
-    if (!table) return true; // not an OpenCode DB -> retain
+    if (!table) return true;
     const rows = reader.all(`SELECT id FROM ${table} WHERE id = ?`, [id]);
-    return rows.length > 0; // present -> keep; confirmed absent -> delete
+    return rows.length > 0;
   } catch {
-    // Missing file, permission, corrupt, lock: retain. Vanished-origin
-    // deletion requires a positive ENOENT signal (core `stat`, follow-up).
     return true;
   } finally {
     reader?.close();

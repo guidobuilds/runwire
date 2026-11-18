@@ -1,7 +1,5 @@
 import type { ToolCategory } from '@runwire/core';
 
-// OpenCode tool names are lowercase (docs/adapters/opencode.md "Tool
-// categories"). Total: unknown names fall back to 'other'.
 const EXACT: Record<string, ToolCategory> = {
   read: 'read',
   glob: 'search',

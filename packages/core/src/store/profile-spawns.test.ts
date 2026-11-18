@@ -104,7 +104,6 @@ describe('readProfileSpawns', () => {
     expect(byChild.get('amb-1')).toMatchObject({ causalStatus: 'ambiguous', callAt: null });
     expect(byChild.get('amb-2')).toMatchObject({ causalStatus: 'ambiguous', callAt: null });
     expect(byChild.get('no-at')).toMatchObject({ causalStatus: 'linked', callAt: null });
-    // A lone unresolved action (no child candidate) reports its own `at` unambiguously.
     expect(byChild.get('lone')).toMatchObject({
       child: null,
       causalStatus: 'unresolved',

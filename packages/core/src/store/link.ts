@@ -1,20 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { makeDiagnostic } from '../contract/diagnostic';
 
-/**
- * ARCHITECTURE §6 / plan P2 (ADR 0001). Two passes inside one transaction:
- * (1) any session whose `parent_id` does not resolve to a real session gets
- * `parent_id` set NULL (depth/relation left as declared by the adapter -
- * plan P7) plus a warn `orphan-child` diagnostic, and becomes a root; (2)
- * a depth-2+ session flattened onto the root is reparented when exactly one
- * agent at the preceding depth owns the matching spawn call; (3)
- * `steps.child_id` is reset to NULL for every step, then set on `tool`
- * steps with `tool_category = 'agent'` to the child whose `parent_id` is
- * that session and whose `spawn_call_id` equals the step's `call_id`,
- * `MIN(child.id)` breaking a collision deterministically. Doing this as set
- * operations (not an app-level loop over insertion order) makes both passes
- * naturally order-independent and idempotent.
- */
 export function linkSessions(db: Database): void {
   const run = db.transaction(() => {
     resolveOrphans(db);
@@ -24,17 +10,6 @@ export function linkSessions(db: Database): void {
   run();
 }
 
-/**
- * Some harnesses report a useful `depth` and `spawn_call_id`, but identify the
- * root session as every descendant's parent. Recover the immediate parent from
- * the stronger causal evidence: an agent tool step at depth N-1 with the same
- * call id. The candidate must be unique and belong to the same harness,
- * project, and preceding depth. Repeated call ids therefore remain ambiguous
- * rather than cross-linking unrelated sessions.
- *
- * The operation is idempotent. Ambiguous or absent evidence leaves the
- * adapter-declared relationship untouched.
- */
 function recoverCausalParents(db: Database): void {
   db.run(
     `UPDATE sessions AS child

@@ -10,14 +10,6 @@ import { createFakeAdapter } from '../test-kit/fake-adapter';
 import type { AdapterReport, ImportReport } from './import-all';
 import { importAll } from './import-all';
 
-/**
- * A minimal OpenCode-like adapter: sessions carry an explicit `sourceId`
- * (`opencode:current:<id>`), a shared `sourceLocator` (the DB file path), and
- * `sourcePath = sourceId`. `discover` skips a source when `known` has its
- * sourceId at the same {size,mtime} — mirroring how a real DB-backed adapter
- * avoids re-emitting an unchanged session. `sourceExists` is injected so a
- * test can simulate a confirmed-absent source.
- */
 function opencodeLikeAdapter(opts: {
   ids: string[];
   sourceExists?: (source: SourceRef) => Promise<boolean>;
@@ -75,9 +67,6 @@ function reportFor(result: ImportReport, id: string): AdapterReport {
   return report;
 }
 
-/** An adapter `discover` that fails before emitting a record. A plain async
- * iterator (rather than a generator) keeps the rejection in the iterator
- * protocol without needing an unreachable `yield`. */
 function throwingDiscover(reason: unknown): AsyncIterable<never> {
   return {
     [Symbol.asyncIterator]() {
@@ -86,13 +75,6 @@ function throwingDiscover(reason: unknown): AsyncIterable<never> {
   };
 }
 
-/**
- * A one-source adapter for the D82 refresh tests: it emits a single tool step
- * whose MCP identity can be toggled per "mapping version", so a version bump
- * can prove a previously NULL column is backfilled even though the source's
- * size/mtime are unchanged. `known` is honoured like a real adapter so an
- * explicit `--force`/refresh bypass is observable.
- */
 function refreshAdapter(
   adapterVersion: string,
   opts: { identity: boolean; diagnostics?: Diagnostic[]; size?: number; mtime?: number },
@@ -137,7 +119,6 @@ function refreshAdapter(
   };
 }
 
-/** A fake adapter with a different `adapterVersion` (simulates a mapping bump). */
 function withVersion(adapter: HarnessAdapter, adapterVersion: string): HarnessAdapter {
   return { ...adapter, adapterVersion };
 }
@@ -224,8 +205,6 @@ describe('importAll', () => {
   test('titles:false nulls titles at persist even when the adapter emits one (D7)', async () => {
     const { db } = openStore(':memory:');
     const inner = createFakeAdapter();
-    // An adapter bug: it ignores ctx.privacy.titles and always emits titles.
-    // persist must still refuse to write them when the caller opted out.
     const leaky = {
       ...inner,
       async *discover(ctx: AdapterContext, known: Parameters<typeof inner.discover>[1]) {
@@ -256,8 +235,6 @@ describe('importAll', () => {
     };
     expect(titled.title).toBe('A fake session title');
 
-    // No `force`: the opt-out alone must reach every source, because the cache
-    // would otherwise skip a source and leave its stored title untouched.
     const noTitles: AdapterContext = { ...ctxWithFiles(BASE_PATHS), privacy: { titles: false } };
     const second = await importAll({ adapters: [adapter], db, ctx: noTitles });
 
@@ -274,7 +251,6 @@ describe('importAll', () => {
     }[];
     expect(rows.length).toBe(9);
     for (const row of rows) expect(row.title).toBeNull();
-    // Every known source was re-emitted, so none was treated as vanished.
     expect(sessionIds(db).length).toBe(9);
   });
 
@@ -286,8 +262,6 @@ describe('importAll', () => {
 
     const second = await importAll({ adapters: [adapter], db, ctx });
 
-    // Regression guard for the titles:false bypass above: the opt-in path must
-    // not lose the cache.
     expect(reportFor(second, 'fake')).toEqual({
       discovered: 0,
       imported: 0,
@@ -398,8 +372,6 @@ describe('importAll', () => {
 
   test('a stub row with NULL size/mtime is re-emitted while unchanged valid sources are skipped', async () => {
     const { db } = openStore(':memory:');
-    // A completed marker at the running version plus a persisted invalid stub
-    // (NULL size/mtime) simulate a store after a previously successful run.
     db.run(
       "INSERT INTO harnesses (id, display_name, adapter_version, capabilities, imported_version) VALUES ('fake', 'Fake', '1.0.0', '[]', '1.0.0')",
     );
@@ -412,12 +384,9 @@ describe('importAll', () => {
 
     const report = await importAll({ adapters: [adapter], db, ctx });
 
-    // The stub's NULL size/mtime never matches known (plan P5), so it is
-    // re-parsed and fails validation again; no valid source is touched.
     expect(reportFor(report, 'fake').discovered).toBe(1);
     expect(reportFor(report, 'fake').failed).toBe(1);
     expect(reportFor(report, 'fake').imported).toBe(0);
-    // The failed re-run does not retain apparent success.
     expect(readImportedVersion(db, 'fake')).toBeNull();
   });
 
@@ -425,9 +394,6 @@ describe('importAll', () => {
     const { db } = openStore(':memory:');
     const ctx = ctxWithFiles([...BASE_PATHS, '/fake/invalid.jsonl']);
 
-    // Run 1: the same id/sourcePath the fake invalid scenario uses, but valid
-    // and bearing a title/parent/tokens. A distinct size/mtime keeps run 2's
-    // invalid scenario (200/1000) out of the size/mtime cache.
     const base = createFakeAdapter();
     const validInvalid: SessionBundle = {
       project: { key: 'k', name: 'k', identity: 'cwd' },
@@ -472,7 +438,6 @@ describe('importAll', () => {
       ).output;
     const beforeRoot = rootOutput();
 
-    // Run 2: only the invalid scenario; it fails validation and clears the row.
     const second = await importAll({
       adapters: [createFakeAdapter({ includeInvalid: true, scenarios: ['invalid'] })],
       db,
@@ -491,7 +456,6 @@ describe('importAll', () => {
     };
     expect(stub).toEqual({ title: null, parent_id: null, output: null, source_size: null });
 
-    // The stale exclusive total is gone from the parent's inclusive rollup.
     expect(rootOutput()).toBe((beforeRoot as number) - 5);
   });
 
@@ -536,9 +500,6 @@ describe('importAll', () => {
     });
 
     const second = await importAll({ adapters: [adapter], db, ctx });
-    // Both sessions are unchanged (known), so discover skips them; sourceExists
-    // returns true (they still exist), so removed: 0. This is the regression that
-    // would have caught the known-skip deletion bug.
     expect(reportFor(second, 'opencode')).toEqual({
       discovered: 0,
       imported: 0,
@@ -569,7 +530,6 @@ describe('importAll', () => {
     expect(
       db.query("SELECT * FROM sessions WHERE id = 'opencode:current:ses_gone'").all().length,
     ).toBe(0);
-    // ses_a survives (sourceExists true), so it is counted as skipped.
     expect(reportFor(second, 'opencode').skipped).toBe(1);
   });
 
@@ -598,10 +558,8 @@ describe('importAll', () => {
     expect(fakeReport.error).toBe('fake: Error');
     expect(fakeReport.discovered).toBe(2);
     expect(fakeReport.imported).toBe(2);
-    // The pseudocode's catch skips the removed/skipped calculation entirely on a throw.
     expect(fakeReport.removed).toBe(0);
     expect(fakeReport.skipped).toBe(0);
-    // What was persisted before the throw stays - not rolled back.
     expect(sessionIds(db).length).toBe(2);
   });
 
@@ -631,15 +589,12 @@ describe('importAll', () => {
 
     expect(logged).toHaveLength(1);
     const line = logged[0] as string;
-    // The raw record fragment reaches neither sink (docs/ARCHITECTURE.md §7).
     expect(line).not.toContain(canary);
     expect(line).not.toContain('failed to parse record');
     expect(fakeReport.error).not.toContain(canary);
     expect(fakeReport.error).not.toContain('failed to parse record');
-    // No newlines: a raw multi-line dump cannot be reconstructed.
     expect(line).not.toMatch(/[\r\n]/);
     expect(fakeReport.error).not.toMatch(/[\r\n]/);
-    // Short, code-like (adapter id + error name) and bounded.
     expect(line.length).toBeLessThanOrEqual(200);
     expect((fakeReport.error as string).length).toBeLessThanOrEqual(200);
     expect(line).toContain('fake');
@@ -710,8 +665,6 @@ describe('importAll: automatic version refresh and completion marker (D82)', () 
       ctx,
     });
 
-    // Unchanged size/mtime sources are re-emitted anyway: a version refresh
-    // bypasses the cache, like `--force`.
     expect(reportFor(second, 'fake')).toEqual({
       discovered: 9,
       imported: 9,
@@ -719,12 +672,9 @@ describe('importAll: automatic version refresh and completion marker (D82)', () 
       removed: 0,
       failed: 0,
     });
-    // Installed metadata and completed-refresh marker stay separate columns.
     expect(fakeImportMeta(db)).toEqual({ adapter_version: '2.0.0', imported_version: '2.0.0' });
-    // Re-emitting the same effective identity never rewrites a locator.
     expect(locators()).toEqual(beforeLocators);
 
-    // Once the marker catches up, ordinary incremental behavior resumes.
     const third = await importAll({
       adapters: [withVersion(createFakeAdapter(), '2.0.0')],
       db,
@@ -764,7 +714,6 @@ describe('importAll: automatic version refresh and completion marker (D82)', () 
 
   test('a NULL marker on a legacy store forces one full refresh even when sizes match', async () => {
     const { db } = openStore(':memory:');
-    // A pre-feature store: installed metadata present, completion marker NULL.
     db.run(
       "INSERT INTO harnesses (id, display_name, adapter_version, capabilities) VALUES ('fake', 'Fake', '1.0.0', '[]')",
     );
@@ -779,7 +728,6 @@ describe('importAll: automatic version refresh and completion marker (D82)', () 
       ctx: ctxWithFiles(BASE_PATHS),
     });
 
-    // Every source is re-parsed despite matching sizes; the marker advances.
     expect(reportFor(report, 'fake')).toEqual({
       discovered: 9,
       imported: 9,
@@ -811,12 +759,9 @@ describe('importAll: automatic version refresh and completion marker (D82)', () 
 
     const partial = await importAll({ adapters: [throwing], db, ctx });
     expect(reportFor(partial, 'fake').error).toBe('fake: Error');
-    // Incomplete enumeration: no removal, and the apparent completed marker is
-    // cleared so the next scan retries instead of trusting the cache.
     expect(readImportedVersion(db, 'fake')).toBeNull();
     expect(sessionIds(db).length).toBe(9);
 
-    // The retry (a now-complete v2 adapter) refreshes and completes.
     const retry = await importAll({
       adapters: [withVersion(createFakeAdapter(), '2.0.0')],
       db,
@@ -886,10 +831,6 @@ describe('importAll: automatic version refresh and completion marker (D82)', () 
     expect(readImportedVersion(db, 'fake')).toBe('1.0.0');
     expect(sessionIds(db).length).toBe(9);
 
-    // Run 2 is a version refresh (so the cache is bypassed) that visits only
-    // root/child1 and whose invalid source fails validation: `complete` is
-    // false. The other seven stored sources are absent from this ctx and from
-    // the emitted set, so an incomplete scan must not delete them.
     const partial = await importAll({
       adapters: [
         withVersion(
@@ -904,7 +845,6 @@ describe('importAll: automatic version refresh and completion marker (D82)', () 
     expect(reportFor(partial, 'fake').failed).toBe(1);
     expect(reportFor(partial, 'fake').removed).toBe(0);
     expect(readImportedVersion(db, 'fake')).toBeNull();
-    // Every previously stored source survives the incomplete run.
     expect(sessionIds(db)).toContain('fake:titled');
     expect(sessionIds(db)).toContain('fake:orphan');
     expect(sessionIds(db)).toContain('fake:grandchild');
@@ -991,13 +931,9 @@ describe('importAll: automatic version refresh and completion marker (D82)', () 
     const { db } = openStore(':memory:');
     const ctx = ctxWithFiles([]);
 
-    // 1. A completed same-version import records the marker.
     await importAll({ adapters: [refreshAdapter('1.0.0', { identity: false })], db, ctx });
     expect(readImportedVersion(db, 'fake')).toBe('1.0.0');
 
-    // 2. The source changes and its re-read fails with an error diagnostic. The
-    //    changed size is persisted, so a same-version incremental scan would
-    //    treat it as known and skip it forever.
     const failed = await importAll({
       adapters: [
         refreshAdapter('1.0.0', {
@@ -1010,16 +946,11 @@ describe('importAll: automatic version refresh and completion marker (D82)', () 
       ctx,
     });
     expect(reportFor(failed, 'fake').imported).toBe(1);
-    // Capture the marker before the retry so the retry's discovery behavior is
-    // observable first.
     const markerAfterFailure = readImportedVersion(db, 'fake');
     expect(db.query("SELECT source_size FROM sessions WHERE id = 'fake:refresh'").get()).toEqual({
       source_size: 20,
     });
 
-    // 3. The next scan bypasses the size/mtime cache (the source is unchanged
-    //    from what the failed run stored) and completes. Without invalidation
-    //    the marker would still equal the version and this would be skipped (0).
     const retry = await importAll({
       adapters: [refreshAdapter('1.0.0', { identity: false, size: 20 })],
       db,
@@ -1027,7 +958,6 @@ describe('importAll: automatic version refresh and completion marker (D82)', () 
     });
     expect(reportFor(retry, 'fake').discovered).toBe(1);
     expect(readImportedVersion(db, 'fake')).toBe('1.0.0');
-    // The incomplete run must not have retained apparent success.
     expect(markerAfterFailure).toBeNull();
   });
 

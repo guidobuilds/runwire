@@ -70,8 +70,6 @@ describe('buildSessionsQuery sort', () => {
   });
 
   it('exposes the server default as newest lastActivity first', () => {
-    // A `null` client sort sends no `sort` param, so the UI must render this
-    // same field/direction as its default indicator.
     expect(DEFAULT_SORT).toEqual({ id: 'lastActivity', desc: true });
   });
 

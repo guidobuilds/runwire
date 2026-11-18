@@ -17,9 +17,6 @@ const HARNESS_ICONS: Record<string, { src: string; invertInDark?: boolean }> = {
   pi: { src: piIcon, invertInDark: true },
 };
 
-/** Just the brand mark for a harness id (no tooltip/label chrome). Exposed so
- * other surfaces (e.g. the sessions-list harness filter) can reuse the same
- * icon set and the same neutral fallback as `HarnessIdentity`. */
 export function HarnessIcon({ id, className }: { id: string; className?: string }) {
   const icon = HARNESS_ICONS[id];
   if (!icon) {
@@ -46,12 +43,6 @@ type HarnessIdentityProps = ComponentPropsWithoutRef<'span'> & {
   showId?: boolean;
 };
 
-/** Brand assets sourced from https://thesvg.org/icon/claude-code,
- * https://thesvg.org/icon/opencode, and
- * https://dashboardicons.com/icons/pi-coding-agent. Unknown adapters retain a
- * neutral fallback so imported third-party harnesses never render a broken image.
- * Gentle Shell (`gentle-shell`) intentionally uses this neutral CodeXml glyph;
- * its tooltip/accessible label comes from the harness display name as usual. */
 export function HarnessIdentity({
   harness,
   showId = false,

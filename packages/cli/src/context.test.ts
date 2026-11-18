@@ -90,8 +90,6 @@ describe('defaultDbPath', () => {
 describe('ensureDbDir', () => {
   test(':memory: creates nothing', async () => {
     await ensureDbDir(':memory:');
-    // No assertion target on disk - the point is this call must not throw
-    // and must not touch the real home. Documented by absence of side effects.
     expect(true).toBe(true);
   });
 

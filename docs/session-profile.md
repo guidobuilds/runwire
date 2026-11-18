@@ -7,9 +7,9 @@ API route is served under `/api/*`) and
 composes, in order: header → AgentLanes (canvas, one lane per agent with a global model-call axis) → token chart (tree-wide cumulative, one line
 per model) → merged events table → signals accordion (collapsed).
 
-This doc records the **approved contracts** the panels rely on, the
+This document records the contracts the panels rely on, the
 **limits / null semantics** they honour, and the documented **non-goals**. It
-is the contract source for `forge-adversary` and for any later change to the
+is the contract source for any later change to the
 profile.
 
 ---

@@ -37,19 +37,12 @@ async function bundleFor(ctx: AdapterContext, sessionId: string): Promise<Sessio
   return found;
 }
 
-// --- Adapter contract kit ---
-// Runs against fixtures/pi/all: the union of every other fixture (fork/ is
-// deliberately excluded - see all/README.md), since the capabilities-
-// consistency check needs to see the full repertoire of behavior in one view.
-
 adapterContract({
   adapter: createPiAdapter(),
   ctx: contextForFixture('all'),
   malformedSessionId: 'pi:a1000000-0000-7000-8000-000000000008',
   canarySentinel: 'RUNWIRE_CANARY_',
 });
-
-// --- Per-fixture correctness ---
 
 describe('pi adapter: small fixture', () => {
   test('discovers exactly one session with no diagnostics and a timed, successful tool call', async () => {

@@ -1,22 +1,8 @@
 import { z } from 'zod';
 import type { Diagnostic, Project, Session, SessionBundle, Step } from './types';
 
-// Strict Zod at the bundle boundary. D21's loose/passthrough rule governs
-// *raw harness records* inside an adapter (see e.g.
-// packages/adapter-claude-code/src/schema.ts, which stays .passthrough()) -
-// it does not apply here. A SessionBundle is the adapter's finished output;
-// any unrecognized key at any level is a contract violation and must be
-// loud, not silently dropped (.forge/core-adapter-reset/plan.md P5).
-//
-// Zod 4.5.4 spike (grill.md §5): `z.object` strips unknown keys by default
-// (silent data loss); `.strict()` reports `unrecognized_keys` with a `keys`
-// array of *names only* (never the offending value). schema.test.ts proves
-// both halves: the default-stripping behavior on a throwaway loose schema,
-// and that .strict() here catches what the default would have swallowed.
-
 const nonNegInt = () => z.number().int().nonnegative();
 const nonNegNumber = () => z.number().nonnegative();
-/** No newline, <=200 chars - mirrors contract/diagnostic.ts's makeDiagnostic guard. */
 const diagnosticMessage = () =>
   z
     .string()
@@ -104,7 +90,6 @@ export const StepSchema = z
     modelProvider: z.string().optional(),
     toolCategory: ToolCategorySchema.optional(),
     toolName: z.string().optional(),
-    // A proven identity is never empty and always a pair (see superRefine).
     mcpServer: z.string().min(1).optional(),
     mcpTool: z.string().min(1).optional(),
     callId: z.string().optional(),
@@ -125,9 +110,6 @@ export const StepSchema = z
   })
   .strict()
   .superRefine((step, ctx) => {
-    // MCP identity is a two-part, tool-only invariant. A malformed or
-    // ambiguous name legitimately carries NEITHER field, so absence is valid;
-    // only a partially/incorrectly populated pair is a contract violation.
     const hasServer = step.mcpServer !== undefined;
     const hasTool = step.mcpTool !== undefined;
     if (!hasServer && !hasTool) return;
@@ -171,13 +153,6 @@ export type ValidateBundleResult =
   | { ok: true; bundle: SessionBundle }
   | { ok: false; issues: string[] };
 
-/**
- * `path: code`; `unrecognized_keys` issues append the offending key *names*
- * (never a value) in parentheses. No issue string can ever contain record
- * content: we build the string from `issue.path`/`issue.code`/`issue.keys`
- * only, never from `issue.message` (which for some issue kinds can quote a
- * received value) or from the input itself.
- */
 function formatIssue(issue: z.core.$ZodIssue): string {
   const path = issue.path.join('.');
   const base = `${path}: ${issue.code}`;

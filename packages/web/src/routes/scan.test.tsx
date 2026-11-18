@@ -8,9 +8,6 @@ import { mockImportReport, mockSessionSummary } from '@/mocks/handlers';
 import { server } from '@/mocks/node';
 import { routeTree } from '@/routeTree.gen';
 
-// The sidebar Scan action is app-wide chrome (rendered by __root), so these tests
-// render the full router. Navigation is asserted from a non-/sessions route
-// (`/sessions/sess-1`) so the post-scan redirect to `/sessions` is observable.
 function renderApp(path = '/sessions') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const history = createMemoryHistory({ initialEntries: [path] });
@@ -23,7 +20,6 @@ function renderApp(path = '/sessions') {
   return { ...view, router, history };
 }
 
-/** A POST /api/scan handler that records calls and stays pending until released. */
 function gatedScan() {
   let calls = 0;
   let release: (() => void) | undefined;
@@ -118,8 +114,6 @@ describe('sidebar Scan action', () => {
 
   it('keeps the dialog open when the server rejects a scan report as failed', async () => {
     const user = userEvent.setup();
-    // The server answers a report with failed bundles non-2xx; the dialog must
-    // remain so the failure is visible instead of navigating as if it succeeded.
     server.use(
       http.post('/api/scan', () =>
         HttpResponse.json(

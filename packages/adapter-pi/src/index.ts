@@ -5,14 +5,6 @@ import { discover, probe } from './pi/discover';
 
 export { createGentleShellAdapter };
 
-/**
- * Exactly the 14 capabilities Pi can report (docs/adapters/pi.md §6). The six
- * unavailable ones (`mode`, `version`, `subagents`, `title`, `git`, `initiator`)
- * stay undeclared: three because Pi does not have the feature, three because it
- * does not persist data it computes. The contract kit fails a declared-but-
- * never-observed capability, so each of these must be observable on
- * `fixtures/pi/all`.
- */
 const CAPABILITIES: readonly Capability[] = [
   'usage.perCall',
   'usage.cumulative',

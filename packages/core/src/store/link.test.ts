@@ -68,7 +68,6 @@ describe('linkSessions - child_id by spawn_call_id', () => {
     insertSession(db, 'fake:root');
     insertAgentToolStep(db, 'fake:root', 0, 'c1');
     insertAgentToolStep(db, 'fake:root', 1, 'c2');
-    // child2 (matching the later step) inserted before child1
     insertSession(db, 'fake:child2', { parentId: 'fake:root', spawnCallId: 'c2' });
     insertSession(db, 'fake:child1', { parentId: 'fake:root', spawnCallId: 'c1' });
 
@@ -82,7 +81,6 @@ describe('linkSessions - child_id by spawn_call_id', () => {
     seed(db);
     insertSession(db, 'fake:root');
     insertAgentToolStep(db, 'fake:root', 0, 'c2');
-    // insert the lexically-larger id first
     insertSession(db, 'fake:child4', { parentId: 'fake:root', spawnCallId: 'c2' });
     insertSession(db, 'fake:child3', { parentId: 'fake:root', spawnCallId: 'c2' });
 

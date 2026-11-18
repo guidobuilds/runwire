@@ -1,0 +1,61 @@
+name: Bug report
+description: Something is wrong with import, discovery, the API or the web UI.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Runwire is early beta, so rough edges are expected.
+
+        Do **not** paste prompts, responses, code, tool output or other session content. Redact
+        paths and identifiers before sharing logs.
+
+        Security issues must go through [SECURITY.md](../blob/main/SECURITY.md), not this form.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the exact commands, flags and the harness involved.
+      placeholder: |
+        1. bun run runwire import --adapter claude-code
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Runwire version or commit
+      placeholder: e.g. main at 4df49a1, or 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: harness
+    attributes:
+      label: Harness and version
+      placeholder: e.g. Claude Code 2.1.250, OpenCode 1.x, Pi 0.85
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [macOS, Linux, Windows, Other]
+    validations:
+      required: true
+  - type: input
+    id: bun
+    attributes:
+      label: Bun version
+      placeholder: output of `bun --version`
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Import report, stderr, or API response. Redact paths and identifiers.
+      render: shell

@@ -26,7 +26,6 @@ function fixture(idle = 17 * 60 * 60_000) {
   agent.calls.events[1] = [
     { kind: 'compaction', trigger: 'auto', preTokens: 300_000, postTokens: 250_000 },
   ];
-  // Keep these two calls in global order independently of the fixture's later dates.
   for (let i = 2; i < agent.calls.at.length; i++) {
     agent.calls.at[i] = new Date(Date.parse(agent.calls.at[1]) + i * 1000).toISOString();
   }

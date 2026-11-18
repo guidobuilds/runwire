@@ -8,7 +8,7 @@ Recipes for the specific things Runwire can do today. The basics are in [getting
 bun run runwire import --adapter claude-code
 ```
 
-Adapter ids are `claude-code` and `opencode`. Without `--adapter`, every registered adapter runs. Use this when one harness is not the one you are auditing right now.
+Adapter ids are `claude-code`, `opencode`, `pi` and `gentle-shell`. Without `--adapter`, every registered adapter runs. Use this when one harness is not the one you are auditing right now.
 
 ## Import to a different database
 

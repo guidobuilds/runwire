@@ -1,18 +1,18 @@
 # Harness data survey
 
-Structure-only inspection (keys, record types, counts) of the harness data present on the reference macOS machine on 2026-08-29. No content was read or retained. Every adapter starts from its section here; update the section when a new version changes the layout.
+Structure-only inspection (keys, record types, counts) of the harness data available on a developer machine in August 2026. No content was read or retained. Every adapter starts from its section here; update the section when a new version changes the layout.
 
 ## Summary
 
-| Harness | Store | Sessions here | Usage granularity | Subagents | MVP |
+| Harness | Store | Sessions seen | Usage granularity | Subagents | Status |
 |---|---|---|---|---|---|
-| Claude Code | JSONL per session under `~/.claude/projects/` | 731 files, 607 MB | per API call (dedupe by `requestId`) | separate files in `<session>/subagents/` | **M2** |
-| Codex | JSONL rollouts under `~/.codex/sessions/YYYY/MM/DD/` | 167 files, 160 MB | cumulative `token_count` events | separate rollouts with `parent_thread_id` | M5 |
+| Claude Code | JSONL per session under `~/.claude/projects/` | 731 files, 607 MB | per API call (dedupe by `requestId`) | separate files in `<session>/subagents/` | supported |
+| Codex | JSONL rollouts under `~/.codex/sessions/YYYY/MM/DD/` | 167 files, 160 MB | cumulative `token_count` events | separate rollouts with `parent_thread_id` | planned |
 | Grok Build | per-session directory under `~/.grok/sessions/<url-encoded cwd>/<uuid>/` | 14 | per turn in `updates.jsonl` | `subagents/<id>/meta.json` | later |
-| OpenCode | SQLite `~/.local/share/opencode/{opencode.db, opencode-tui-v2.db}` (WAL) | 73 (59 current + 14 legacy) | per API call (from `session_message.data.tokens`) | `session_v2.parent_id` / `session.parent_id` | **M?** (adapter built 2026-09-05) |
-| Pi | `~/.pi/agent/sessions/<encoded cwd>/<timestamp>_<uuidv7>.jsonl` (one append-only JSONL tree per session) | 1 file / 371 records on the reference machine (2026-09-08) | per API call (one message per call; extra usage on compaction/branch_summary/toolResult) | extension-dispatched only; unlinkable (gentle-agents/) | adapter built 2026-09-10 (D78–D81) |
-| Gentle Shell | own Pi home: `~/.gentle-shell/agent/sessions/…` (shape A), the user's Pi home (shapes B/C); children flat under `<agent>/gentle-agents/sessions/`; ledger `<agent>/gentle-agents/tasks/<id>.json` | 30 files (isolated) + 332 (Pi home) on 2026-10-22 | per API call; children are their own sessions; ledger token/cost aggregates duplicate them | **linkable** via the task ledger (`parentSessionId` + `sessionPath` + parent `subagent_run` result), capped at 200 tasks | implemented 2026-10-22 (D84–D88; `adapters/gentle-shell.md`) |
-| Antigravity | no local trajectory store found | — | — | — | dropped (D11) |
+| OpenCode | SQLite `~/.local/share/opencode/{opencode.db, opencode-tui-v2.db}` (WAL) | 73 (59 current + 14 legacy) | per API call (from `session_message.data.tokens`) | `session_v2.parent_id` / `session.parent_id` | supported |
+| Pi | `~/.pi/agent/sessions/<encoded cwd>/<timestamp>_<uuidv7>.jsonl` (one append-only JSONL tree per session) | 1 file / 371 records on the inspected machine (2026-09-08) | per API call (one message per call; extra usage on compaction/branch_summary/toolResult) | extension-dispatched only; unlinkable (gentle-agents/) | supported |
+| Gentle Shell | own Pi home: `~/.gentle-shell/agent/sessions/…` (shape A), the user's Pi home (shapes B/C); children flat under `<agent>/gentle-agents/sessions/`; ledger `<agent>/gentle-agents/tasks/<id>.json` | 30 files (isolated) + 332 (Pi home) on 2026-10-22 | per API call; children are their own sessions; ledger token/cost aggregates duplicate them | **linkable** via the task ledger (`parentSessionId` + `sessionPath` + parent `subagent_run` result), capped at 200 tasks | supported |
+| Antigravity | no local trajectory store found | — | — | — | out of scope |
 
 ## Claude Code
 
@@ -39,9 +39,9 @@ See [adapters/claude-code.md](adapters/claude-code.md) for the full mapping. Key
 - `event_msg.payload.type`: `token_count` (`info.total_token_usage.{input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens, total_tokens}`, `info.last_token_usage`, `info.model_context_window`, `rate_limits`), `agent_message`, `agent_reasoning`, `user_message` (content), `context_compacted`, `sub_agent_activity` (`agent_thread_id`, `kind`, `occurred_at_ms`), `thread_settings_applied`.
 - `response_item.payload.type`: `message`, `function_call`, `function_call_output`, `reasoning`, `custom_tool_call(_output)`.
 - Semantics: `cached_input_tokens ⊂ input_tokens`; `reasoning_output_tokens ⊂ output_tokens`. `token_count.info` is `null` in ~0.6 % of events — skip those.
-- Subagents: 87 rollouts with `thread_source: subagent` vs 39 `user` on this machine. `agent_path` like `/root` suggests a hierarchy; `parent_thread_id` is the link.
+- Subagents: 87 rollouts with `thread_source: subagent` vs 39 `user` on the inspected machine. `agent_path` like `/root` suggests a hierarchy; `parent_thread_id` is the link.
 - Counts: 167 rollouts; `cli_version` spread 0.98 → 0.150 (most 0.145–0.147).
-- Per-step signals: `function_call.name` and `function_call_output` (error markers) — to verify in M5 for `toolCategory` and `toolResult.error`.
+- Per-step signals: `function_call.name` and `function_call_output` (error markers) — to verify when the Codex adapter is built, for `toolCategory` and `toolResult.error`.
 
 ## Grok Build
 
@@ -77,7 +77,7 @@ See [adapters/pi.md](adapters/pi.md) for the full mapping. Key facts:
   open extension vocabulary; unknown names degrade to `other` (D31).
 - **Capabilities:** 14 of 20 declarable; nothing is persisted for `version`, `initiator`, `git`,
   `mode` or `title`, and there are no built-in subagents (D78/D79/D81).
-- **Version drift:** the reference machine also runs Pi **1.2.0** (pinned by Gentle Shell), which
+- **Version drift:** inspected machine also runs Pi **1.2.0** (pinned by Gentle Shell), which
   keeps format `version: 3` but adds `system` messages, `usage` and `context_edit` entries,
   per-message `durationMs` and `toolResult.nestedCalls`. The Pi adapter still targets 0.85.1 and
   would ignore the new `usage` entries (undercount), report `system` as an unknown role and miss
@@ -88,7 +88,7 @@ See [adapters/pi.md](adapters/pi.md) for the full mapping. Key facts:
 See [adapters/gentle-shell.md](adapters/gentle-shell.md) for the full mapping. Key facts:
 
 - **It is a Pi-native shell, not a new format.** `gentle-pi` pins an upstream
-  `@earendil-works/pi-coding-agent` (1.2.0 on the reference machine) and keeps sessions as Pi v3
+  `@earendil-works/pi-coding-agent` (1.2.0 on the inspected machine) and keeps sessions as Pi v3
   JSONL. The harness identity is not in the header.
 - **Three homes:** isolated `~/.gentle-shell/agent` (default), installed into `~/.pi/agent`
   (Path B), and `--link` reusing `~/.pi/agent` (shape C). The `gentle-agents/` tree always lives
@@ -104,7 +104,7 @@ See [adapters/gentle-shell.md](adapters/gentle-shell.md) for the full mapping. K
   the duplicated `tokens`/`cost`/`turns`/`toolCalls` aggregates. `spawnCallId` comes from the
   Gentle Shell-owned parent's `subagent_run` tool result (`details.gentleAgents.taskId`).
   Ledger aggregates are never used; only link metadata leaves the ledger projection.
-- **The ledger is capped** at `history_max_tasks` (default 200, global). On the reference machine
+- **The ledger is capped** at `history_max_tasks` (default 200, global). On the inspected machine
   15/16 children were linkable in the isolated home but only 200/315 in the Pi home.
 - **Children coverage (structure-only snapshot, 2026-10-22):** the isolated home has 14 parent
   and 16 child files (15 linkable); the Pi home has 17 parent and 315 child files (200 linkable).
@@ -122,6 +122,6 @@ See [adapters/gentle-shell.md](adapters/gentle-shell.md) for the full mapping. K
 
 `~/.antigravity/` holds extensions and CLI binaries; `~/.gemini/antigravity/` has `brain/` (empty), `knowledge/`, `implicit/*.pb`, `daemon/` logs; `~/Library/Application Support/Antigravity/User/globalStorage/state.vscdb` has `antigravityUnifiedStateSync.trajectorySummaries` with an empty value. No per-session usage data found locally. Dropped from MVP (D11); revisit if a local trajectory store appears.
 
-## Toolchain on the reference machine
+## Toolchain on the inspected machine
 
 Bun 1.3.10, Node 24.17, SQLite 3.51, jq 1.7.1, git 2.54.

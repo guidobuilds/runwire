@@ -49,9 +49,6 @@ describe('two-run import regression (the known-skip deletion bug)', () => {
     expect(reportFor(first, 'opencode').removed).toBe(0);
 
     const second = await importAll({ adapters: [adapter], db, ctx });
-    // The unchanged live session is skipped by discover, but sourceExists finds
-    // it in the DB, so removed: 0. This is the regression that would have
-    // deleted every live-but-unchanged session on the second import.
     expect(reportFor(second, 'opencode').discovered).toBe(0);
     expect(reportFor(second, 'opencode').removed).toBe(0);
     expect(reportFor(second, 'opencode').skipped).toBe(1);
@@ -76,7 +73,6 @@ describe('connector is CORE-representable (no content parts)', () => {
 
 describe('confirmed-absent origin DB file retains its sessions (adapter-only M1 trade-off)', () => {
   test('a full import, then the current DB file disappears (legacy remains), removes nothing', async () => {
-    // Build a scratch home with the all-fixture layout (current + legacy DBs).
     const srcHome = join(FIXTURES_ROOT, 'all', 'home', '.local', 'share', 'opencode');
     const scratch = mkdtempSync(join(tmpdir(), 'oc-absent-'));
     const scratchHome = join(scratch, '.local', 'share', 'opencode');
@@ -97,14 +93,9 @@ describe('confirmed-absent origin DB file retains its sessions (adapter-only M1 
       const first = await importAll({ adapters: [adapter], db, ctx });
       expect(reportFor(first, 'opencode').imported).toBe(3);
 
-      // Remove opencode.db (keep the legacy store) so probe stays installed.
       rmSync(join(scratchHome, 'opencode.db'));
 
       const second = await importAll({ adapters: [adapter], db, ctx });
-      // Adapter-only hardening (M1/F1): `sourceExists` retains on any open
-      // error, including a missing file, because `fs.stat === undefined` cannot
-      // distinguish "missing" from "I/O error" until core splits it (#24). So a
-      // vanished origin no longer removes its sessions in this round.
       expect(reportFor(second, 'opencode').removed).toBe(0);
       const remaining = db.query('SELECT id FROM sessions ORDER BY id').all() as { id: string }[];
       const ids = remaining.map((r) => r.id);

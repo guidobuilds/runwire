@@ -3,11 +3,6 @@ import type { ProfileNode, ProfileScope } from './profile-types';
 
 const PROFILE_SCOPE_CTE = 'profile_scope';
 
-/**
- * A parameterized scope CTE. Tree traversal uses `UNION`, rather than
- * `UNION ALL` plus an encoded path, so each id is admitted once and malformed
- * parent cycles terminate without depending on ids' textual representation.
- */
 export function profileScopeCte(scope: ProfileScope): string {
   if (scope === 'own') {
     return `WITH RECURSIVE ${PROFILE_SCOPE_CTE}(id) AS (
@@ -23,17 +18,14 @@ export function profileScopeCte(scope: ProfileScope): string {
   )`;
 }
 
-/** Bindings for {@link profileScopeCte}; ids are always SQLite parameters. */
 export function profileScopeParams(sessionId: string): SQLQueryBindings[] {
   return [sessionId];
 }
 
-/** SQL predicate for a table alias whose `id` must be in the current profile scope. */
 export function profileScopeMembershipSql(tableAlias: string): string {
   return `${tableAlias}.id IN (SELECT id FROM ${PROFILE_SCOPE_CTE})`;
 }
 
-/** Root first, followed by a deterministic bytewise id order. */
 export function profileNodeOrderSql(tableAlias: string): string {
   return `ORDER BY CASE WHEN ${tableAlias}.id = ? THEN 0 ELSE 1 END, ${tableAlias}.id COLLATE BINARY`;
 }
@@ -47,11 +39,6 @@ type ProfileNodeRow = {
   ended_at: string | null;
 };
 
-/**
- * Returns null if the requested session does not exist; otherwise returns the
- * complete own/tree node set. This is intentionally the common membership
- * boundary used by all profile reads, not a rollup or a raw-content read.
- */
 export function readProfileScopeNodes(
   db: Database,
   sessionId: string,
@@ -80,7 +67,6 @@ export function readProfileScopeNodes(
   }));
 }
 
-/** False for an absent root, absent member, or a member outside the selected scope. */
 export function isProfileScopeMember(
   db: Database,
   sessionId: string,

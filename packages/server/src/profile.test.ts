@@ -3,7 +3,6 @@ import { describe, expect, test } from 'bun:test';
 import { openStore } from '@runwire/core';
 import { createServer } from './createServer';
 
-/** Idempotently upserts a raw model string and returns its `models.id`. */
 function modelId(db: Database, name: string): number {
   db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT DO NOTHING', [name]);
   return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
@@ -208,7 +207,6 @@ describe('GET /api/sessions/{id}/profile/{projection}', () => {
       const child = await body(base, '/api/sessions/root/child?ignored=still-compatible');
       expect(child.response.status).toBe(200);
       expect(child.json.session.id).toBe('root/child');
-      // The legacy un-prefixed path must not expose the API.
       expect((await body(base, '/sessions')).response.status).toBe(404);
     });
   });

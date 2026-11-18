@@ -13,11 +13,6 @@ type RecordedRender = {
   pageIndex: number;
 };
 
-/**
- * Renders the hook and records the committed query/pagination of every render.
- * This is what lets a test prove there was no *intermediate* render pairing a
- * new filter with the old page offset (the confirmed double-fetch defect).
- */
 function trackRenders() {
   const renders: RecordedRender[] = [];
   const { result } = renderHook(() => {
@@ -68,7 +63,6 @@ describe('useSessionsTableState', () => {
     expect(vi.getTimerCount()).toBe(0);
     expect(result.current.query).toMatchObject({ q: 'auth', durationMin: 30 });
 
-    // The cancelled timer must not fire a second (duplicate) commit.
     act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS * 2));
     expect(result.current.query).toMatchObject({ q: 'auth', durationMin: 30 });
   });
@@ -96,8 +90,6 @@ describe('useSessionsTableState', () => {
     renders.length = 0;
     act(() => result.current.setFilters(filters({ q: 'auth' }), { immediate: true }));
 
-    // No render may pair the committed filter with the old page offset: that
-    // intermediate render is what fired the spurious ?offset=20 fetch.
     expect(renders.some((render) => render.q === 'auth' && render.offset !== 0)).toBe(false);
     expect(renders.at(-1)).toMatchObject({ q: 'auth', offset: 0, pageIndex: 0 });
     expect(result.current.query).toMatchObject({ q: 'auth', offset: 0 });
@@ -110,7 +102,6 @@ describe('useSessionsTableState', () => {
     expect(result.current.query.offset).toBe(20);
 
     act(() => result.current.setFilters(filters({ q: 'auth' })));
-    // Still uncommitted; the draft render must not count as a commit.
     expect(result.current.query.offset).toBe(20);
 
     renders.length = 0;
@@ -142,11 +133,9 @@ describe('useSessionsTableState', () => {
     expect(result.current.pagination.pageIndex).toBe(2);
     expect(result.current.query.offset).toBe(2 * result.current.pagination.pageSize);
 
-    // setPage must not be undone by a later debounce tick.
     act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS * 2));
     expect(result.current.pagination.pageIndex).toBe(2);
 
-    // A committed filter change returns to the first page.
     act(() => result.current.setFilters(filters({ q: 'auth' }), { immediate: true }));
     expect(result.current.pagination.pageIndex).toBe(0);
     expect(result.current.query.offset).toBe(0);
@@ -160,7 +149,6 @@ describe('useSessionsTableState', () => {
 
     act(() => result.current.setPageSize(20));
 
-    // The pending debounce is untouched: the text is still uncommitted.
     expect(vi.getTimerCount()).toBe(1);
     expect(result.current.query.q).toBeUndefined();
     expect(result.current.query.limit).toBe(20);

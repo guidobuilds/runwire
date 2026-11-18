@@ -78,13 +78,6 @@ function SessionProfileRoute() {
   const session = useSession(id);
   const queryClient = useQueryClient();
   const [refresh, setRefresh] = useState(0);
-  // Whole-tree subagent count, reported by AgentLanes once its full `lanes`
-  // agent list is loaded (design.md "Signals accordion (G5)": nodes.length -
-  // 1, shared from the graph's own already-fetched data, not a second
-  // reader). Reset to null on id/refresh change (compared during render, per
-  // React's "adjusting state when a prop changes" pattern, rather than an
-  // effect) so a stale count from a previous session is never shown mid-load
-  // — SignalsAccordion already renders null as "—".
   const [subagentCount, setSubagentCount] = useState<number | null>(null);
   const subagentResetKey = `${id}:${refresh}`;
   const lastSubagentResetKey = useRef(subagentResetKey);

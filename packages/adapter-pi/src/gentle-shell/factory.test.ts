@@ -5,7 +5,7 @@ import { piAllowlist } from '../pi/allowlist';
 import { gentleShellAllowlist } from './allowlist';
 import { createGentleShellAdapter } from './index';
 
-describe('gentle-shell factory ( skeleton)', () => {
+describe('gentle-shell factory (skeleton)', () => {
   test('satisfies the HarnessAdapter contract', () => {
     const adapter: HarnessAdapter = createGentleShellAdapter();
     expect(adapter.id).toBe('gentle-shell');
@@ -34,7 +34,6 @@ describe('gentle-shell factory ( skeleton)', () => {
       'steps.toolDurations',
     ];
     expect([...adapter.capabilities].sort()).toEqual([...expected].sort());
-    // The four unavailable ones stay undeclared.
     expect(adapter.capabilities).not.toContain('mode');
     expect(adapter.capabilities).not.toContain('version');
     expect(adapter.capabilities).not.toContain('title');
@@ -50,7 +49,6 @@ describe('gentle-shell factory ( skeleton)', () => {
     const piKeys = new Set(keysOf(piAllowlist));
     const shellKeys = new Set(keysOf(gentleShellAllowlist));
     for (const key of piKeys) expect(shellKeys.has(key), `missing: ${key}`).toBe(true);
-    // §7 additions that Pi does not project.
     for (const key of [
       '.kind',
       '.customType',
@@ -65,7 +63,7 @@ describe('gentle-shell factory ( skeleton)', () => {
     }
   });
 
-  test('the Pi adapter is untouched (behaviour of  is additive)', () => {
+  test('the Pi adapter is untouched (the skeleton is additive)', () => {
     const adapter = createPiAdapter();
     expect(adapter.id).toBe('pi');
     expect(adapter.displayName).toBe('Pi');

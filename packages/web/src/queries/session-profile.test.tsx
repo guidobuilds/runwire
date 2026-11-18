@@ -170,7 +170,6 @@ describe('session profile query keys', () => {
     expect(hook.result.current.data?.items[0]?.seq).toBe(1);
 
     hook.rerender({ offset: 1 });
-    // keepPreviousData: the prior page's data stays visible immediately.
     expect(hook.result.current.data?.items[0]?.seq).toBe(1);
     await waitFor(() => expect(hook.result.current.data?.items[0]?.seq).toBe(2));
     expect(fetch).toHaveBeenCalledTimes(2);

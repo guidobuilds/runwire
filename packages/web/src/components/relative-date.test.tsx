@@ -8,9 +8,6 @@ const DAY = 24 * 60 * MINUTE;
 
 const NOW = Date.parse('2026-09-01T12:00:00.000Z');
 
-/** A `value` that is unambiguously `daysAgo` old, with a one-minute buffer so
- * real-clock drift between building the value and rendering can never cross a
- * whole-unit boundary. */
 function pastIso(daysAgo: number): string {
   return new Date(Date.now() - daysAgo * DAY - MINUTE).toISOString();
 }
@@ -41,8 +38,6 @@ describe('formatRelative — units, boundaries and empty states', () => {
     expect(formatRelative('2026-08-03T12:00:00.000Z', NOW)).toBe('29d ago');
     expect(formatRelative('2026-08-02T12:00:00.000Z', NOW)).toBe('1mo ago');
     expect(formatRelative('2026-03-02T12:00:00.000Z', NOW)).toBe('6mo ago');
-    // The 30d month approximation fills 360–364 days with "12mo" before the
-    // 365d year bucket takes over.
     expect(formatRelative('2025-09-06T12:00:00.000Z', NOW)).toBe('12mo ago');
     expect(formatRelative('2025-09-01T12:00:00.000Z', NOW)).toBe('1y ago');
   });
@@ -91,7 +86,6 @@ describe('RelativeDate — display and interaction', () => {
     expect(button).toHaveAttribute('aria-pressed', 'true');
     expect(button).toHaveTextContent(formatDateTime(value));
 
-    // Leaving the cell must not clear a pinned date.
     fireEvent.mouseLeave(button);
     expect(button).toHaveTextContent(formatDateTime(value));
 
@@ -188,7 +182,6 @@ describe('RelativeDate — controlled column mode (dashboard)', () => {
     expect(relativeButton).toHaveTextContent('2d ago');
     expect(relativeButton).toHaveAttribute('aria-pressed', 'false');
 
-    // A dashboard cell must not react to the pointer at all.
     fireEvent.mouseEnter(relativeButton);
     expect(relativeButton).toHaveTextContent('2d ago');
 
@@ -210,7 +203,6 @@ describe('RelativeDate — controlled column mode (dashboard)', () => {
     fireEvent.click(screen.getByRole('button'));
 
     expect(onToggle).toHaveBeenCalledTimes(1);
-    // The owner owns the column format; this cell does not switch on its own.
     expect(screen.getByRole('button')).toHaveTextContent('2d ago');
     expect(screen.getByRole('button')).toHaveAttribute('aria-pressed', 'false');
   });

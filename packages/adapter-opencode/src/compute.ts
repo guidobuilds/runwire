@@ -18,7 +18,6 @@ export type ComputeSessionInput = {
   origin: DbOrigin;
   session: OpenCodeSession;
   messages: OpenCodeMessage[];
-  /** All sessions in the origin, keyed by id — used for the parent-chain depth. */
   sessionsById: Map<string, OpenCodeSession>;
   projects: Map<string, OpenCodeProject>;
   recordDiagnostics: readonly Diagnostic[];
@@ -70,7 +69,6 @@ function pickPrimaryModel(
   return pickMostFrequent(order, counts);
 }
 
-/** Walks the parent chain within the same origin; 0 for a root. */
 export function computeDepth(
   session: OpenCodeSession,
   sessionsById: Map<string, OpenCodeSession>,
@@ -88,14 +86,6 @@ export function computeDepth(
   return depth;
 }
 
-/**
- * Folds one OpenCode session's normalized records into a CORE `SessionBundle`
- * (docs/adapters/opencode.md "Record -> CORE field map"). Token fields are
- * ALWAYS computed as the Σ of `call`-step tokens, never read from
- * `session_v2.tokens_*`; a `token-total-drift` diagnostic is emitted when the
- * harness's own aggregate differs. Shared by the bundle path and the
- * connector.
- */
 export async function computeBundle(input: ComputeSessionInput): Promise<SessionBundle> {
   const { harnessId, origin, session, messages, sessionsById, projects, recordDiagnostics, ctx } =
     input;
@@ -120,7 +110,6 @@ export async function computeBundle(input: ComputeSessionInput): Promise<Session
   const modelOrder: string[] = [];
   const modelCounts = new Map<string, number>();
   const modelOutputByName = new Map<string, number>();
-  // First provider observed per model name: feeds modelPrimaryProvider.
   const modelProviderByName = new Map<string, string>();
 
   let callStepCount = 0;
@@ -269,7 +258,6 @@ export async function computeBundle(input: ComputeSessionInput): Promise<Session
       }
 
       case 'synthetic':
-        // Injected content, not a turn and not a step.
         break;
 
       default:
@@ -279,10 +267,6 @@ export async function computeBundle(input: ComputeSessionInput): Promise<Session
   }
 
   if (unknownTypes.size > 0) {
-    // Count-only: never interpolate the raw `session_message.type` (TEXT) into
-    // the diagnostic message. A long or multiline type would make
-    // `makeDiagnostic` throw and abort the whole origin; a short prompt-like
-    // value would leak record content (M3, ARCHITECTURE §7).
     const count = [...unknownTypes.values()].reduce((a, b) => a + b, 0);
     diagnostics.push(
       makeDiagnostic(
@@ -352,7 +336,6 @@ export async function computeBundle(input: ComputeSessionInput): Promise<Session
     modelPrimary,
     modelPrimaryProvider: modelPrimary ? modelProviderByName.get(modelPrimary) : undefined,
     modelChanges: modelChanges > 0 ? modelChanges : undefined,
-    // mode / effort / git / initiator are not stored per OpenCode session.
     uncachedInput,
     cachedInput,
     cacheWrite,

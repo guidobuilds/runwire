@@ -11,7 +11,7 @@ Evidence base:
 - Pi CLI `0.85.1` (`@earendil-works/pi-coding-agent`), its shipped `docs/session-format.md`,
   `docs/sessions.md`, `docs/compaction.md`, `docs/usage.md` and the `.d.ts` in
   `dist/core/session-manager.d.ts` and `@earendil-works/pi-ai/dist/types.d.ts`.
-- Structure-only inspection of the real session data on the reference macOS machine
+- Structure-only inspection of the real session data on the inspected macOS machine
   (2026-09-08): 1 session file, 371 records, keys and numeric aggregates only — no content read
   or retained. Appendix A has the numbers.
 - Pi is last in the harness order (D25). `docs/harness-survey.md` "Pi" was rewritten in task 12
@@ -148,7 +148,7 @@ ToolName = 'read'|'bash'|'powershell'|'edit'|'write'|'grep'|'find'|'ls'   // dis
 ```
 
 Everything else in a real session comes from `pi.registerTool()` in a third-party package, so the
-tool vocabulary is **open** (observed on the reference machine: `todo`, `subagent_run`,
+tool vocabulary is **open** (observed on the inspected machine: `todo`, `subagent_run`,
 `subagent_list_agents`, `read_symbol`, `lens_diagnostics`, `module_report`, `mem_save`,
 `mem_session_summary`, `gentle_review`, `project_report`). Consequences: no `mcp` tool category
 from core data, no `mode`, no `subagents`, and a `tool-category.ts` that must degrade unknown
@@ -225,7 +225,7 @@ records per large session), so a Pi timeline needs no "hide harness events by de
 
 `piToolCategory(name)` (`src/tool-category.ts`), D31. Names are already lowercase.
 
-| Category | Built-in | Extension names observed on the reference machine |
+| Category | Built-in | Extension names observed on the inspected machine |
 |---|---|---|
 | `read` | `read`, `ls` | `read_symbol` |
 | `search` | `grep`, `find` | — |
@@ -301,7 +301,7 @@ uses for `<synthetic>` usage. Rules:
    is not agent- or summary-shaped is what makes a semantic drift detectable later.
 
 Alternative (rejected): drop them and match only "main context accounting". Rejected because the
-reference machine runs extensions whose tools call models (`gentle_review`,
+inspected machine runs extensions whose tools call models (`gentle_review`,
 `mem_session_summary`, `subagent_run`), and silently dropping their cost would understate exactly
 the harness-layer waste Runwire exists to find. Note `toolResult.usage` is declared but **not
 observed** in the reference data — verify against more sessions before trusting it.
@@ -360,7 +360,7 @@ persist data it already computes.
 (§2.3), so there is no `.meta.json` analogue, no nested directory, no `spawn_call_id`, no
 `agent_type`, no `depth`.
 
-In practice this is worse than it looks, because the reference machine *does* run
+In practice this is worse than it looks, because inspected machine *does* run
 extension-dispatched subagents: `subagent_run` (from an installed package) writes child sessions
 into its own tree (`~/.pi/agent/gentle-agents/sessions/`) whose headers carry **no**
 `parentSession`, and the parent's `toolResult.details` exposes only
@@ -506,7 +506,7 @@ export const piAllowlist: Projection = {
 };
 ```
 
-Excluded, and why — each of these is a **content hazard demonstrated on the reference machine**,
+Excluded, and why — each of these is a **content hazard demonstrated on the inspected machine**,
 not a theoretical one:
 
 | Key | Contains |

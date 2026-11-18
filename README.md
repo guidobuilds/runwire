@@ -1,96 +1,125 @@
 # Runwire
 
-Local, read-only explorer of coding-agent sessions. Reads the session files a harness (Claude Code first) leaves on disk, keeps only operational metadata and usage metrics — no prompts, responses, code or reasoning — and stores them in SQLite so the token and time waste of a hand-built agent harness becomes visible.
+**Local, read-only visibility into coding-agent sessions.** Runwire reads the session files your
+harness already writes to disk, keeps only operational metadata and token usage, and stores it in
+SQLite so you can see where a hand-built agent setup burns tokens and time.
 
-## Current scope
+> [!WARNING]
+> **Runwire is early beta (0.x).** The data contract, SQLite schema, CLI flags and HTTP API may
+> change without notice between releases. It is a local analysis tool, not production
+> infrastructure. Back up `~/.runwire/runwire.db` before upgrading.
+>
+> **The web UI is incomplete.** Some panels are placeholders or still being designed. The import
+> path and the database are the stable part today.
 
-- `packages/core` — contract types, SQLite store, import orchestrator, contract test kit.
-- `packages/adapter-claude-code`, `packages/adapter-opencode` — Claude Code and OpenCode.
-- `packages/adapter-pi` — Pi and Gentle Shell (two factories, distinct harness identities).
-- `packages/cli`, `packages/server`, `packages/web` — CLI registry, local API and web explorer.
+[![CI](https://github.com/guidobuilds/runwire/actions/workflows/test.yml/badge.svg)](https://github.com/guidobuilds/runwire/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Status: beta](https://img.shields.io/badge/status-beta-orange.svg)](#project-status)
 
-Registered harnesses: Claude Code → OpenCode → Pi → Gentle Shell. Gentle Shell imports its
-isolated-home parents and children from both Gentle and Pi `gentle-agents/sessions` trees.
-Shared Pi-home parents stay attributed to Pi; see [coverage](docs/usage/what-runwire-knows.md).
+## What it does
 
-## Setup
+- **Reads only.** It never modifies harness logs, harness databases or your configuration.
+- **Metadata only.** Prompts, responses, reasoning, code, tool input and tool output are never
+  stored. A per-adapter allowlist decides which fields survive; everything else is dropped before
+  validation. Harness-generated titles are the single opt-in exception.
+- **Local only.** No account, no API key, no cloud service, no telemetry.
+- **Harness-agnostic.** One package per harness; the same contract and test kit for all of them.
 
-Requires [Bun](https://bun.sh) 1.3+.
+What ends up in the database: one row per session with token totals (uncached input, cached input,
+cache write, output, reasoning), timing, model and mode history, compactions, tool calls by
+category, subagent lineage and an ordered timeline. See
+[docs/usage/what-runwire-knows.md](docs/usage/what-runwire-knows.md).
+
+## Supported harnesses
+
+| Harness | Status | Data source |
+|---|---|---|
+| Claude Code | supported | `~/.claude/projects/**` (JSONL) |
+| OpenCode | supported | `~/.local/share/opencode/*.db` (SQLite, read-only) |
+| Pi | supported | `~/.pi/agent/sessions/**` (JSONL) |
+| Gentle Shell | supported | isolated home plus `gentle-agents/sessions` trees |
+| Codex | planned | — |
+| Grok Build | planned | — |
+
+Unavailable signals stay `NULL`; nothing is inferred. Coverage per signal is in
+[docs/usage/what-runwire-knows.md](docs/usage/what-runwire-knows.md#harness-coverage).
+
+## Requirements
+
+- [Bun](https://bun.sh) **1.3 or newer**.
+- macOS, Linux or Windows.
+- At least one supported harness, with sessions already on disk.
+
+There is no global install and no npm package yet: run everything from a clone.
+
+## Quick start
 
 ```sh
+git clone https://github.com/guidobuilds/runwire.git
+cd runwire
 bun install
+
+bun run runwire import     # read sessions into ~/.runwire/runwire.db
+bun run dev                # API on :8787 + web UI on :5173
 ```
 
-## Checks
+`bun run dev` starts both halves under one process; `Ctrl-C` stops both. Use
+`./scripts/dev.sh --import` to refresh the database before starting, `--db <path>` to pick another
+store, and `--port <n>` for another API port.
+
+To inspect sessions without writing anything:
 
 ```sh
-bun run test        # bun test in every package
-bun run typecheck   # tsc --noEmit per package
-bun run lint        # Biome + workspace import-boundary check
+bun run runwire discover --adapter claude-code --json > inventory.ndjson
 ```
-
-## Run the app
-
-```sh
-bun run dev                 # or: ./scripts/dev.sh
-```
-
-Starts both halves from the repo root under one process, one Ctrl-C: `[api]` is
-`runwire serve` on http://127.0.0.1:8787, `[web]` is Vite on http://localhost:5173, whose `/api`
-proxy points at the API. Output is line-prefixed, and if either half exits the other is stopped.
-`./scripts/dev.sh --import` refreshes the database first; `--db <path>` and `--port <n>` pick the
-store and the API port (`packages/web/vite.config.ts` hardcodes 8787, so change both or neither).
 
 ## Commands
 
-```sh
-bun run runwire import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles]
-bun run runwire discover --adapter claude-code --json
-bun run runwire discover --adapter gentle-shell --json
+```text
+runwire import   [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles] [--force]
+runwire discover --adapter <id> [--home <dir>] [--json] [--no-titles]
+runwire serve    [--db <path>] [--host <host>] [--port <n>] [--no-titles] [--expose]
 ```
 
-`runwire import` runs every registered adapter (or just the one named by `--adapter`) and stores
-its sessions in `~/.runwire/runwire.db` by default; `--db <path>` overrides the DB location and
-`--db :memory:` is allowed. `--home <dir>` overrides where the adapter looks for harness data
-(defaults to the real OS home). `--no-titles` drops session titles from what's stored (D7).
-`runwire import` prints an `ImportReport` to stderr — one line per adapter with discovered/
-imported/skipped/removed/failed counts — and exits `1` if any adapter errored or a bundle failed
-validation, `0` otherwise.
+The default database is `~/.runwire/runwire.db`. `--db :memory:` is supported. Adapter ids:
+`claude-code`, `opencode`, `pi`, `gentle-shell`. Full reference:
+[docs/usage/commands.md](docs/usage/commands.md).
 
-`runwire discover --adapter <id> [--home <dir>] [--json]` streams that adapter's bundles read-only,
-without writing to any store. `--json` writes one `SessionBundle` per line (NDJSON) to stdout and
-nothing else, so `bun run runwire discover --adapter claude-code --json > out.json` is safe to pipe;
-without `--json` it prints one terse human-readable line per bundle instead. All logs and errors
-always go to stderr.
+`runwire serve` binds to loopback only. `--expose` allows a non-loopback bind and prints a warning:
+the API has no authentication and serves session metadata plus `POST /api/scan`.
 
-### Inventory
+## Development
 
 ```sh
-bun run runwire discover --adapter claude-code --json | jq -s '.' > claude-inventory.json
+bun run lint        # Biome + import-boundary check
+bun run typecheck   # tsc --noEmit in every package
+bun run test        # bun test per package, Vitest in packages/web
 ```
 
-`jq -s '.'` wraps the NDJSON lines into a single JSON array — easiest to open and analyze in one
-file. Use `jq -c '.'` instead to keep one JSON object per line (NDJSON), handy for streaming or
-re-piping. Because runwire's logs and errors go to stderr, they never contaminate the JSON on stdout
-here either. In the saved array, each step with `toolCategory === "skill"` carries the skill name in
-its `skillName` field.
+Never run a bare `bun test` at the repo root: `bunfig.toml` excludes `packages/web`, so it would
+silently skip the web suite. Architecture and import boundaries are documented in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); decisions are recorded in
+[docs/DECISIONS.md](docs/DECISIONS.md).
 
-## Docs
+## Project status
 
-User documentation:
+Runwire is **beta** and maintained as a spare-time project. Expect rough edges. The most useful
+contributions right now are bug reports, new harness adapters, and documentation fixes. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
-- [docs/usage/getting-started.md](docs/usage/getting-started.md) — install and first import.
-- [docs/usage/how-to.md](docs/usage/how-to.md) — recipes for importing, exporting and testing.
-- [docs/usage/commands.md](docs/usage/commands.md) — `runwire import` / `runwire discover` reference.
-- [docs/usage/what-runwire-knows.md](docs/usage/what-runwire-knows.md) — what gets stored, privacy, harness coverage.
+Roadmap, without dates:
 
-Design and internals:
+- Stabilize the data contract and publish the first tagged release.
+- Finish the session-profile UI.
+- Add Codex and Grok Build adapters.
+- Publish installable packages.
 
-- [docs/PRODUCT.md](docs/PRODUCT.md) — purpose, principles, scope.
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the core/adapter contract, schema, import flow.
-- [docs/DECISIONS.md](docs/DECISIONS.md) — numbered decisions (`D<n>`).
-- [docs/adapters/README.md](docs/adapters/README.md) — how to add a harness; [docs/adapters/claude-code.md](docs/adapters/claude-code.md) is the worked example.
+## Security
+
+Runwire is local-first, but it still reads sensitive session metadata. Do not expose the API
+publicly. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), never in a
+public issue.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+[MIT](LICENSE) © 2026 Guido Caffa.

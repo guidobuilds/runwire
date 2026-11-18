@@ -87,7 +87,6 @@ describe('gentle-shell fixture behavior', () => {
       spawnCallId: 'spawn-5',
       initiatorKind: 'machine',
     });
-    // Count only: the receipt that supplied the identity is never named.
     expect(child?.diagnostics).toMatchObject([
       { level: 'info', code: 'receipt-spawn-link', count: 1 },
     ]);

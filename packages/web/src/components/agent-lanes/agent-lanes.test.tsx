@@ -241,7 +241,6 @@ describe('Agent Lanes', () => {
   it('anchors the tooltip, freezes hover inside it, and opens the original agent', async () => {
     const { onOpenNode } = mount();
     const canvas = await screen.findByLabelText(/Agent lanes:.*calls/);
-    // MouseEvent supplies coordinates for pointer events in jsdom.
     const move = (x: number, y: number) =>
       fireEvent(canvas, new MouseEvent('pointermove', { bubbles: true, clientX: x, clientY: y }));
     move(170, 40);

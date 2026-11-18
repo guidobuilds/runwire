@@ -63,7 +63,6 @@ describe('openStore file permissions (SEC-03)', () => {
   test.skipIf(process.platform === 'win32')('tightens a pre-existing lax file on open', () => {
     const dir = mkdtempSync(join(tmpdir(), 'runwire-store-'));
     const path = join(dir, 'runwire.db');
-    // Simulates a DB created before SEC-03 under umask 022.
     writeFileSync(path, '');
     chmodSync(path, 0o644);
     const store = openStore(path);
@@ -116,7 +115,6 @@ describe('migrate', () => {
 
   test('migrate adds skill_name to a legacy steps table and the second run is a no-op', () => {
     const db = new Database(':memory:');
-    // A pre-skill-name `steps` table (the legacy shape, no skill_name column).
     db.exec(
       'CREATE TABLE steps (session_id TEXT, seq INTEGER, kind TEXT, PRIMARY KEY (session_id, seq))',
     );
@@ -174,7 +172,6 @@ describe('cascades', () => {
 
   test('control: a fresh connection without the foreign_keys pragma does not cascade', () => {
     const db = new Database(':memory:');
-    // No `PRAGMA foreign_keys = ON` here - this is the negative control.
     migrate(db);
     insertBaseSession(db, 's1');
     db.exec("INSERT INTO steps (session_id, seq, kind) VALUES ('s1', 0, 'turn')");

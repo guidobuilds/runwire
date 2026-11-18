@@ -27,8 +27,6 @@ type Expected = {
   diagnostics: Record<string, { level: string; code: string; count?: number }[]>;
 };
 
-// The union is a byte-for-byte copy of the case homes, including both homes'
-// duplicate child candidates. Regeneration never touches the Pi fixtures.
 if (process.env.UPDATE_EXPECTED === '1') {
   for (const name of CASES) {
     cpSync(join(FIXTURES_ROOT, name, 'home'), join(FIXTURES_ROOT, 'all', 'home'), {

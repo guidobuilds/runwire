@@ -2,20 +2,9 @@ import type { AdapterContext } from '../adapter/types';
 import type { HarnessAdapter, Known } from '../contract/adapter';
 import type { SessionBundle } from '../contract/types';
 
-/**
- * A pure in-memory HarnessAdapter double (ARCHITECTURE §3) used to exercise
- * the store/import path end to end without any real harness data. Scenario
- * ids are the contract for consumers - assert on them, never on counts of
- * the fixture (lessons `fake-adapter-shared-fixture`). All source paths
- * live under `/fake/...` so a `createMemoryFs` can make them exist or
- * vanish; a row under `/other/...` inserted directly by a test proves root
- * scoping (plan P4).
- */
 export type CreateFakeAdapterOptions = {
   installed?: boolean;
-  /** Adds `fake:invalid` (a bundle with a negative seq) - for the orchestrator's persistInvalidBundle path only. */
   includeInvalid?: boolean;
-  /** Restricts discover() to exactly these scenario ids (sourceId, no `fake:` prefix) - for the vanished-source test. */
   scenarios?: string[];
 };
 
@@ -231,7 +220,6 @@ function baseScenarios(): ScenarioDef[] {
           relation: 'subagent',
           depth: 1,
           agentType: 'fake-explorer',
-          // Intentionally no spawnCallId - must never get an agent-step childId.
           sourcePath: sourcePathFor('child2'),
           sourceSize: 200,
           sourceMtime: 1000,
@@ -254,7 +242,7 @@ function baseScenarios(): ScenarioDef[] {
           relation: 'subagent',
           depth: 1,
           agentType: 'fake-explorer',
-          spawnCallId: 'c2', // collides with child4; MIN(id) -> child3 wins.
+          spawnCallId: 'c2',
           sourcePath: sourcePathFor('child3'),
           sourceSize: 200,
           sourceMtime: 1000,
@@ -277,7 +265,7 @@ function baseScenarios(): ScenarioDef[] {
           relation: 'subagent',
           depth: 1,
           agentType: 'fake-explorer',
-          spawnCallId: 'c2', // collision with child3 - lexically-earlier id wins.
+          spawnCallId: 'c2',
           sourcePath: sourcePathFor('child4'),
           sourceSize: 200,
           sourceMtime: 1000,
@@ -318,7 +306,7 @@ function baseScenarios(): ScenarioDef[] {
           id: 'fake:orphan',
           harnessId: 'fake',
           projectKey: 'k',
-          parentId: 'fake:ghost', // never resolves - link.ts nulls this and adds orphan-child.
+          parentId: 'fake:ghost',
           relation: 'subagent',
           depth: 1,
           agentType: 'fake-orphan',
@@ -391,8 +379,6 @@ function invalidScenario(): ScenarioDef {
         sourceSize: 200,
         sourceMtime: 1000,
       },
-      // A negative seq is a schema violation (StepSchema requires seq >= 0),
-      // for exercising persistInvalidBundle from the orchestrator.
       steps: [{ sessionId: 'fake:invalid', seq: -1, kind: 'turn' }],
       diagnostics: [],
     }),

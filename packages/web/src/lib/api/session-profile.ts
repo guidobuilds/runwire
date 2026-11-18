@@ -125,7 +125,6 @@ function isStringArray(value: unknown): value is readonly string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
 
-/** A stored identity column is usable only as a non-empty string. */
 function nonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value !== '' ? value : null;
 }
@@ -305,10 +304,6 @@ function normalizeMergedEvent(value: unknown): Event {
         (typeof value.toolName !== 'string' && value.toolName !== null)
       )
         break;
-      // Paired MCP identity is additive and nullable: preserve it only when the
-      // API delivered a complete, non-empty pair. A missing/partial/malformed
-      // pair degrades to nulls (never a partial or invented identity), so the
-      // table falls back to the raw subject.
       const mcpServer = nonEmptyString(value.mcpServer);
       const mcpTool = nonEmptyString(value.mcpTool);
       const completeMcpPair = mcpServer !== null && mcpTool !== null;
@@ -319,8 +314,6 @@ function normalizeMergedEvent(value: unknown): Event {
         toolName: value.toolName,
         mcpServer: completeMcpPair ? mcpServer : null,
         mcpTool: completeMcpPair ? mcpTool : null,
-        // Additive-with-default: responses predating the `model` field (or a
-        // null model) normalize to null rather than throwing (see merged-events-nodes-normalizer).
         model: typeof value.model === 'string' ? value.model : null,
       };
     }
@@ -687,7 +680,6 @@ export async function fetchSessionProfileMergedEvents(
       scope: request.scope,
       sort: request.sort,
       dir: request.dir,
-      // Multi-value params are CSV (duplicate query params are rejected).
       kind: request.kind && request.kind.length > 0 ? request.kind.join(',') : undefined,
       action: request.action && request.action.length > 0 ? request.action.join(',') : undefined,
       status: request.status,
@@ -701,8 +693,6 @@ export async function fetchSessionProfileMergedEvents(
   return normalizeMergedEvents(response);
 }
 
-// `/profile/models` takes no query parameters at all: the path must carry no
-// `?` (the server 400s on any parameter, see f2-t2).
 export async function fetchSessionProfileModels(
   id: string,
   signal?: AbortSignal,
@@ -711,8 +701,6 @@ export async function fetchSessionProfileModels(
   return normalizeModelsResponse(response);
 }
 
-// `/profile/context` likewise accepts no query parameters: the path must carry
-// no `?` (the server 400s on any parameter, including `scope`).
 export async function fetchSessionProfileContext(
   id: string,
   signal?: AbortSignal,

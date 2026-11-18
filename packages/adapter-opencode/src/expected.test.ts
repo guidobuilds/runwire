@@ -7,13 +7,8 @@ import { createOpencodeAdapter } from './index';
 
 const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', 'fixtures', 'opencode');
 
-// Every fixture case except all/ (a synthetic union used by the contract kit, not
-// a per-case snapshot target).
 const CASES = ['small', 'subagents', 'canary', 'malformed', 'legacy'];
 
-// `sourceLocator` is an absolute DB path (machine-dependent) and `sourceMtime` is
-// omitted for parity with the Claude fixtures; `sourcePath` = the sourceId
-// (portable), so it is stored as-is rather than made relative to home.
 type ExpectedSession = Omit<Session, 'sourceMtime' | 'sourceLocator'>;
 type ExpectedDiagnostic = { level: string; code: string; count?: number };
 type Expected = {

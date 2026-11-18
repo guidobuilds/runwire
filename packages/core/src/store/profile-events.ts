@@ -29,11 +29,6 @@ type EventRow = {
   subject: string | null;
 };
 
-/* Seven source variants, with an explicit metadata-only column list for every
- * arm. No catch-all arm means an unknown future source kind cannot leak into
- * the profile by accident, and UNION ALL is safe because source kinds differ.
- * `mcp_server`/`mcp_tool` are the stored identity columns (NULL off the tool
- * arm) so the `q` filter can search them in SQL before pagination. */
 const EVENTS_CTE = `,
 profile_events(stream_id, seq, at, kind, error, model, category, tool_name, duration_ms, trigger, from_value, to_value, mcp_server, mcp_tool) AS (
   SELECT st.session_id, st.seq, st.at, 'call', st.error, mn.name,
@@ -69,12 +64,8 @@ profile_events(stream_id, seq, at, kind, error, model, category, tool_name, dura
   FROM steps st JOIN profile_scope ps ON ps.id = st.session_id WHERE st.kind = 'mode-change'
 )`;
 
-/* Semantic "what happened" token: the tool category for tool steps, the step
- * kind otherwise. Never NULL, so it is directly filterable/sortable. */
 const ACTION_EXPR = 'COALESCE(category, kind)';
 
-/* Metadata-only "what it acted on": model / tool name / compaction trigger /
- * `from → to`. A turn has no subject (NULL); it is never a content field. */
 const SUBJECT_EXPR = `(CASE
   WHEN kind = 'call' THEN model
   WHEN kind IN ('tool', 'harness') THEN tool_name
@@ -86,8 +77,6 @@ END)`;
 
 const SORT_EXPR: Record<EventSortField, string> = {
   time: 'at',
-  // Agent identity is the stream/session id; the display label (agentType) is
-  // a scope-node attribute, so ordering groups a session's own rows.
   agent: 'stream_id',
   kind: 'kind',
   action: ACTION_EXPR,
@@ -98,12 +87,10 @@ const SORT_EXPR: Record<EventSortField, string> = {
 
 type Conditions = { sql: string; params: SQLQueryBindings[] };
 
-/** Escapes `%`/`_`/`\` so user text matches literally (see listSessions' `q`). */
 function likePattern(text: string): string {
   return `%${text.replace(/[\\%_]/g, '\\$&')}%`;
 }
 
-/** The filter predicate shared by the count, excluded-count, and page queries. */
 function filterConditions(query: MergedEventsQuery): Conditions {
   const clauses: string[] = [];
   const params: SQLQueryBindings[] = [];
@@ -126,9 +113,6 @@ function filterConditions(query: MergedEventsQuery): Conditions {
     params.push(query.model);
   }
   if (query.q !== undefined) {
-    // Metadata-only presentation surface: action, subject, model, and the
-    // stored MCP identity (so a search for the authoritative server/tool also
-    // matches when it differs from the raw tool name the subject carries).
     clauses.push(
       `(COALESCE(${ACTION_EXPR}, '') LIKE ? ESCAPE '\\'` +
         ` OR COALESCE(${SUBJECT_EXPR}, '') LIKE ? ESCAPE '\\'` +
@@ -143,8 +127,6 @@ function filterConditions(query: MergedEventsQuery): Conditions {
   return { sql: clauses.length === 0 ? '' : ` AND ${clauses.join(' AND ')}`, params };
 }
 
-/** Requested primary sort plus a stable tie-break so equal keys never shuffle
- * between pages. NULL keys sort first ASC and last DESC (SQLite default). */
 function orderSql(sort: EventSortField, dir: SortDirection): string {
   const direction = dir === 'desc' ? 'DESC' : 'ASC';
   const parts = [`${SORT_EXPR[sort]} ${direction}`];
@@ -196,12 +178,6 @@ function toEvent(row: EventRow): Event {
   }
 }
 
-/**
- * Metadata-only, server-driven page of events merged by true chronology across
- * the whole scope. Filtering, sorting, and pagination are all resolved in SQL;
- * events without a usable `at` are never interleaved into `items` and are
- * reported in `excludedNullAtCount`.
- */
 export function readProfileMergedEvents(
   db: Database,
   sessionId: string,

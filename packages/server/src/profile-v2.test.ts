@@ -3,19 +3,11 @@ import { describe, expect, test } from 'bun:test';
 import { openStore } from '@runwire/core';
 import { createServer } from './createServer';
 
-/** Idempotently upserts a raw model string and returns its `models.id`. */
 function modelId(db: Database, name: string): number {
   db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT DO NOTHING', [name]);
   return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
 }
 
-/**
- * A richer fixture than profile.test.ts's: a root + child tree with
- * compactions (auto/manual/unknown trigger), a model-change, an mcp call, a
- * skill call, a read tool call, an agent spawn (root -> child), and one
- * null-`at` call step (for excludedNullAtCount), plus an unrelated
- * `outside` session that must never leak into tree-scoped aggregates.
- */
 function seed(db: Database): void {
   db.run(
     'INSERT INTO harnesses (id, display_name, adapter_version, capabilities) VALUES (?, ?, ?, ?)',
@@ -140,11 +132,6 @@ async function body(base: string, path: string): Promise<{ response: Response; j
   return { response, json: await response.json() };
 }
 
-// 'output' is deliberately excluded here: it is the legitimate TokenField key
-// (a token *count*, e.g. `series[].totals.output`) that every usage/timeline
-// response carries, not raw tool-call output content. Views whose `Event`
-// items never declare an `output` field (merged/events) get the stricter
-// check below instead.
 const METADATA_KEYS = ['title', 'cwd', 'git', 'args', 'prompt'];
 
 function assertMetadataOnly(json: unknown): void {
@@ -156,8 +143,6 @@ function assertMetadataOnly(json: unknown): void {
   expect(text).not.toContain('/private/');
 }
 
-/** Stricter check for Event-item views: no title/cwd/git/args/output/prompt
- * key anywhere, since `Event`'s kind-specific fields never include `output`. */
 function assertEventsMetadataOnly(json: unknown): void {
   assertMetadataOnly(json);
   expect(JSON.stringify(json)).not.toContain('"output"');
@@ -225,7 +210,6 @@ describe('GET /api/sessions/{id}/profile/timeline', () => {
       expect(json.scope).toBe('tree');
       expect(json.field).toBe('output');
       expect(json.sessionId).toBe('root');
-      // 3 call steps in tree scope; 1 has at IS NULL.
       expect(json.excludedNullAtCount).toBe(1);
       expect(json.points).toHaveLength(2);
       expect(json.points.map((p: { at: string }) => p.at)).toEqual([
@@ -309,14 +293,11 @@ describe('GET /api/sessions/{id}/profile/events', () => {
       expect(json.sessionId).toBe('root');
       expect(json.limit).toBe(50);
       expect(json.offset).toBe(0);
-      // root: 9 rows, root/child: 3 rows (1 with at IS NULL) => 11 timed + 1 excluded.
       expect(json.items).toHaveLength(11);
       expect(json.total).toBe(11);
       expect(json.excludedNullAtCount).toBe(1);
       const ats = json.items.map((item: { at: string }) => item.at);
       expect([...ats].sort()).toEqual(ats);
-      // True cross-session interleaving: root/child's read at :03.5 sits between
-      // root's compaction(auto) at :03 and compaction(manual) at :04.
       const idxChildRead = json.items.findIndex(
         (item: { streamId: string; kind: string }) =>
           item.streamId === 'root/child' && item.kind === 'tool',
@@ -331,8 +312,6 @@ describe('GET /api/sessions/{id}/profile/events', () => {
       );
       expect(idxAuto).toBeLessThan(idxChildRead);
       expect(idxChildRead).toBeLessThan(idxManual);
-      // Semantic action/subject: tool rows carry the category action + tool name
-      // subject; non-tool rows carry the kind action.
       expect(json.items).toContainEqual(
         expect.objectContaining({ kind: 'tool', action: 'read', subject: 'Read' }),
       );
@@ -370,8 +349,6 @@ describe('GET /api/sessions/{id}/profile/events', () => {
       );
 
       const signals = await body(base, '/api/sessions/root/profile/signals');
-      // The legacy fixture row (NULL pair, canonical name) still resolves via
-      // the strict fallback; the new row comes from its stored pair.
       expect(signals.json.mcpServers).toEqual(['plugin_engram_engram', 'stored-server']);
       expect(signals.json.toolCalls).toEqual({ total: 6, mcp: 2 });
 
@@ -484,7 +461,6 @@ describe('GET /api/sessions/{id}/profile/events', () => {
     await withServer(async (base) => {
       const modelB = await body(base, '/api/sessions/root/profile/events?model=model-b');
       expect(modelB.json.items).toHaveLength(2);
-      // `outside` is not in the tree scope, so its model never matches.
       const outside = await body(base, '/api/sessions/root/profile/events?model=outside-model');
       expect(outside.json.items).toHaveLength(0);
 
@@ -526,7 +502,6 @@ describe('GET /api/sessions/{id}/profile/events', () => {
     await withServer(async (base) => {
       const cases: Array<[string, string]> = [
         ['?wat=1', 'wat'],
-        // `filter` was removed in the clean cut: it is now an unknown param.
         ['?filter=all', 'filter'],
         ['?field=output', 'field'],
         ['?sort=', 'sort'],
@@ -623,14 +598,10 @@ describe('GET /api/sessions/{id}/profile/models', () => {
       expect(response.status).toBe(200);
       expect(json.view).toBe('models');
       expect(json.sessionId).toBe('root');
-      // Own group: only root's kind='call' step (model-a, output 10).
       expect(json.session).toEqual({
         outputTokens: 10,
         models: [{ model: 'model-a', outputTokens: 10, share: 1 }],
       });
-      // Descendants: root/child's two call steps only (model-b 20, model-a 5);
-      // the tool step's model is ignored and the unrelated `outside` session
-      // never leaks into the tree.
       expect(json.descendants).toEqual({
         outputTokens: 25,
         models: [

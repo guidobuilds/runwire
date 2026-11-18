@@ -1,9 +1,3 @@
-// Gentle Shell discovery (docs/adapters/gentle-shell.md §2/§5/§9): parents of
-// the isolated home plus every `gentle-agents/sessions` tree, with the task
-// ledger read for link metadata only. Attribution follows decision 1 (S3/S7):
-// this adapter never scans the user Pi home's parent root — that is Pi's — and
-// never reads another adapter's files (S8): parent resolution below is an
-// existence check on file NAMES, not a content read.
 import { join } from 'node:path/posix';
 import type { AdapterContext, Diagnostic, Known, Projection, SessionBundle } from '@runwire/core';
 import { makeDiagnostic, project, readLinesRaw } from '@runwire/core';
@@ -42,11 +36,6 @@ function sanitizeErrorMessage(err: unknown): string {
   return oneLine.length > 180 ? `${oneLine.slice(0, 177)}...` : oneLine;
 }
 
-/**
- * Every root this adapter could own, existing or not (gentle-shell.md §9):
- * `loadKnown` scopes stored rows by `probe.roots`, so an omitted root would
- * strand its sessions in the DB forever when it disappears.
- */
 export async function probe(
   ctx: AdapterContext,
 ): Promise<{ installed: boolean; roots: string[]; notes: string[] }> {
@@ -101,7 +90,6 @@ type SourceBundleInput = {
   knownSessionUuids?: Parameters<typeof computeBundle>[0]['knownSessionUuids'];
 };
 
-/** Reads + computes one source; a read failure yields a stub bundle instead of throwing. */
 async function computeSourceBundle(
   ctx: AdapterContext,
   input: SourceBundleInput,
@@ -157,11 +145,6 @@ async function computeSourceBundle(
   }
 }
 
-/**
- * uuid → owning parent root, built from FILENAMES only (no content read of any
- * Pi-owned file, S8): `gentle-shell:<uuid>` for the isolated home's parents,
- * `pi:<uuid>` when the file exists under the user Pi home's parent root.
- */
 type ParentSource = { harness: 'gentle-shell' | 'pi'; path: string };
 
 async function parentIndex(ctx: AdapterContext): Promise<Map<string, ParentSource>> {
@@ -181,8 +164,6 @@ async function parentIndex(ctx: AdapterContext): Promise<Map<string, ParentSourc
       for (const entry of await ctx.fs.readdir(join(root, name))) {
         if (!isSessionFile(entry)) continue;
         const uuid = sessionIdFromRootFile(entry);
-        // First wins: the gentle home is checked first, and a uuid under both
-        // parent roots would be ambiguous anyway.
         if (!index.has(uuid)) index.set(uuid, { harness, path: join(root, name, entry) });
       }
     }
@@ -190,7 +171,6 @@ async function parentIndex(ctx: AdapterContext): Promise<Map<string, ParentSourc
   return index;
 }
 
-/** `usage`-record count used as the duplicate tiebreaker (gentle-shell.md §9). */
 async function countUsageRecords(ctx: AdapterContext, path: string): Promise<number> {
   try {
     const raw = await ctx.fs.readFile(path);
@@ -201,9 +181,7 @@ async function countUsageRecords(ctx: AdapterContext, path: string): Promise<num
       try {
         const record = JSON.parse(line) as { type?: unknown; message?: { usage?: unknown } };
         if (record.type === 'usage' || record.message?.usage !== undefined) count++;
-      } catch {
-        // A malformed line cannot contribute a usage record.
-      }
+      } catch {}
     }
     return count;
   } catch {
@@ -218,7 +196,6 @@ type ChildCandidate = {
   home: ChildRoot['home'];
 };
 
-/** Ledger + parent-prefix state shared by the children pass. */
 type LinkState = {
   ledger: LedgerResult;
   parents: Map<string, ParentSource>;
@@ -265,23 +242,10 @@ function childDiagnostics(uuid: string, link: LinkState, isDuplicate: boolean): 
   return diagnostics;
 }
 
-/**
- * Spawn identity of one parent session (gentle-shell.md §5.1, S3b).
- * `receiptOnly` holds the task ids whose toolCallId came ONLY from a
- * `review-reminder-receipt` entry, so the caller can report the count without
- * naming anything.
- */
 type SpawnCalls = { calls: Map<string, string>; receiptOnly: Set<string> };
 
-/** The 4.x receipt that corroborates a subagent spawn (S3b). */
 const RECEIPT_CUSTOM_TYPE = 'gentle-pi.review-reminder-receipt/v1';
 
-/**
- * Identity projection for the parent scan: the `gentleAgents` toolResult
- * identity is the primary source, a subagent receipt the secondary one. Every
- * other receipt key (`root`, `id`, `toolName`, `writerModelId`,
- * `writerEffort`) and every other custom payload stays unread.
- */
 const SPAWN_LINK_PROJECTION: Projection = {
   message: { role: true, toolCallId: true, details: { gentleAgents: { taskId: true } } },
   customType: true,
@@ -298,7 +262,6 @@ type SpawnIdentity = {
   data?: { source?: unknown; taskId?: unknown; toolCallId?: unknown };
 };
 
-/** Retain only spawn identity from owned parents; Pi-owned paths never reach this reader. */
 async function spawnCalls(ctx: AdapterContext, parent: ParentSource): Promise<SpawnCalls> {
   const primary = new Map<string, string>();
   const secondary = new Map<string, string>();
@@ -330,15 +293,10 @@ async function spawnCalls(ctx: AdapterContext, parent: ParentSource): Promise<Sp
         ) {
           if (!secondary.has(data.taskId)) secondary.set(data.taskId, data.toolCallId);
         }
-      } catch {
-        // Malformed lines cannot supply a spawn identity.
-      }
+      } catch {}
     }
-  } catch {
-    // A missing/unreadable owned parent leaves spawnCallId unknown.
-  }
+  } catch {}
 
-  // Primary wins: a receipt only fills a slot the toolResult identity left empty.
   const receiptOnly = new Set<string>();
   for (const [taskId, toolCallId] of secondary) {
     if (primary.has(taskId)) continue;
@@ -388,14 +346,6 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
     return bundle;
   }
 
-  /**
-   * Revalidate every root touched by enumeration (D83): a vanished root means
-   * the enumeration was partial; throwing keeps history and clears the
-   * completed-refresh marker instead of pruning. Called before the first child
-   * is emitted as well as at the end, because child candidates are statted
-   * before the first bundle (fork resolution needs their uuids) and a root that
-   * vanished since must throw, never emit a stale or stub bundle.
-   */
   async function revalidateTouchedRoots(): Promise<void> {
     for (const root of touchedRoots) {
       const stat = await ctx.fs.stat(root);
@@ -403,10 +353,6 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
     }
   }
 
-  // --- children candidates (filesystem only) ---
-  // Enumerated before the first bundle so `knownUuids` (parents ∪ children) is
-  // complete when a Pi 1.5.0 `parentSession` header resolves. Dispatch order
-  // below is unchanged: parents first, then children.
   const candidates: ChildCandidate[] = [];
   for (const { home, root } of childrenRoots(ctx)) {
     const rootStat = await ctx.fs.stat(root);
@@ -421,14 +367,11 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
     }
   }
 
-  // An imported uuid is either a parent file or a child candidate; a fork header
-  // naming anything else degrades to a diagnostic (see compute.ts).
   const knownUuids = new Set<string>([
     ...link.parents.keys(),
     ...candidates.map((candidate) => candidate.uuid),
   ]);
 
-  // --- parents (isolated home only) ---
   if (!sharesParentRoot(ctx)) {
     const root = gentleParentsRoot(ctx);
     const rootStat = await ctx.fs.stat(root);
@@ -474,11 +417,10 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
     byUuid.set(candidate.uuid, existing);
   }
 
-  // Filename order (uuidv7) keeps the stream deterministic across homes.
   const ordered = [...byUuid.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   for (const [uuid, group] of ordered) {
     const first = group[0];
-    if (first === undefined) continue; // empty groups cannot happen; guard for noUncheckedIndexedAccess
+    if (first === undefined) continue;
     let winner = first;
     if (group.length > 1) {
       let bestCount = -1;
@@ -511,7 +453,6 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
       }
       spawnCallId = spawn.calls.get(task.id);
       if (spawnCallId !== undefined && spawn.receiptOnly.has(task.id)) {
-        // Count only: the receipt that supplied the link is never named (S7).
         extraDiagnostics.push(
           makeDiagnostic(
             'info',
@@ -540,7 +481,6 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
       initiator: task ? { kind: 'machine', automation: 'subagent-dispatch' } : undefined,
       knownSessionUuids: knownUuids,
     });
-    // Ledger aggregates are never used (S9); only identity and linkage diagnostics survive.
     bundle.diagnostics = [...bundle.diagnostics, ...extraDiagnostics];
     yield attachLedgerDiagnostic(bundle);
   }

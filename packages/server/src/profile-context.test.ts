@@ -3,13 +3,11 @@ import { describe, expect, test } from 'bun:test';
 import { openStore } from '@runwire/core';
 import { createServer } from './createServer';
 
-/** Idempotently upserts a raw model string and returns its `models.id`. */
 function modelId(db: Database, name: string): number {
   db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT DO NOTHING', [name]);
   return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
 }
 
-/** root -> child -> grand, plus an unrelated `outside` that must never leak. */
 function seed(db: Database): void {
   db.run(
     'INSERT INTO harnesses (id, display_name, adapter_version, capabilities) VALUES (?, ?, ?, ?)',
@@ -69,15 +67,10 @@ function seed(db: Database): void {
       [sessionId, seq, fields.uncached ?? null, fields.cached ?? null, fields.cacheWrite ?? null],
     );
 
-  // root: one observable call (prompt = 100 + 50 + 0 = 150, cached 50) and one
-  // all-NULL call that must be excluded.
   step('root', 1, { uncached: 100, cached: 50, cacheWrite: 0 });
   step('root', 2, {});
-  // child: missing categories count 0 (prompt = 40).
   step('root/child', 1, { uncached: 40 });
-  // grand: all three present (prompt = 0 + 10 + 0 = 10, cached 10).
   step('root/child/grand', 1, { uncached: 0, cached: 10, cacheWrite: 0 });
-  // outside must never appear in root's tree.
   step('outside', 1, { uncached: 9999 });
 }
 
@@ -107,7 +100,6 @@ describe('GET /api/sessions/{id}/profile/context', () => {
       expect(json.view).toBe('context');
       expect(json.sessionId).toBe('root');
 
-      // root: one observable call (150 prompt, 50 cached); the all-NULL call is excluded.
       expect(json.own).toEqual({
         observedCalls: 1,
         promptInput: 150,
@@ -116,7 +108,6 @@ describe('GET /api/sessions/{id}/profile/context', () => {
         peakPromptInput: 150,
         cacheReadShare: 50 / 150,
       });
-      // tree pools root 150 + child 40 + grand 10; cached 50 + 0 + 10.
       expect(json.tree).toEqual({
         observedCalls: 3,
         promptInput: 200,
@@ -157,7 +148,6 @@ describe('GET /api/sessions/{id}/profile/context', () => {
         metrics: { observedCalls: 1, promptInput: 10, cacheReadShare: 1 },
       });
 
-      // Metadata only: no title/cwd/git/args/prompt and no raw path.
       const text = JSON.stringify(json);
       for (const key of ['title', 'cwd', 'git', 'args', 'prompt']) {
         expect(text).not.toContain(`"${key}"`);

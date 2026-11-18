@@ -15,19 +15,14 @@ export type SessionsTablePagination = {
 };
 
 export type SetSessionsFiltersOptions = {
-  /** Commit the change immediately instead of waiting for the text debounce. */
   immediate?: boolean;
 };
 
 export type UseSessionsTableStateResult = {
-  /** The displayed (draft) filters — updates as the user types. */
   filters: SessionsFilters;
   sort: SessionsSortState;
   pagination: SessionsTablePagination;
-  /** The server query built from the committed filters/sort/pagination. */
   query: ReturnType<typeof buildSessionsQuery>;
-  /** The stats query built from the committed filters ONLY (no sort/pagination),
-   * so page changes never refetch the cards/chart. */
   statsQuery: ReturnType<typeof buildSessionsStatsQuery>;
   setFilters: (next: SessionsFilters, options?: SetSessionsFiltersOptions) => void;
   setSort: (next: SessionsSortState) => void;
@@ -35,13 +30,6 @@ export type UseSessionsTableStateResult = {
   setPageSize: (pageSize: number) => void;
 };
 
-/**
- * Owns the sessions table's client-side state. Keeps a draft copy of the
- * filters for the search input while committing the query after
- * `SEARCH_DEBOUNCE_MS`; discrete controls (preset/cost/harness/sort/clear)
- * commit immediately and cancel or flush the pending text commit so only one
- * request is issued per user intent.
- */
 export function useSessionsTableState(): UseSessionsTableStateResult {
   const [filters, setDraftFilters] = React.useState<SessionsFilters>(EMPTY_FILTERS);
   const [committedFilters, setCommittedFilters] = React.useState<SessionsFilters>(EMPTY_FILTERS);
@@ -51,8 +39,6 @@ export function useSessionsTableState(): UseSessionsTableStateResult {
     pageSize: DEFAULT_PAGE_SIZE,
   });
 
-  // The most recent draft filters, read by the debounce timer and by immediate
-  // commits without re-creating the timer callback on every keystroke.
   const latestFiltersRef = React.useRef(filters);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -63,10 +49,6 @@ export function useSessionsTableState(): UseSessionsTableStateResult {
     }
   }, []);
 
-  // A committed filter/sort change can shrink or reorder the result set, so the
-  // page returns to 0. This runs in the SAME commit as the filter/sort update
-  // (not in a post-render effect), so the committed query and the pagination
-  // agree in the render that follows — exactly one fetch, at offset 0.
   const resetPage = React.useCallback(() => {
     setPagination((previous) =>
       previous.pageIndex === 0 ? previous : { ...previous, pageIndex: 0 },
@@ -94,8 +76,6 @@ export function useSessionsTableState(): UseSessionsTableStateResult {
 
   const setSort = React.useCallback(
     (next: SessionsSortState) => {
-      // A sort click within the debounce window must not discard typed text:
-      // flush the pending draft commit before applying the sort.
       if (timerRef.current !== null) {
         cancelPendingCommit();
         setCommittedFilters(latestFiltersRef.current);
@@ -118,7 +98,6 @@ export function useSessionsTableState(): UseSessionsTableStateResult {
     );
   }, []);
 
-  // Cancel any pending debounce when the hook unmounts.
   React.useEffect(() => cancelPendingCommit, [cancelPendingCommit]);
 
   const query = React.useMemo(

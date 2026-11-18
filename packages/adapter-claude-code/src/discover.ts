@@ -1,7 +1,3 @@
-// See paths.ts: every path here is built for RunwireFs (stat/readdir/readFile),
-// not raw OS use, so it must stay '/'-joined via path.posix regardless of
-// host OS - createMemoryFs's virtual layout is always '/'-based, and a real
-// filesystem accepts '/' as a separator on Windows too.
 import { join } from 'node:path/posix';
 import type { AdapterContext, Diagnostic, Known, SessionBundle } from '@runwire/core';
 import { makeDiagnostic } from '@runwire/core';
@@ -23,12 +19,6 @@ import { parseMetaJson } from './schema';
 
 const HARNESS_ID = 'claude-code';
 
-/**
- * A directory the parent enumeration just returned cannot be silently skipped
- * when it is gone: its sources would drop out of `emitted`, letting core prune
- * their history and record a false success. Throwing makes importAll keep the
- * history and clear the completed-refresh marker so the next scan retries.
- */
 function enumeratedDirVanished(path: string): Error {
   return new Error(`enumerated directory vanished before its listing: ${path}`);
 }
@@ -51,7 +41,6 @@ function unchanged(known: Known, path: string, stat: Stat): boolean {
   return k !== undefined && k.size === stat.sizeBytes && k.mtime === stat.mtimeMs;
 }
 
-/** `<root minus .jsonl>/subagents/agent-*.jsonl`, sorted; `[]` when the dir is missing (plan.md P10). */
 async function listAgentFiles(ctx: AdapterContext, subagentsDir: string): Promise<string[]> {
   const entries = await ctx.fs.readdir(subagentsDir);
   return entries.filter(isAgentFile).sort();
@@ -73,7 +62,6 @@ type SourceBundleInput = {
   fallbackCwd?: string;
 };
 
-/** Reads + computes one source; a read failure yields a stub bundle instead of throwing (plan.md P13). */
 async function computeSourceBundle(
   ctx: AdapterContext,
   input: SourceBundleInput,
@@ -206,14 +194,6 @@ async function computeChildBundle(
   return bundle;
 }
 
-/**
- * Sorted walk of ~/.claude/projects (docs/adapters/claude-code.md "Data
- * flow"), applying the P10 known rule per root: skip a root and every
- * subagent file iff the root and every child are all unchanged; otherwise
- * emit the root then every child in sorted order regardless of each child's
- * own known state. A `<id>/subagents/` dir with no `<id>.jsonl` root file is
- * treated the same way, using only the children's own known state.
- */
 export async function* discover(ctx: AdapterContext, known: Known): AsyncIterable<SessionBundle> {
   const root = projectsRoot(ctx);
   const projectDirNames = [...(await ctx.fs.readdir(root))].sort();
@@ -221,9 +201,6 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
   for (const projectDirName of projectDirNames) {
     const projectDir = join(root, projectDirName);
     const projectStat = await ctx.fs.stat(projectDir);
-    // A parent-enumerated directory that has vanished is an incomplete walk,
-    // not an absent optional path; a non-directory entry (a stray file directly
-    // under projects/) is not a source container and stays skipped.
     if (projectStat === undefined) throw enumeratedDirVanished(projectDir);
     if (!projectStat.isDirectory) continue;
 
@@ -270,12 +247,8 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
       }
 
       if (isIgnoredEntry(entry)) continue;
-      // Already handled inline above, as the root session's own subagents dir.
       if (rootSessionIds.has(entry)) continue;
 
-      // A `<sessionId>/subagents/` directory whose own `<sessionId>.jsonl`
-      // root is absent (plan.md P10): still emitted per the children's own
-      // known state.
       const sessionDir = join(projectDir, entry);
       const sessionDirStat = await ctx.fs.stat(sessionDir);
       if (sessionDirStat === undefined) throw enumeratedDirVanished(sessionDir);
@@ -302,11 +275,6 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
     }
   }
 
-  // Revalidate the probed root after the walk: a root that vanished (possibly
-  // before its own readdir, which would have returned []) means the enumera-
-  // tion was empty or partial. Throwing here, before importAll runs vanished-
-  // source cleanup, keeps the history and clears the marker instead of
-  // pruning everything and recording success. Point-in-time, not atomic.
   const rootStat = await ctx.fs.stat(root);
   if (!rootStat?.isDirectory) throw enumeratedDirVanished(root);
 }

@@ -6,7 +6,7 @@ Numbered `D<n>`; numbers are stable. Only decisions still in force are listed; t
 
 | # | Topic | Decision |
 |---|---|---|
-| 1 | Audience | Dogfood first (author's machine, all harnesses installed), designed for distribution. |
+| 1 | Audience | Dogfood first (maintainer's machine, all harnesses installed), designed for distribution. |
 | 4 | Identity under resume/fork | One source file (or DB row) = one session. `resumed` / `forked_from` when the harness exposes them. |
 | 5 | Token model | Canonical fields: `uncached_input`, `cached_input`, `cache_write`, `output`, `reasoning_output` (⊂ `output`). Each adapter documents its mapping; OpenAI-style (`cached ⊂ input`) adapters derive `uncached_input = input − cached`. |
 | 7 | Titles | Harness-generated titles are the single content-derived exception to metadata-only. A privacy setting disables them. |
@@ -64,11 +64,11 @@ Numbered `D<n>`; numbers are stable. Only decisions still in force are listed; t
 
 | # | Topic | Decision |
 |---|---|---|
-| 84 | Pi-family package | Gentle Shell is its own harness (`gentle-shell`, display name “Gentle Shell”), registered after Pi (D25). Shape 1: `packages/adapter-pi` exports `createPiAdapter()` and `createGentleShellAdapter()`, with `src/pi/` and `src/gentle-shell/` modules. No import-boundary change: adapters still import only core; CLI is the composition root. |
+| 84 | Pi-family package | Gentle Shell is its own harness (`gentle-shell`, display name “Gentle Shell”), registered after Pi (D25). Layout: `packages/adapter-pi` exports `createPiAdapter()` and `createGentleShellAdapter()`, with `src/pi/` and `src/gentle-shell/` modules. No import-boundary change: adapters still import only core; CLI is the composition root. |
 | 85 | Gentle Shell children | Import children from every configured `gentle-agents/sessions` tree, including both the isolated Gentle home and the user's Pi home. The task ledger supplies link metadata only; its `tokens`, `cost`, `turns` and `toolCalls` aggregates are never used. A pruned/missing ledger entry leaves a counted, unlinked root with a diagnostic, not a dropped child. |
 | 86 | Gentle Shell initiator | Declare `initiator`: children are `machine` / `subagent-dispatch`; parents stay NULL (unknown). The full `adapterContract` on `fixtures/gentle-shell/all` accepts this mix, including all-NULL parents; no Pi-parity fallback is needed. |
 | 87 | Gentle Shell unavailable signals | Do not declare `mode`, `version`, `title` or `git`. Header version 3 is a format version, not a CLI version. No per-session permission mode, harness-generated title or git branch/commit is persisted; user-authored names remain excluded (D7/D78). |
-| 88 | Home-scoped attribution | Decision 1 / option A: `~/.pi/agent/sessions` belongs to `pi`; the Gentle home's `sessions` and every configured `gentle-agents/sessions` tree belong to `gentle-shell`. Shared-home parents remain `pi` even when launched by Gentle Shell: this is a documented attribution gap, not a fingerprint split. If exact historical re-attribution becomes necessary, evaluate B′ (fingerprint + negative cache) before C (harness-family contract). `spawnCallId` is derived only from gentle-shell-owned parents; for `pi:` parents it stays NULL. No cross-read of another adapter's session files (S8). See [adapters/gentle-shell.md §5–§6](adapters/gentle-shell.md#5-subagents--the-reason-this-is-a-separate-harness). |
+| 88 | Home-scoped attribution | Option A (home-scoped): `~/.pi/agent/sessions` belongs to `pi`; the Gentle home's `sessions` and every configured `gentle-agents/sessions` tree belong to `gentle-shell`. Shared-home parents remain `pi` even when launched by Gentle Shell: this is a documented attribution gap, not a fingerprint split. If exact historical re-attribution becomes necessary, evaluate B′ (fingerprint + negative cache) before C (harness-family contract). `spawnCallId` is derived only from gentle-shell-owned parents; for `pi:` parents it stays NULL. No cross-read of another adapter's session files. See [adapters/gentle-shell.md §5–§6](adapters/gentle-shell.md#5-subagents--the-reason-this-is-a-separate-harness). |
 
 ## Gentle Shell 4.7.0 / Pi 1.5.0 delta (2026-11-10)
 

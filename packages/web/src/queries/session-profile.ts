@@ -163,10 +163,6 @@ export function useSessionProfileTimeline(id: string, selection: ProfileTimeline
   return useQuery(sessionProfileTimelineOptions(id, selection));
 }
 
-/** Page-number navigation (shadcn Pagination), not infinite scroll: each page
- * is its own cached query keyed by {scope, filter, limit, offset}, and
- * `keepPreviousData` keeps the prior page's rows on screen while the next
- * page loads instead of flashing a loading state. */
 export function sessionProfileMergedEventsOptions(
   id: string,
   selection: ProfileMergedEventsSelection,

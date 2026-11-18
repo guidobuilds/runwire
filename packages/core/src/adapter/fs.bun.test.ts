@@ -5,12 +5,10 @@ import { join } from 'node:path';
 import type { BunFsIo } from './fs.bun';
 import { createBunFs } from './fs.bun';
 
-/** A synthetic Node-style error with a `code`, as node:fs/Bun raise them. */
 function fsError(code: string): Error & { code: string } {
   return Object.assign(new Error(`${code} synthetic`), { code });
 }
 
-/** The observed error `code`, or undefined if the promise resolved. */
 async function rejectCode(p: Promise<unknown>): Promise<string | undefined> {
   try {
     await p;
@@ -73,8 +71,6 @@ describe('createBunFs: absence vs real failure', () => {
     expect(await rejectCode(fs.readFile(dir))).toBe('EISDIR');
   });
 
-  // Injected so the assertion does not depend on filesystem permissions, which
-  // a privileged (root) CI user bypasses. The classifier is code-based.
   test('EACCES is rethrown from stat, readdir and readFile', async () => {
     const fs = createBunFs(throwingIo('EACCES'));
     expect(await rejectCode(fs.stat('/x'))).toBe('EACCES');

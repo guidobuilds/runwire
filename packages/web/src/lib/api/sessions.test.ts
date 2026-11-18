@@ -63,7 +63,6 @@ describe('session API URLs are /api-prefixed', () => {
   });
 
   it('serializes q/harness/durationMin/costOnly/sort and omits undefined fields', async () => {
-    // A fresh Response per call: a Response body can only be read once.
     const fetch = vi.fn().mockImplementation(() =>
       Promise.resolve(
         new Response(JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }), {
@@ -84,11 +83,9 @@ describe('session API URLs are /api-prefixed', () => {
       '/api/sessions?harness=a%2Cb&q=refactor&durationMin=30&costOnly=true&sort=-duration',
     );
 
-    // `costOnly: false` is a real filter value, not "unset" — it must be sent.
     await fetchSessions({ costOnly: false });
     expect(fetch.mock.calls[1]?.[0]).toBe('/api/sessions?costOnly=false');
 
-    // Omitted fields contribute no key at all (strict-400 contract).
     await fetchSessions();
     expect(fetch.mock.calls[2]?.[0]).toBe('/api/sessions');
   });
@@ -101,8 +98,6 @@ describe('session API URLs are /api-prefixed', () => {
       );
     vi.stubGlobal('fetch', fetch);
 
-    // The stats query builder never emits pagination/sort; this pins the URL
-    // shape the endpoint's strict validator expects.
     await fetchSessionsStats({
       durationMin: 30,
       costOnly: true,

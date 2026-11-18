@@ -7,14 +7,23 @@ coverage/
 .vitest/
 fixtures/*/canary/output/
 .runwire/
+
+# Local tooling and agent state
 .forge/
-# Local Pi runtime state
 .atl/
 .grok/
 .claude/
 .agents/
+.codegraph/
 odd/
 skills-lock.json
+
+# Editor and local environment files
+.idea/
+.vscode/
+.env
+.env.*
+*.local
 
 # Bun-only workspace (bun.lock is the source of truth): ignore other package managers' lockfiles
 pnpm-lock.yaml

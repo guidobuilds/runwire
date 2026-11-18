@@ -2,15 +2,8 @@ export type ReadLine = { line: string; lineNumber: number };
 
 export type ReadLinesResult = { truncated: boolean; oversizedLines: number };
 
-const DEFAULT_MAX_LINE_BYTES = 8 * 1024 * 1024; // 8 MB
+const DEFAULT_MAX_LINE_BYTES = 8 * 1024 * 1024;
 
-/**
- * Splits a raw byte stream into UTF-8 lines. A line over `maxLineBytes` is
- * skipped (not yielded) rather than buffered whole. A final chunk with no
- * trailing newline is still yielded as a line, but is reported as
- * `truncated` via the returned result object once the caller finishes
- * iterating (see `readLines`).
- */
 export async function* readLinesRaw(
   stream: ReadableStream<Uint8Array>,
   result: ReadLinesResult,
@@ -60,11 +53,6 @@ export async function* readLinesRaw(
   if (!endedWithNewline && lineNumber > 0) result.truncated = true;
 }
 
-/**
- * Convenience wrapper: consumes the whole stream and returns every line
- * plus the truncation/oversize result. Adapters that need to react to
- * individual lines as they arrive should use `readLinesRaw` directly.
- */
 export async function readLines(
   stream: ReadableStream<Uint8Array>,
   maxLineBytes?: number,

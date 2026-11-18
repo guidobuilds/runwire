@@ -1,12 +1,5 @@
 import type { Database, SQLQueryBindings } from 'bun:sqlite';
 
-// Read/query layer for the local HTTP API (docs/ARCHITECTURE.md §7,
-// .forge/sessions-api/design.md T1/T2). The SQL lives in @runwire/core so it is
-// testable on `:memory:`. DTO names are `Api*`-prefixed to avoid colliding with
-// `SessionSummary`/`TokenTotals` already exported by
-// packages/adapter-opencode/src/connector/types.ts (lesson `core-read-dto-name-
-// collision-with-adapter-opencode`).
-
 export type ApiTokenTotals = {
   uncachedInput: number;
   cachedInput: number;
@@ -17,39 +10,23 @@ export type ApiTokenTotals = {
 
 export type ApiSessionSummary = {
   id: string;
-  /** `title ?? project.name ?? id` — never null (design D-E). */
   name: string;
-  /** Privacy-gated; null when imported without titles (D7/D71). */
   title: string | null;
   parentId: string | null;
   harness: { id: string; displayName: string; adapterVersion: string };
-  /** Null when the session has no project (project_key is null). */
   project: { key: string; name: string } | null;
-  /** Stored per row; a root whose parent_id was NULLed by resolveOrphans can keep depth > 0. */
   depth: number;
   relation: 'subagent' | 'teammate' | 'fork' | null;
   agentType: string | null;
   startedAt: string | null;
   endedAt: string | null;
-  /**
-   * Latest ACTIVITY across this session and ALL its descendants: the greatest
-   * `ended_at` in the subtree (the last real event). Only when the subtree has no
-   * `ended_at` at all does it fall back to THIS session's `started_at`; null when
-   * that is also null. `source_mtime` is deliberately never used. Always
-   * tree-inclusive, independent of the own/inclusive metric scopes.
-   */
   lastActivity: string | null;
   durationMs: number | null;
   modelPrimary: string | null;
-  /** Own models: the session's own `steps.kind='call'` models + its own model_primary. */
   modelsOwn: string[];
-  /** Descendant models: all descendants' `steps.kind='call'` models + each descendant's model_primary. */
   modelsDescendants: string[];
-  /** Exclusive (own only) token totals from sessions.*, coalesced to 0. */
   tokensOwn: ApiTokenTotals;
-  /** Inclusive (own + all descendants) token totals from rollups.*, coalesced to 0. */
   tokensInclusive: ApiTokenTotals;
-  /** `sessions.turns` — own only. There is NO turnsInclusive: rollups has no `turns` column. */
   turnsOwn: number;
   apiCallsOwn: number;
   apiCallsInclusive: number;
@@ -57,19 +34,10 @@ export type ApiSessionSummary = {
   toolCallsInclusive: number;
   compactionsOwn: number;
   compactionsInclusive: number;
-  /** Harness-reported only, never computed. */
   costUsd: number | null;
-  /** Direct children count (every immediate child regardless of `relation`). */
   childCount: number;
-  /** All descendants count (`rollups.descendants`, every relation), >= 0. */
   descendantCount: number;
-  /** Immediate children whose `relation = 'subagent'`. */
   subagentChildCount: number;
-  /**
-   * Descendants whose `relation = 'subagent'`, self excluded. Traversal follows
-   * every `parent_id` edge regardless of a node's `relation`, so a teammate/fork
-   * branch neither counts itself nor prunes the walk to its own subagent children.
-   */
   subagentDescendantCount: number;
 };
 
@@ -78,19 +46,6 @@ export type ApiSessionDetail = ApiSessionSummary & {
   children: ApiSessionSummary[];
 };
 
-/**
- * Query surface for `listSessions`. The caller (server transport) is expected to
- * validate; core applies safe defaults for direct/test calls. `startedAfter` may
- * be any valid ISO-8601 datetime — core normalizes it to canonical `.sssZ` UTC
- * (design D-4), which is load-bearing: a millis-less value mis-compares against
- * canonical stored `started_at` values otherwise.
- *
- * `harness` is a comma-separated list of harness ids (trimmed, empty segments
- * dropped, de-duplicated). `q` is a case-insensitive substring matched against
- * `title ?? project name ?? id` with `%`/`_`/`\` treated as literals. `sort` is
- * a whitelisted field name, optionally `-`-prefixed for DESC; an unknown value
- * falls back to the default order. All filter values are bound via `?`.
- */
 export type ListSessionsQuery = {
   limit?: number;
   offset?: number;
@@ -103,7 +58,6 @@ export type ListSessionsQuery = {
   sort?: string;
 };
 
-/** The paged list envelope: the filtered root set, `total` before pagination. */
 export type PagedSessions = {
   items: ApiSessionSummary[];
   total: number;
@@ -111,33 +65,19 @@ export type PagedSessions = {
   offset: number;
 };
 
-/** One day bucket of the stats chart series. `date` is the `YYYY-MM-DD` key the
- * web chart already buckets by (`startedAt.slice(0, 10)`) and `sessions` is the
- * root-session count for that day. */
 export type ApiSessionStatsSeriesPoint = {
   date: string;
   sessions: number;
 };
 
-/**
- * Full-filtered-set aggregates for the dashboard cards + chart. Unlike
- * `PagedSessions`, these are computed over the ENTIRE filtered root set (no
- * `limit`/`offset`): `totalSessions`/`totalCostUsd`/`totalTokens`/
- * `avgDurationMs` mirror the web's former client-side `computeCards` over all
- * rows, and `series` mirrors `computeChartData` (sessions-per-day, ascending by
- * date, `started_at IS NULL` excluded).
- */
 export type ApiSessionsStats = {
   totalSessions: number;
   totalCostUsd: number;
-  /** Sum of inclusive (root + descendants) tokens across the filtered roots. */
   totalTokens: number;
-  /** Mean of the non-null `duration_ms` values; 0 when none are present. */
   avgDurationMs: number;
   series: ApiSessionStatsSeriesPoint[];
 };
 
-/** A harness option for the web filter: only harnesses with at least one root session. */
 export type ApiHarnessOption = {
   id: string;
   displayName: string;
@@ -181,16 +121,6 @@ type SessionRow = {
   r_descendants: number | null;
 };
 
-// Tree-inclusive last activity. `ended_at` is the adapter's max source event
-// timestamp (ARCHITECTURE §4 "First and last timestamp in the source"), so the
-// latest real event in the subtree is `MAX(ended_at)` over the seed and all its
-// descendants. Only when that MAX is NULL (no `ended_at` anywhere in the subtree)
-// do we fall back to the seed's own `started_at` — NOT to a descendant's start,
-// which would let a started-but-eventless node outrank a real event. `source_mtime`
-// is never consulted (a file touch is not activity). The `hex(id)` visited-path
-// guard terminates hand-made parent cycles exactly like the other tree CTEs. A
-// correlated scalar subquery keeps this one statement for the whole page — it is
-// used verbatim in the SELECT projection and in ORDER BY via `SORT_COLUMNS`.
 const LAST_ACTIVITY_EXPR = `COALESCE(
   (
     SELECT MAX(a.ended_at)
@@ -209,9 +139,6 @@ const LAST_ACTIVITY_EXPR = `COALESCE(
   s.started_at
 )`;
 
-// The single item query. `WHERE` is supplied per call (roots-only for the
-// list, `s.id = ?` for a detail) but is always a constant from this module —
-// user input (the id) is bound via `?`, never interpolated.
 const ITEM_SQL = `
   SELECT
     s.id, s.title, s.parent_id, s.depth, s.relation, s.agent_type,
@@ -241,8 +168,6 @@ function itemRows(
   return db.query(`${ITEM_SQL} WHERE ${where} ${orderBy}`).all(...params) as SessionRow[];
 }
 
-/** Batched tree-count maps for the rows of one request; grouped so `toSummary`
- * stays a single lookup per count field. */
 type SummaryCounts = {
   childCounts: Map<string, number>;
   subagentChildCounts: Map<string, number>;
@@ -308,10 +233,6 @@ function toSummary(
   };
 }
 
-/**
- * `modelsOwn` map: one grouped `steps.kind='call'` query over the given ids,
- * unioned with each session's own `model_primary`. Never one query per row.
- */
 function collectModelsOwn(db: Database, sessionIds: string[]): Map<string, Set<string>> {
   const map = new Map<string, Set<string>>();
   if (sessionIds.length === 0) return map;
@@ -350,13 +271,6 @@ function collectModelsOwn(db: Database, sessionIds: string[]): Map<string, Set<s
   return map;
 }
 
-/**
- * `modelsDescendants` map: one cycle-guarded recursive CTE seeded by `seedWhere`
- * (a constant from this module). The `t.id <> t.ancestor_id` predicate excludes
- * each seed node's OWN models, so the map holds only descendant models — the
- * seed's own models come from `modelsOwn`. This is the one heavier query; it is
- * never run once per row (no N+1).
- */
 function collectModelsDescendants(
   db: Database,
   seedWhere: string,
@@ -391,7 +305,6 @@ function collectModelsDescendants(
   return map;
 }
 
-/** Direct-children count map: one grouped query over `parentIds`. */
 function collectChildCounts(db: Database, parentIds: string[]): Map<string, number> {
   const map = new Map<string, number>();
   if (parentIds.length === 0) return map;
@@ -406,11 +319,6 @@ function collectChildCounts(db: Database, parentIds: string[]): Map<string, numb
   return map;
 }
 
-/**
- * Direct subagent-children count map: one grouped query over `parentIds`
- * counting only children whose relation is `'subagent'` (teammate/fork are
- * excluded). Never one query per row.
- */
 function collectSubagentChildCounts(db: Database, parentIds: string[]): Map<string, number> {
   const map = new Map<string, number>();
   if (parentIds.length === 0) return map;
@@ -425,22 +333,6 @@ function collectSubagentChildCounts(db: Database, parentIds: string[]): Map<stri
   return map;
 }
 
-/**
- * Subagent-descendant count map: one cycle-guarded recursive CTE seeded by
- * `seedWhere` (a constant from this module). The recursion joins every child
- * edge with no relation predicate, so traversal continues THROUGH teammate/fork
- * nodes to their own subagent children; only `relation = 'subagent'` nodes are
- * counted. The `t.id <> t.ancestor_id` predicate excludes each seed's own row,
- * and the visited-path guard terminates hand-made parent cycles. Batched: never
- * one query per row.
- *
- * Delimiter safety: session ids are unrestricted text, so a comma-joined path
- * mis-reads an id that looks like a substring of the joined path (e.g. ancestor
- * `a,b` -> child `b`). The path stores each id as `hex(id)` (alphabet `[0-9A-F]`)
- * wrapped in `.` delimiters; `.` is outside the hex alphabet, so `.hex(id).`
- * matches exactly one full encoded segment and can never bridge two ids. `hex()`
- * operates on UTF-8 bytes, so any SQLite text id is covered.
- */
 function collectSubagentDescendantCounts(
   db: Database,
   seedWhere: string,
@@ -465,17 +357,6 @@ function collectSubagentDescendantCounts(
   return map;
 }
 
-/**
- * The `model` filter's cycle-guarded recursive CTE, seeded with the base root
- * filter (design D-1 / T1 step 3). The seed must include the base root filter so
- * only roots are seeded; the recursion then walks every descendant with the
- * `instr(path, ',' || s.id || ',') = 0` guard (same as `collectModelsDescendants`)
- * so a hand-made parent cycle terminates.
- *
- * `seedWhere` is the base root `WHERE` fragment (a constant from this module; user
- * values are bound via `?`). In a model-filtered query the base-filter values are
- * therefore bound TWICE: once for the CTE seed and once for the outer WHERE.
- */
 function modelCtePrefix(seedWhere: string): string {
   return `
 WITH RECURSIVE tree(ancestor_id, id, path) AS (
@@ -488,14 +369,6 @@ WITH RECURSIVE tree(ancestor_id, id, path) AS (
 )`;
 }
 
-/**
- * The `model` matching predicate applied over the CTE alias `tree t`. A root is
- * kept iff the model appears in the node's own `steps.kind='call'` models OR its
- * own `model_primary`. Because the CTE includes the root node itself (`t.id =
- * t.ancestor_id`) and every descendant node, this is exactly
- * `m ∈ modelsOwn ∪ modelsDescendants` (root OR any descendant). Two `?` bindings,
- * in SQL order.
- */
 const MODEL_MATCH = `(
   EXISTS (
     SELECT 1 FROM steps st
@@ -509,18 +382,8 @@ const MODEL_MATCH = `(
   )
 )`;
 
-/**
- * The display-name expression used by both the `q` filter and the `name` sort.
- * It mirrors `toSummary`'s `title ?? project_name ?? id` exactly, and is a
- * scalar subquery (never a join) so the join-free COUNT query stays valid.
- */
 const NAME_EXPR = `COALESCE(s.title, (SELECT p.name FROM projects p WHERE p.key = s.project_key), s.id)`;
 
-/**
- * Module-level ORDER BY whitelist. `sort` is a user-supplied field name, so the
- * column text must come from this constant map — never from interpolation of the
- * input. Values are safe SQL fragments over the ITEM_SQL aliases (`s`, `h`, `r`).
- */
 const SORT_COLUMNS: Record<string, string> = {
   name: `LOWER(${NAME_EXPR})`,
   harness: 'LOWER(h.display_name)',
@@ -532,15 +395,8 @@ const SORT_COLUMNS: Record<string, string> = {
   cost: 's.cost_usd',
 };
 
-// Default: most recent activity first (the product contract), not `started_at`.
 const DEFAULT_ORDER_BY = `${LAST_ACTIVITY_EXPR} DESC, s.id`;
 
-/**
- * Maps a `sort` string (`<field>` ASC / `-<field>` DESC) to a safe ORDER BY via
- * the `SORT_COLUMNS` whitelist. An absent or unknown field falls back to the
- * default `lastActivity DESC, id`. Every produced clause ends with `, s.id` so a
- * tie on the sort field is always deterministic.
- */
 function buildOrderBy(sort: string | undefined): string {
   if (sort === undefined) return DEFAULT_ORDER_BY;
   const desc = sort.startsWith('-');
@@ -550,30 +406,13 @@ function buildOrderBy(sort: string | undefined): string {
   return `${column} ${desc ? 'DESC' : 'ASC'}, s.id`;
 }
 
-/** The shared `WHERE` fragment + bound params for the filtered root set, plus
- * the optional `model` recursive-CTE prefix. Used verbatim by both
- * `listSessions` (paged rows) and `getSessionsStats` (aggregates) so the two
- * can never drift on filters or binding order. */
 type RootFilter = {
   where: string;
   ctePrefix: string;
   modelSubquery: string;
-  /** Params in SQL order for a query whose outer `FROM` is `sessions s` and that
-   * consumes `where` + `modelSubquery` with no extra bindings: the CTE seed
-   * params (when `model` is set), then the outer filter params, then the model
-   * predicate params. */
   params: SQLQueryBindings[];
 };
 
-/**
- * Builds the root-session filter (design T1 step 2): roots only, plus optional
- * exact harness (case-sensitive on harness_id; a comma list becomes `= ?` for
- * one id and `IN (?,…)` for several), exclusive startedAt (`started_at > ?`,
- * NULL never matches), `q` substring, `durationMin` lower bound (NULL excluded)
- * and `costOnly` (> 0, NULL excluded). All values bound with `?`; never
- * interpolated. The `model` filter is a cycle-guarded recursive CTE applied as
- * a subquery (see `modelCtePrefix`/`MODEL_MATCH`).
- */
 function buildRootFilter(query: ListSessionsQuery): RootFilter {
   let where = 's.parent_id IS NULL';
   const baseParams: SQLQueryBindings[] = [];
@@ -596,16 +435,9 @@ function buildRootFilter(query: ListSessionsQuery): RootFilter {
   }
   if (query.startedAfter !== undefined) {
     where += ' AND s.started_at > ?';
-    // Normalize to canonical `.sssZ` UTC (D-4, load-bearing): a millis-less
-    // bound would otherwise compare lexicographically GREATER than the
-    // same-instant and 1-ms-later canonical stored values, wrongly excluding
-    // a session that should be included.
     baseParams.push(new Date(query.startedAfter).toISOString());
   }
   if (query.q !== undefined) {
-    // Scalar subquery, NOT a join: the COUNT query above has no joins and must
-    // stay valid. `%`/`_`/`\` in the user text are escaped and `\` is declared
-    // as the LIKE escape character so they match literally.
     where += ` AND ${NAME_EXPR} LIKE ? ESCAPE '\\'`;
     baseParams.push(`%${query.q.replace(/[\\%_]/g, '\\$&')}%`);
   }
@@ -625,41 +457,24 @@ function buildRootFilter(query: ListSessionsQuery): RootFilter {
   const modelParams: SQLQueryBindings[] = hasModel
     ? [query.model as string, query.model as string]
     : [];
-  // Binding-order gotcha (T1): when `model` is present the base-filter values
-  // are bound TWICE — CTE-seed `[harness?][startedAt?]`, then outer WHERE
-  // `[harness?][startedAt?]`, then `MODEL_MATCH` `model?` twice.
   const params = hasModel ? [...baseParams, ...baseParams, ...modelParams] : baseParams;
   return { where, ctePrefix, modelSubquery, params };
 }
 
-/**
- * Root sessions only (`parent_id IS NULL`), ordered by the whitelisted `sort`
- * (default `lastActivity DESC, id`), filtered by the optional AND filters
- * (`harness` comma-list, `startedAfter`, `model`, `q`, `durationMin`,
- * `costOnly`) and paginated by `limit`/`offset`. `total` is the real COUNT of
- * the filtered root set BEFORE pagination. Models/childCounts are computed ONLY
- * for the paginated slice (design D-12) — never for all roots after deciding the
- * page. No N+1.
- */
 export function listSessions(db: Database, query: ListSessionsQuery = {}): PagedSessions {
   const limit = query.limit ?? 50;
   const offset = query.offset ?? 0;
   const { where, ctePrefix, modelSubquery, params } = buildRootFilter(query);
 
-  // `total` — the real COUNT of the filtered root set BEFORE pagination (D-7).
   const countSql = `${ctePrefix}SELECT COUNT(*) AS c FROM sessions s WHERE ${where}${modelSubquery}`;
   const countRow = db.query(countSql).get(...params) as { c: number };
   const total = countRow.c;
 
-  // The paginated, ordered item slice (D-2 / D-8 / D-9).
   const itemSql = `${ctePrefix}${ITEM_SQL} WHERE ${where}${modelSubquery} ORDER BY ${buildOrderBy(query.sort)} LIMIT ? OFFSET ?`;
   const itemParams = [...params, limit, offset];
   const rows = db.query(itemSql).all(...itemParams) as SessionRow[];
   const sliceIds = rows.map((r) => r.id);
 
-  // Slice-only aggregates (D-12): compute models/childCounts only for the page.
-  // Guard the empty slice (e.g. `offset` past the end) so we never emit an
-  // invalid `id IN ()` clause.
   if (sliceIds.length === 0) {
     return { items: [], total, limit, offset };
   }
@@ -679,20 +494,6 @@ export function listSessions(db: Database, query: ListSessionsQuery = {}): Paged
   return { items, total, limit, offset };
 }
 
-/**
- * Full-filtered-set aggregates for the dashboard cards + chart (see
- * `ApiSessionsStats`). Computes the SAME filtered root set as `listSessions`
- * via the shared `buildRootFilter` — but with no `limit`/`offset`, over every
- * matching root, and in the data layer (SQL aggregate, never by loading all
- * rows into the client).
- *
- * The four card totals mirror the web's former client-side `computeCards` over
- * the full list: `COUNT(*)`, `SUM(cost_usd)` (NULL -> 0), the sum of each
- * root's inclusive rollups tokens (NULL -> 0) and `AVG(duration_ms)` over the
- * non-null values (NULL -> 0). The `series` mirrors `computeChartData`:
- * `substr(started_at, 1, 10)` buckets, `started_at IS NULL` excluded, ascending
- * by date.
- */
 export function getSessionsStats(db: Database, query: ListSessionsQuery = {}): ApiSessionsStats {
   const { where, ctePrefix, modelSubquery, params } = buildRootFilter(query);
 
@@ -732,11 +533,6 @@ export function getSessionsStats(db: Database, query: ListSessionsQuery = {}): A
   };
 }
 
-/**
- * Harness options for the web filter: every harness that has at least one root
- * session (`parent_id IS NULL`), ordered by display name. Harnesses with only
- * descendant rows are omitted.
- */
 export function listHarnesses(db: Database): ApiHarnessOption[] {
   const rows = db
     .query(
@@ -748,14 +544,6 @@ export function listHarnesses(db: Database): ApiHarnessOption[] {
   return rows.map((r) => ({ id: r.id, displayName: r.display_name }));
 }
 
-/**
- * One session's detail (`ApiSessionDetail | null`). Uses a WHERE-parameterized
- * item builder (`WHERE s.id = ?`, never the list's `parent_id IS NULL` filter,
- * which would 404 every subagent id). Binds the id with `?` so ids containing
- * a literal `/` work. Hoists the models maps once so children[]'s
- * `modelsDescendants` (one CTE seeded at `parent_id = <id>`) and `modelsOwn`
- * (one grouped query over the child ids) never run per child (no N+1).
- */
 export function getSession(db: Database, id: string): ApiSessionDetail | null {
   const rows = itemRows(db, 's.id = ?', [id]);
   const row = rows[0];

@@ -14,7 +14,6 @@ import {
   type UsageSeries,
 } from './profile-types';
 
-/** Row shape shared by every call-step read in this module. */
 type TokenRow = Record<
   'uncached_input' | 'cached_input' | 'cache_write' | 'output' | 'reasoning_output',
   number | null
@@ -70,17 +69,11 @@ function aggregate(rows: readonly TokenRow[]): { totals: NullableTokens; counts:
   return { totals, counts };
 }
 
-/**
- * Top-7 + reserved unknown/other model legend. `unknown` is a null model;
- * `other` is either a literal call to those reserved names or any model
- * outside the top 7 by call count (ties broken by name).
- */
 function buildModelSeries<T extends TokenRow & { model: string | null }>(
   rows: readonly T[],
 ): { series: UsageSeries[]; visible: ReadonlySet<string> } {
   const modelCalls = new Map<string, T[]>();
   for (const row of rows) {
-    // Reserved names are response buckets, never literal legend identities.
     const name =
       row.model === null
         ? 'unknown'
@@ -118,17 +111,12 @@ function buildModelSeries<T extends TokenRow & { model: string | null }>(
   return { series, visible };
 }
 
-/** Maps a call's raw model to its legend bucket name, given the visible top-7 set. */
 function responseModel(model: string | null, visible: ReadonlySet<string>): string {
   if (model === null) return 'unknown';
   if (model === 'unknown' || model === 'other' || !visible.has(model)) return 'other';
   return model;
 }
 
-/**
- * Global chronological time domain: null/null unless every included
- * (timed, at !== null) call in the scope has a usable, non-decreasing `at`.
- */
 function domain(calls: readonly TimedCallRow[]): TimeDomain {
   if (calls.length === 0) return { start: null, end: null };
   let previous = -Infinity;
@@ -140,12 +128,6 @@ function domain(calls: readonly TimedCallRow[]): TimeDomain {
   return { start: calls[0]!.at, end: calls.at(-1)!.at };
 }
 
-/**
- * Coalesce consecutive (already at-ASC sorted) timed calls into at most 400
- * exact (not sampled) buckets: one point per call up to 400 timed calls;
- * beyond that, consecutive calls are merged into 400 equal-count buckets
- * whose `at` is the last call's `at` in that bucket.
- */
 function points(
   calls: readonly TimedCallRow[],
   field: TokenField,
@@ -198,11 +180,6 @@ function points(
   return result;
 }
 
-/**
- * Metadata-only, tree-wide chronological token timeline: orders every
- * in-scope call by `at` ASC (never by seq) across the whole scope in one
- * global series.
- */
 export function readProfileTimeline(
   db: Database,
   sessionId: string,

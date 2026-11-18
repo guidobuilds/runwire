@@ -22,10 +22,6 @@ import type {
   SessionProfileTimeline,
 } from '@/lib/api/session-profile';
 
-/** Shared metadata-only profile fixtures for `/api/sessions/{id}/profile/*`. The ids
- * deliberately match `mockSessionSummary`/`mockChildSummary` in `handlers.ts`
- * so the composed route renders one coherent session. */
-
 export const PROFILE_ROOT_ID = 'sess-1';
 export const PROFILE_CHILD_ID = 'sess-1-child';
 export const PROFILE_GRANDCHILD_ID = 'sess-1-child/grand';
@@ -239,7 +235,6 @@ function compareNullable(a: string | number | null, b: string | number | null): 
   return a < b ? -1 : 1;
 }
 
-/** In-memory mirror of the server's SQL filter/sort, for MSW only. */
 function mergedEventsResponse(params: MergedEventsParams): SessionProfileMergedEvents {
   const { scope, sort = 'time', dir = 'asc', limit = 50, offset = 0 } = params;
   let items =
@@ -321,8 +316,6 @@ function mergedEventsResponse(params: MergedEventsParams): SessionProfileMergedE
   };
 }
 
-/** Own group = the root session's own call steps (dominant model + one
- * share-0 entry); descendants group = the child session's different mix. */
 function modelsResponse(): SessionProfileModels {
   return {
     view: 'models',
@@ -344,11 +337,6 @@ function modelsResponse(): SessionProfileModels {
   };
 }
 
-/**
- * Context pressure fixture: the root keeps 4 observable calls, its direct child
- * 3, and a depth-2 grandchild 2 (an own-only row, with absent metadata rendered
- * as null so the table's em-dash/fallback paths are exercised).
- */
 function contextResponse(): SessionProfileContext {
   return {
     view: 'context',
@@ -437,7 +425,6 @@ function isEventSortField(value: string | null): value is EventSortField {
   );
 }
 
-/** MSW handlers for the distinct session-scoped profile endpoints. */
 export const sessionProfileHandlers = [
   http.get('/api/sessions/:id/profile/spawns', ({ request }) => {
     try {
@@ -514,7 +501,6 @@ export const sessionProfileHandlers = [
   }),
 ];
 
-/** Convenience accessors used by the route and the leaf components in tests. */
 export const mockProfileSpawnsTree = spawnsResponse('tree');
 export const mockProfileSpawnsOwn = spawnsResponse('own');
 export const mockProfileSignalsTree = signalsResponse('tree');

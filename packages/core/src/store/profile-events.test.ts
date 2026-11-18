@@ -18,7 +18,6 @@ function seed(db: Database): void {
       [id, parent, `source:${id}`],
     );
 }
-/** Idempotently upserts a raw model string and returns its `models.id`. */
 function modelId(db: Database, name: string): number {
   db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT DO NOTHING', [name]);
   return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
@@ -214,7 +213,6 @@ describe('readProfileMergedEvents', () => {
     expect(readProfileMergedEvents(db, 'root', { q: 'Needle%A' })?.items.map((e) => e.seq)).toEqual(
       [0],
     );
-    // A bare `%` must match literally, not act as a wildcard.
     expect(readProfileMergedEvents(db, 'root', { q: '%' })?.items.map((e) => e.seq)).toEqual([0]);
     expect(readProfileMergedEvents(db, 'root', { q: 'model-x' })?.items.map((e) => e.seq)).toEqual([
       2,
@@ -382,17 +380,14 @@ describe('readProfileMergedEvents', () => {
       at: '2025-01-01T00:00:02Z',
     });
 
-    // A stored server that never appears in the raw tool name still matches.
     const byServer = readProfileMergedEvents(db, 'root', { q: 'stored-a' })!;
     expect(byServer.total).toBe(2);
     expect(byServer.items.map((e) => e.seq)).toEqual([0, 2]);
 
-    // A stored tool shared by unrelated servers matches both.
     expect(readProfileMergedEvents(db, 'root', { q: 'run' })!.items.map((e) => e.seq)).toEqual([
       0, 1,
     ]);
 
-    // Pagination happens after the filter, so pages are a real slice of matches.
     const page1 = readProfileMergedEvents(db, 'root', { q: 'stored-a', limit: 1, offset: 0 })!;
     const page2 = readProfileMergedEvents(db, 'root', { q: 'stored-a', limit: 1, offset: 1 })!;
     expect(page1.total).toBe(2);
@@ -400,7 +395,6 @@ describe('readProfileMergedEvents', () => {
     expect(page2.total).toBe(2);
     expect(page2.items.map((e) => e.seq)).toEqual([2]);
 
-    // The raw subject stays searchable (legacy behavior).
     expect(
       readProfileMergedEvents(db, 'root', { q: 'raw__beta' })!.items.map((e) => e.seq),
     ).toEqual([1]);

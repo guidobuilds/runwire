@@ -40,8 +40,6 @@ describe('useSession', () => {
 
 describe('useSessions keepPreviousData', () => {
   it('keeps the previous page visible while a different query key fetches', async () => {
-    // Stable client across rerenders: the module-level `wrapper` builds a fresh
-    // QueryClient each render, which would discard the cache this test needs.
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const stableWrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -77,7 +75,6 @@ describe('useSessions keepPreviousData', () => {
 
     rerender({ query: { q: 'b' } });
 
-    // The old payload is still shown (as placeholder data) while B is fetching.
     expect(result.current.data?.items).toEqual([mockSessionSummary]);
     expect(result.current.isPlaceholderData).toBe(true);
     expect(result.current.isFetching).toBe(true);

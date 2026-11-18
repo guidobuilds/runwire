@@ -10,7 +10,6 @@ function seed(db: Database): void {
   );
 }
 
-/** Idempotently upserts a raw model string and returns its `models.id`. */
 function modelId(db: Database, name: string): number {
   db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT DO NOTHING', [name]);
   return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
@@ -90,8 +89,8 @@ describe('readProfileSessionContext', () => {
     seed(db);
     session(db, 'root');
     step(db, 'root', 0, { uncached: 100, cached: 0, cacheWrite: 0 });
-    step(db, 'root', 1, { uncached: 100 }); // cached/cacheWrite absent -> 0
-    step(db, 'root', 2, {}); // all NULL -> not observable
+    step(db, 'root', 1, { uncached: 100 });
+    step(db, 'root', 2, {});
     step(db, 'root', 3, { uncached: 0, cached: 50 });
     step(db, 'root', 4, { uncached: null, cached: null, cacheWrite: null });
 
@@ -102,7 +101,6 @@ describe('readProfileSessionContext', () => {
       avgPromptInput: 250 / 3,
       p95PromptInput: 100,
       peakPromptInput: 100,
-      // weighted: (0 + 0 + 50) / 250
       cacheReadShare: 0.2,
     });
     expect(res.tree).toEqual(res.own);
@@ -209,8 +207,6 @@ describe('readProfileSessionContext', () => {
     const { db } = openStore(':memory:');
     seed(db);
     session(db, 'root');
-    // Insert later-starting and equal-starting siblings FIRST so insertion
-    // (rowid) order cannot be what makes the assertions pass.
     session(db, 'root/late', { parentId: 'root', startedAt: '2026-02-01T00:00:00Z' });
     session(db, 'root/early', { parentId: 'root', startedAt: '2026-01-01T00:00:00Z' });
     session(db, 'root/nullfirst', { parentId: 'root', startedAt: null });

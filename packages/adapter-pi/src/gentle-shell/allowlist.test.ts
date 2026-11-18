@@ -4,9 +4,6 @@ import { gentleShellAllowlist } from './allowlist';
 
 type Rec = Record<string, unknown>;
 
-// Pi 1.5.0 delta (docs/adapters/gentle-shell.md §7): the three metadata fields
-// verified in live 4.7 records. Each test pairs the new field with a content
-// hazard from the same record so "metadata in, content out" stays pinned.
 describe('gentleShellAllowlist: Pi 1.5 metadata', () => {
   test('assistant rawStopReason survives while prompt and reasoning text stay out', () => {
     const out = project(
@@ -72,8 +69,6 @@ describe('gentleShellAllowlist: Pi 1.5 metadata', () => {
   });
 });
 
-// 4.x extension metadata (S3): one custom entry can carry an orchestrator marker
-// and a spawn-link corroboration; everything else in `data` stays unread.
 const PUBLISHED_STATE = 'gentle-agents.published-state';
 const REVIEW_RECEIPT = 'gentle-pi.review-reminder-receipt/v1';
 
@@ -101,9 +96,6 @@ describe('gentleShellAllowlist: 4.x custom metadata', () => {
       gentleShellAllowlist,
     ) as Rec;
 
-    // `aliases` is projected with an EMPTY rule: the marker keeps the aliases
-    // object only when it is an object, and collapses every alias id, so the
-    // orchestrator marker is presence-only for the alias values.
     expect(out).toEqual({
       type: 'custom',
       customType: PUBLISHED_STATE,
@@ -152,8 +144,6 @@ describe('gentleShellAllowlist: 4.x custom metadata', () => {
       },
       gentleShellAllowlist,
     ) as Rec;
-    // The mechanism is per-key, not per-type: a handful of metadata keys is
-    // projected for every customType, so they are chosen to be safe anywhere.
     expect(driven.data).toEqual({ schema: 1, recordedAt: '2026-01-11T00:00:00.000Z' });
     const hazard = {
       title: 'RUNWIRE_CANARY_TITLE',
@@ -175,13 +165,10 @@ describe('gentleShellAllowlist: 4.x custom metadata', () => {
         { type: 'custom', customType, data: hazard },
         gentleShellAllowlist,
       ) as Rec;
-      // An empty `data` marker is presence only: none of the bounded keys are in
-      // these payloads, so nothing but the object itself survives.
       expect(out, customType).toEqual({ type: 'custom', customType, data: {} });
       expect(JSON.stringify(out), customType).not.toContain('RUNWIRE_CANARY');
     }
 
-    // S3c: exploration-budget is a custom_message whose `details` stay unread.
     const budget = project(
       {
         type: 'custom_message',

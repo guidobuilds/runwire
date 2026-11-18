@@ -24,36 +24,13 @@ export type CreateServerOptions = {
   db: Database;
   host: string;
   port: number;
-  /**
-   * Runs a full import (the `runwire import` orchestrator) when the web UI POSTs
-   * `/api/scan`. The CLI composition root injects it because the adapter
-   * registry lives there; the transport layer stays adapter-agnostic. Omitted
-   * when the server is embedded without a scan source, which returns 503.
-   */
   scan?: () => Promise<ImportReport>;
-  /**
-   * When false (default), `host` must be a loopback address. The API has no
-   * authentication, so bind is the only access control (F3); a non-loopback
-   * host is a deliberate opt-in the composition root maps from `--expose`.
-   */
   allowNonLocal?: boolean;
-  /**
-   * Loads the user's model overrides fresh on every profile request,
-   * so an edit to `~/.runwire/models.json` applies without a restart. The
-   * composition root injects `() => readModelOverrides(modelsOverridesPath())`;
-   * omitted → no overrides.
-   */
   modelOverrides?: () => readonly ModelOverride[];
 };
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
 
-/**
- * Refuses to bind a host the unauthenticated API must never be reachable on
- * (F3). An empty host is always refused: Bun would fall back to `0.0.0.0`
- * (bind-all), which is never a valid `--host`. `allowNonLocal` only unlocks a
- * deliberately named non-loopback address.
- */
 function assertBindHost(host: string, allowNonLocal: boolean): void {
   if (host === '') {
     throw new Error('refusing to bind an empty host');
@@ -75,29 +52,18 @@ function json(body: unknown, status: number, extraHeaders?: Record<string, strin
   });
 }
 
-/** Every 405 carries an `Allow` header naming the only accepted method
- * (design D-L, RFC 9110). Defaults to `GET`; `/api/scan` allows `POST` only. */
 function methodNotAllowed(allow = 'GET'): Response {
   return json({ error: 'method not allowed' }, 405, { allow });
 }
 
-/** The custom header that proves `POST /api/scan` came from `fetch`, not a
- * cross-site HTML form (SEC-02). */
 const SCAN_CSRF_HEADER = 'x-runwire-scan';
 
-/**
- * CSRF guard for the one mutating endpoint (SEC-02). A malicious page can POST
- * `/api/scan` as a CORS "simple request", but it cannot set a custom header or
- * an `application/json` content-type without triggering a preflight, which this
- * server never answers. The same-origin UI `fetch` sets the header explicitly.
- */
 function hasScanCsrfProof(req: Request): boolean {
   if (req.headers.get(SCAN_CSRF_HEADER) === '1') return true;
   const contentType = req.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
   return contentType === 'application/json';
 }
 
-/** The only query params accepted on `GET /api/sessions` (design D-3). */
 const VALID_QUERY_PARAMS = new Set([
   'limit',
   'offset',
@@ -110,9 +76,6 @@ const VALID_QUERY_PARAMS = new Set([
   'sort',
 ]);
 
-/** The only query params accepted on `GET /api/sessions/stats`: the filters
- * shared with `/api/sessions`, with no `limit`/`offset`/`sort` — stats are
- * aggregates over the whole filtered set and have no page or order. */
 const VALID_STATS_QUERY_PARAMS = new Set([
   'harness',
   'startedAfter',
@@ -122,19 +85,12 @@ const VALID_STATS_QUERY_PARAMS = new Set([
   'costOnly',
 ]);
 
-/** A whitelisted `sort` field, optionally `-`-prefixed for DESC (design D-3). */
 const SORT_PATTERN = /^-?(name|harness|startedAt|lastActivity|duration|tokens|cost)$/;
 
-/** A strict 400 for any unknown, duplicate, or invalid query parameter (D-3/D-13). */
 function invalidQueryParam(parameter: string): Response {
   return json({ error: 'invalid query parameter', parameter }, 400);
 }
 
-/**
- * Parse a non-negative integer query param. `value` must be non-empty and all
- * digits (`/^\d+$/`) — a leading `+`, a decimal, a negative, `0` below `min`,
- * or an empty value all reject. `max` is `Number.MAX_SAFE_INTEGER` for `offset`.
- */
 function parseIntegerParam(value: string, min: number, max: number): number | null {
   if (value === '' || !/^\d+$/.test(value)) return null;
   const n = Number(value);
@@ -142,12 +98,6 @@ function parseIntegerParam(value: string, min: number, max: number): number | nu
   return n;
 }
 
-/**
- * Rejects the first unknown or duplicate query param (design D-3): a typo'd or
- * repeated filter must not silently pass. `valid` is the endpoint's whitelist,
- * so each endpoint keeps its own surface (the stats endpoint excludes
- * `limit`/`offset`/`sort`).
- */
 function checkParamNames(
   params: URLSearchParams,
   valid: Set<string>,
@@ -161,13 +111,6 @@ function checkParamNames(
   return { ok: true };
 }
 
-/**
- * Strict parser for the filter params shared by `GET /api/sessions` and
- * `GET /api/sessions/stats`, so the two can never drift. Pagination and `sort`
- * are deliberately NOT here — `listSessions` parses those itself and the stats
- * endpoint rejects them. Returns the first invalid parameter, or the built
- * `ListSessionsQuery`.
- */
 function parseFilterParams(
   params: URLSearchParams,
 ): { ok: true; query: ListSessionsQuery } | { ok: false; parameter: string } {
@@ -175,8 +118,6 @@ function parseFilterParams(
 
   const harness = params.get('harness');
   if (harness !== null) {
-    // Comma list is split/trimmed/de-duped in core; here every segment
-    // must be non-empty so `harness=a,,b` (or a bare blank) is a 400.
     if (harness.split(',').some((segment) => segment.trim() === '')) {
       return { ok: false, parameter: 'harness' };
     }
@@ -189,22 +130,17 @@ function parseFilterParams(
   }
   const q = params.get('q');
   if (q !== null) {
-    // Non-empty after trim, but passed verbatim (the leading/trailing
-    // whitespace may be intentional in the user's query text; core
-    // matches it as-is).
     if (q.trim() === '') return { ok: false, parameter: 'q' };
     query.q = q;
   }
   const durationMinRaw = params.get('durationMin');
   if (durationMinRaw !== null) {
-    // Integer >= 1 minute; 0, negatives, decimals and non-digits reject.
     const durationMin = parseIntegerParam(durationMinRaw, 1, Number.MAX_SAFE_INTEGER);
     if (durationMin === null) return { ok: false, parameter: 'durationMin' };
     query.durationMin = durationMin;
   }
   const costOnlyRaw = params.get('costOnly');
   if (costOnlyRaw !== null) {
-    // Exactly `true` or `false`; `false` means no cost filter.
     if (costOnlyRaw !== 'true' && costOnlyRaw !== 'false') {
       return { ok: false, parameter: 'costOnly' };
     }
@@ -212,10 +148,6 @@ function parseFilterParams(
   }
   const startedAfter = params.get('startedAfter');
   if (startedAfter !== null) {
-    // GUARD before normalizing (D-4): `new Date(value).toISOString()`
-    // throws a RangeError on an invalid date, which the outer catch
-    // would surface as a 500. Validate the date first, then normalize
-    // to canonical `.sssZ` UTC.
     if (Number.isNaN(new Date(startedAfter).getTime())) {
       return { ok: false, parameter: 'startedAfter' };
     }
@@ -225,24 +157,6 @@ function parseFilterParams(
   return { ok: true, query };
 }
 
-/**
- * Pure, testable transport factory (design D-N): no flag parsing, no process
- * lifecycle, no CORS headers. `Bun.serve`'s bind option is `hostname`, not
- * `host` — a bare `host` is silently ignored and would bind `0.0.0.0`,
- * breaking the loopback-only default (design D-G). Routes API paths first so a
- * future static/SPA fallback (design D-N / ADR-8) is a contained addition.
- *
- * **Loopback by default.** `createServer` refuses a non-loopback `host` (and
- * an empty one) unless `allowNonLocal: true` is passed, because the API is
- * unauthenticated (F3). `runwire serve` maps that to the explicit `--expose` flag.
- *
- * **API-only under `/api`.** Every endpoint is served exclusively under
- * `/api/*`; the root `/` and the legacy `/sessions*` / `/session-profiles*`
- * paths are intentionally NOT routed (they fall through to a 404) and there is
- * no alias or redirect. The frontend (a separate Vite SPA in dev) owns `/` and
- * its own `/sessions*` pages; the server never serves static files.
- * Static serving is out of scope for this delivery.
- */
 const API_PREFIX = '/api';
 const SESSIONS_PREFIX = `${API_PREFIX}/sessions`;
 const SESSIONS_STATS_PREFIX = `${SESSIONS_PREFIX}/stats`;
@@ -272,20 +186,14 @@ function profileEndpoint(path: string): { encodedId: string; endpoint: ProfileEn
 
 export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
   const { db, host, port } = opts;
-  // Bind is the control (no auth): refuse a non-loopback host unless the
-  // composition root opted in with an explicit flag (F3).
   assertBindHost(host, opts.allowNonLocal === true);
   let scanInFlight: Promise<ImportReport> | undefined;
   return Bun.serve({
     hostname: host,
     port,
     idleTimeout: 0,
-    // No route reads a request body: cap it so a remote (opt-in) client cannot
-    // push arbitrary payloads into the local process (m3).
     maxRequestBodySize: 1024,
     async fetch(req, server) {
-      // Derive path from the URL, never `req.url` (the full absolute URL with
-      // origin + query), so `/api/sessions?x=1` does not brute-match `/api/sessions`.
       let path: string;
       try {
         path = new URL(req.url).pathname;
@@ -311,14 +219,7 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
           );
         }
         if (path === SCAN_PREFIX) {
-          // `POST` is the only accepted method (it has an effect: it writes
-          // imported sessions); the check comes first so a wrong method is
-          // a 405 even when no scan callback was injected.
           if (method !== 'POST') return methodNotAllowed('POST');
-          // CSRF guard (SEC-02) runs before the unavailable/in-flight checks:
-          // a form POST that cannot prove it is same-origin is refused without
-          // learning or changing any server state. Method stays first so a
-          // wrong method is still a 405 even without the header.
           if (!hasScanCsrfProof(req)) {
             return json({ error: 'forbidden' }, 403);
           }
@@ -328,18 +229,11 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
           if (scanInFlight !== undefined) {
             return json({ error: 'scan in progress' }, 409);
           }
-          // A full import can await far longer than Bun's idle timeout before
-          // any response bytes are written; opt this request out explicitly as
-          // well as the server-wide `idleTimeout: 0` above.
           server.timeout(req, 0);
           const inflight = opts.scan();
           scanInFlight = inflight;
           try {
             const report = await inflight;
-            // Mirror the CLI's failure rule: an adapter `error` or any failed
-            // bundle in the `ImportReport` is a failed scan. Returning 2xx here
-            // would let the web UI treat a partial import as success and
-            // navigate away from the dialog that reports what failed.
             const failed = Object.values(report.perAdapter).some(
               (entry) => entry.error !== undefined || entry.failed > 0,
             );
@@ -363,8 +257,6 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
 
           const limitRaw = params.get('limit');
           if (limitRaw !== null) {
-            // `limit` must be an integer in [1, 200]; 0, negatives, >200,
-            // decimals, a leading `+`, and empty all reject (D-2).
             const limit = parseIntegerParam(limitRaw, 1, 200);
             if (limit === null) return invalidQueryParam('limit');
             query.limit = limit;
@@ -377,7 +269,6 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
           }
           const sortRaw = params.get('sort');
           if (sortRaw !== null) {
-            // Whitelisted field, optional `-` DESC prefix, case-sensitive.
             if (!SORT_PATTERN.test(sortRaw)) return invalidQueryParam('sort');
             query.sort = sortRaw;
           }
@@ -387,8 +278,6 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
         if (path === SESSIONS_STATS_PREFIX) {
           if (method !== 'GET') return methodNotAllowed();
           const params = new URL(req.url).searchParams;
-          // Filters only: `limit`/`offset`/`sort` are rejected as unknown here —
-          // aggregates cover the whole filtered set and have no page or order.
           const names = checkParamNames(params, VALID_STATS_QUERY_PARAMS);
           if (!names.ok) return invalidQueryParam(names.parameter);
           const filters = parseFilterParams(params);
@@ -456,8 +345,6 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
         }
         if (path.startsWith(`${SESSIONS_PREFIX}/`)) {
           if (method !== 'GET') return methodNotAllowed();
-          // Whole-remainder id (design D-H): a literal `/` (or an encoded
-          // `%2F`) stays part of the id, so Claude subagent ids work.
           let id: string;
           try {
             id = decodeURIComponent(path.slice(`${SESSIONS_PREFIX}/`.length));
@@ -470,8 +357,6 @@ export function createServer(opts: CreateServerOptions): Bun.Server<unknown> {
         }
         if (path === HARNESSES_PREFIX) {
           if (method !== 'GET') return methodNotAllowed();
-          // No query params are accepted on this endpoint (D-3): any param is
-          // a typo'd request, so reject the first one.
           const params = new URL(req.url).searchParams;
           for (const key of params.keys()) {
             return invalidQueryParam(key);

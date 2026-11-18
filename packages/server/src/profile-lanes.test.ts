@@ -87,7 +87,6 @@ describe('profile lanes endpoint', () => {
           'http://127.0.0.1:' + String(server.port) + '/api/sessions/s1/profile/lanes?scope=own',
         )
       ).json()) as LanesResponse;
-      // The loader runs per request: an edited file takes effect without a restart.
       expect(loads).toBe(2);
       expect(first.models).toEqual([{ name: 'gpt-6.1-sol', contextWindow: 777_000, tier: 'high' }]);
       expect(second.models).toEqual(first.models);
@@ -117,7 +116,6 @@ describe('profile lanes endpoint', () => {
         expect(await response.json()).toEqual({ error: 'invalid query parameter', parameter });
       }
       expect(await (await fetch(url)).json()).toEqual(before);
-      // Shared parser preservation: sibling endpoints keep their scope rules.
       for (const view of ['models', 'context']) {
         const response = await fetch(`${url.replace('/lanes', `/${view}`)}?scope=own`);
         expect(response.status).toBe(400);

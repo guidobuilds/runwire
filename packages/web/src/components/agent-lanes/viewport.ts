@@ -17,7 +17,6 @@ export function clamp(view: Viewport, callCount: number): Viewport {
   return { start: Math.max(0, Math.min(total - span, view.start)), span };
 }
 
-/** factor > 1 zooms in; cursor and width are in lane-area CSS pixels. */
 export function zoom(
   view: Viewport,
   factor: number,
@@ -30,7 +29,6 @@ export function zoom(
   return clamp({ start: view.start + fraction * (view.span - span), span }, callCount);
 }
 
-/** delta is measured in global calls, not pixels. */
 export function pan(view: Viewport, delta: number, callCount: number): Viewport {
   return clamp({ ...view, start: view.start + delta }, callCount);
 }
@@ -73,7 +71,6 @@ function maximum(values: (number | null)[]): number | null {
   return max;
 }
 
-/** Apply per lane; boundaries are aligned to the global axis, including sparse lanes. */
 export function bucket(cols: readonly LaneColumn[], size: number): LaneBucket[] {
   const groups = new Map<number, LaneColumn[]>();
   for (const col of cols) {
@@ -93,7 +90,6 @@ export function bucket(cols: readonly LaneColumn[], size: number): LaneBucket[] 
   }));
 }
 
-/** Smallest 1, 2, 5 × 10ⁿ step at least as large as the requested call spacing. */
 export function tickStep(target: number): number {
   if (target <= 0) return 1;
   const scale = 10 ** Math.floor(Math.log10(target));

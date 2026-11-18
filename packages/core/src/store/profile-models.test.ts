@@ -10,7 +10,6 @@ function seed(db: Database): void {
   );
 }
 
-/** Idempotently upserts a raw model string and returns its `models.id`. */
 function modelId(db: Database, name: string): number {
   db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT DO NOTHING', [name]);
   return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
@@ -25,7 +24,6 @@ function session(db: Database, id: string, parent: string | null = null): void {
   ]);
 }
 
-/** A `kind='call'` step; a null model writes `model_id = NULL`. */
 function call(
   db: Database,
   sessionId: string,
@@ -58,7 +56,6 @@ describe('readProfileModels', () => {
       { model: 'model-a', outputTokens: 700, share: 0.7 },
       { model: 'model-b', outputTokens: 300, share: 0.3 },
     ]);
-    // No descendants => the empty-group shape, not a group with an 'other'.
     expect(res!.descendants).toEqual({ outputTokens: 0, models: [] });
 
     db.close();
@@ -69,7 +66,6 @@ describe('readProfileModels', () => {
     seed(db);
     session(db, 'root');
     for (let i = 0; i < 9; i += 1) {
-      // model-0 (90) .. model-8 (10): the two lowest outputs fold into 'other'.
       call(db, 'root', i, `model-${i}`, (9 - i) * 10);
     }
 
@@ -86,7 +82,6 @@ describe('readProfileModels', () => {
       'model-6',
       'other',
     ]);
-    // other sum = model-7 (20) + model-8 (10).
     expect(res.session.models.at(-1)).toEqual({
       model: 'other',
       outputTokens: 30,
@@ -102,7 +97,6 @@ describe('readProfileModels', () => {
     session(db, 'root');
     session(db, 'root/child', 'root');
     session(db, 'root/child/grand', 'root/child');
-    // root's own model-own must NOT leak into the descendants group.
     call(db, 'root', 0, 'model-own', 500);
     call(db, 'root/child', 0, 'model-own', 25);
     call(db, 'root/child', 1, 'model-child', 100);
@@ -113,7 +107,6 @@ describe('readProfileModels', () => {
       outputTokens: 500,
       models: [{ model: 'model-own', outputTokens: 500, share: 1 }],
     });
-    // 25 + 100 + 50 = 175; if root's own 500 were included this would be 675.
     expect(res.descendants.outputTokens).toBe(175);
     expect(res.descendants.models).toEqual([
       { model: 'model-child', outputTokens: 100, share: 100 / 175 },

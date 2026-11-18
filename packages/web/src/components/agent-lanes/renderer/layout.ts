@@ -51,7 +51,6 @@ export function layout(
     if (options.collapsed?.has(agent.id)) hiddenBy.set(agent.id, placement);
   }
   const available = Math.max(0, height - AXIS_HEIGHT - CONTEXT_HEIGHT - NAVIGATOR_HEIGHT);
-  // Fullscreen consumes the measured canvas height even with only one visible lane.
   const laneHeight = options.fullscreen
     ? available
     : Math.min(available, Math.min(10, lanes.length) * LANE_HEIGHT);

@@ -12,22 +12,14 @@ import type {
   ToolCategory,
 } from '../contract/types';
 
-/**
- * The identity CORE actually uses (design §2.1): `sourceId ?? sourcePath`.
- * For a filesystem source (Claude) both reduce to `sourcePath`, preserving
- * today's behavior exactly; for a DB-backed source (OpenCode) `sourceId` is
- * explicit and `sourcePath` mirrors it.
- */
 export function effectiveSourceId(s: { sourceId?: string; sourcePath: string }): string {
   return s.sourceId ?? s.sourcePath;
 }
 
-/** The physical locator CORE uses for existence checks: `sourceLocator ?? sourcePath`. */
 export function effectiveSourceLocator(s: { sourceLocator?: string; sourcePath: string }): string {
   return s.sourceLocator ?? s.sourcePath;
 }
 
-/** Minimal shape persist.ts needs from a HarnessAdapter, to avoid a store -> contract/adapter -> ... cycle. */
 export type HarnessMeta = {
   id: string;
   displayName: string;
@@ -46,13 +38,6 @@ export function upsertHarness(db: Database, adapter: HarnessMeta): void {
   );
 }
 
-/**
- * The completed-refresh marker (D82): the adapter mapping version whose full
- * historical import last finished cleanly, or NULL for a store predating the
- * marker. Deliberately separate from `harnesses.adapter_version`, which stays
- * the installed metadata; `upsertHarness` never touches this column. Read it
- * BEFORE `upsertHarness` so the comparison sees the pre-run marker.
- */
 export function readImportedVersion(db: Database, harnessId: string): string | null {
   const row = db.query('SELECT imported_version FROM harnesses WHERE id = ?').get(harnessId) as {
     imported_version: string | null;
@@ -60,27 +45,10 @@ export function readImportedVersion(db: Database, harnessId: string): string | n
   return row?.imported_version ?? null;
 }
 
-/**
- * Advances the completed-refresh marker. Only called once a run enumerated the
- * whole stream, validated/persisted every bundle without a failed bundle or
- * error-level diagnostic, and finished vanished-source cleanup (D82). A
- * partially successful run leaves the marker untouched so the next run retries.
- */
 export function markImportedVersion(db: Database, harnessId: string, version: string): void {
   db.run('UPDATE harnesses SET imported_version = ? WHERE id = ?', [version, harnessId]);
 }
 
-/**
- * Clears the completed-refresh marker after an INCOMPLETE run - a failed
- * bundle, an error-level diagnostic, a thrown discover/persist/cleanup, or a
- * probe/upsert error (D82). Without this, a marker already equal to the
- * running `adapterVersion` from an earlier success would still look complete,
- * and the next same-version scan would hand the size/mtime cache to
- * `discover`, skipping the very source whose re-read failed. NULL means "no
- * completed refresh for the current mapping", so the next run bypasses the
- * cache instead. No-op when the harness row does not exist yet (a throw before
- * the metadata upsert).
- */
 export function invalidateImportedVersion(db: Database, harnessId: string): void {
   db.run('UPDATE harnesses SET imported_version = NULL WHERE id = ?', [harnessId]);
 }
@@ -103,24 +71,6 @@ export function upsertProject(db: Database, project: Project): void {
   );
 }
 
-/**
- * Upserts every distinct (provider, model) pair the bundle mentions (union of
- * `steps[].model`/`steps[].modelProvider` and
- * `session.modelPrimary`/`session.modelPrimaryProvider`) into `models` by its
- * `(provider, name)` identity (idempotent, `upsertHarness` style), then
- * resolves each pair -> id in one SELECT. Runs inside persistBundle's
- * transaction before the session/step writes so the hard FKs
- * (`sessions.model_primary_id`, `steps.model_id`) can never observe a missing
- * `models` row. The contract stays raw-string (`Session.modelPrimary` /
- * `Step.model`, plus their optional providers); which model is "primary" is
- * chosen by the adapter and persist only stores what it is given. A missing
- * provider means NULL (Claude Code; older adapter versions).
- */
-/**
- * Map key for a (provider, name) model identity. JSON-encoded so the
- * absent-provider case is unambiguous (a plain separator collides with a
- * NUL-sentinel prefix when provider is missing).
- */
 function modelKey(provider: string | undefined, name: string): string {
   return JSON.stringify([provider ?? null, name]);
 }
@@ -196,10 +146,6 @@ function upsertSessionRow(
       s.depth,
       s.agentType ?? null,
       s.spawnCallId ?? null,
-      // D7/D71: a title is the one content-derived exception to metadata-only,
-      // and only when the caller's privacy setting allows it. When off, bind
-      // NULL even if the adapter still sent one; the upsert's
-      // `title = excluded.title` then also clears a previously stored title.
       titles ? (s.title ?? null) : null,
       s.cwd ?? null,
       s.gitBranch ?? null,
@@ -286,7 +232,6 @@ function replaceSteps(
   }
 }
 
-/** Derived from the bundle's `tool` steps at persist time (plan P6) - never a bundle field. */
 function replaceToolCounts(db: Database, sessionId: string, steps: Step[]): void {
   db.run('DELETE FROM session_tool_counts WHERE session_id = ?', [sessionId]);
   const counts = new Map<ToolCategory, number>();
@@ -317,23 +262,9 @@ function replaceDiagnostics(
   }
 }
 
-/**
- * One transaction per bundle (ARCHITECTURE §6): upsert project; delete any
- * stale row that used to live at this source_path under a different id
- * (two unique keys on `sessions`: `id` PK and `source_path UNIQUE`); upsert
- * the session by id; replace its steps, derived session_tool_counts and
- * diagnostics.
- *
- * `titles` is the caller's `ctx.privacy.titles` (D7): when false the session
- * title is written as NULL no matter what the bundle carries, so a title can
- * never reach disk because of an adapter bug.
- */
 export function persistBundle(db: Database, bundle: SessionBundle, titles: boolean): void {
   const run = db.transaction((b: SessionBundle) => {
     upsertProject(db, b.project);
-    // Displace by the EFFECTIVE source id (COALESCE(source_id, source_path)) so a
-    // re-emitted source that changes its id still removes the stale row, whether
-    // or not source_id is set (design §2.4).
     db.run('DELETE FROM sessions WHERE COALESCE(source_id, source_path) = ? AND id <> ?', [
       effectiveSourceId(b.session),
       b.session.id,
@@ -347,17 +278,6 @@ export function persistBundle(db: Database, bundle: SessionBundle, titles: boole
   run(bundle);
 }
 
-/**
- * Validation failure -> a stub session row plus an error diagnostic
- * `bundle-invalid`, never cached as if it were a good import (plan P5,
- * ARCHITECTURE §6). A stub keeps only its identity (`id`, `harness_id`,
- * `source_id`/`source_locator`/`source_path`), `depth = 0`, and NULL
- * `project_key`/`source_size`/`source_mtime`; every other session column is
- * cleared on the upsert, so a source that was valid on a previous run cannot
- * keep its title or inflate a parent's inclusive rollup with stale exclusive
- * totals. Returns false and writes nothing when
- * `raw.session.id`/`raw.session.sourcePath` are not usable strings.
- */
 export function persistInvalidBundle(
   db: Database,
   harnessId: string,
@@ -377,8 +297,6 @@ export function persistInvalidBundle(
   const diagnostic = makeDiagnostic('error', 'bundle-invalid', message.slice(0, 200));
 
   const run = db.transaction(() => {
-    // Displace by the EFFECTIVE source id so a stale row at the same identity is
-    // removed even when the invalid bundle carries a different id.
     db.run('DELETE FROM sessions WHERE COALESCE(source_id, source_path) = ? AND id <> ?', [
       sourceId ?? sourcePath,
       id,
@@ -412,26 +330,11 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
 }
 
-/**
- * True iff `target` is `root` itself or a path nested under it, checked via
- * `path.relative` rather than a literal `root + path.sep` prefix: source
- * paths and roots may come from a virtual/redacted filesystem (tests) that
- * always uses `/`, or a real OS path (production) that uses `path.sep` -
- * `relative()` (via node:path's platform module) understands both, so a
- * hardcoded separator character can't be wrong for either source.
- */
 function isUnderRoot(root: string, target: string): boolean {
   const rel = relative(root, target);
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
 
-/**
- * Root-scoped (plan P4): only rows whose source_path equals one of `roots`
- * or is nested under one. NULL size/mtime (a stub from
- * persistInvalidBundle) maps to `{ size: -1, mtime: -1 }`, which no real
- * stat can match, so the source is re-parsed every import until it
- * validates (plan P5).
- */
 export function loadKnown(db: Database, harnessId: string, roots: string[]): Known {
   const known: Known = new Map();
   const rows = db
@@ -446,8 +349,6 @@ export function loadKnown(db: Database, harnessId: string, roots: string[]): Kno
     source_mtime: number | null;
   }[];
   for (const row of rows) {
-    // Keyed by the EFFECTIVE source id (identity); scoped by the PHYSICAL
-    // locator (design §2.5) so an opaque id is never fed to isUnderRoot.
     const identity = row.source_id ?? row.source_path;
     const locator = row.source_locator ?? row.source_path;
     const inScope = roots.some((root) => isUnderRoot(root, locator));
@@ -460,18 +361,6 @@ export function loadKnown(db: Database, harnessId: string, roots: string[]): Kno
   return known;
 }
 
-/**
- * Deletes sessions whose source id is in `known`, was not re-emitted this run,
- * and no longer exists (design §2.6). Cascades to steps/session_tool_counts/
- * diagnostics/rollups via the FKs in store/schema.ts.
- *
- * The existence test is adapter-answered when `opts.sourceExists` is provided
- * (a DB-backed source with real vanished semantics); otherwise it falls back
- * to `fs.stat(sourceLocator ?? sourceId)`, which is the current filesystem
- * heuristic the Claude adapter relies on. Delete is by
- * `COALESCE(source_id, source_path)` so a NULL-source_id row (invalid stub /
- * raw test insert) is still removable.
- */
 export async function removeVanished(
   db: Database,
   harnessId: string,

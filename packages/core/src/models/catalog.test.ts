@@ -79,12 +79,10 @@ describe('resolveModelCatalog: provider/name cascade', () => {
       contextWindow: 600_000,
       tier: 'high',
     });
-    // claude-code style: NULL provider matches the name-only override.
     expect(resolveModelCatalog(null, 'claude-opus-5-5', overrides)).toEqual({
       contextWindow: 900_000,
       tier: 'high',
     });
-    // Built-in still resolves names without an override.
     expect(resolveModelCatalog('openai', 'gpt-5.1', overrides)?.contextWindow).toBe(400_000);
   });
 
@@ -139,7 +137,6 @@ describe('model overrides file', () => {
 
 describe('lookupModelCatalog', () => {
   test('known models resolve window and tier by prefix', () => {
-    // Older generations: prefix covers them with the vendor base windows.
     expect(lookupModelCatalog('claude-sonnet-4')).toEqual({
       contextWindow: 500_000,
       tier: 'mid',
@@ -159,7 +156,6 @@ describe('lookupModelCatalog', () => {
   });
 
   test('exact entries win over prefixes (S3 + vendor docs 2026-10-21)', () => {
-    // Anthropic: the 5.x generations ship 1M; 4.x Opus 500K.
     expect(lookupModelCatalog('claude-sonnet-5')).toEqual({
       contextWindow: 1_000_000,
       tier: 'mid',
@@ -188,7 +184,6 @@ describe('lookupModelCatalog', () => {
       contextWindow: 1_000_000,
       tier: 'low',
     });
-    // OpenAI: 1,050,000 across 5.5/5.6/6/6.1; gpt-5.1 keeps its declared 400K.
     expect(lookupModelCatalog('gpt-6.1-sol')).toEqual({
       contextWindow: 1_050_000,
       tier: 'high',
@@ -242,7 +237,6 @@ describe('lookupModelCatalog', () => {
   });
 
   test('prefix matching does not cross into unrelated names', () => {
-    // 'claude-opus' must not match 'claude-opusx' or 'myclaude-opus-5'.
     expect(lookupModelCatalog('claude-opusx-5').tier).toBeNull();
     expect(lookupModelCatalog('myclaude-opus-5').tier).toBeNull();
     expect(lookupModelCatalog('gptx-5').tier).toBeNull();

@@ -43,7 +43,6 @@ describe('discover', () => {
     expect(ids).toContain('opencode:current:ses_all_1');
     expect(ids).toContain('opencode:current:ses_all_child');
     expect(ids).toContain('opencode:legacy:ses_all_legacy');
-    // current-origin sessions sort before legacy-origin (they iterate origins in order).
     expect(ids.indexOf('opencode:current:ses_all_1')).toBeLessThan(
       ids.indexOf('opencode:legacy:ses_all_legacy'),
     );
@@ -70,10 +69,6 @@ describe('discover', () => {
       ...base,
       fs: {
         ...base.fs,
-        // `computeBundle` resolves the project via ctx.fs.readFile; making the
-        // first call throw forces exactly the first sorted session's fold to
-        // fail, so the wrapper's catch path (M3) is exercised end-to-end
-        // without mocking the compute module (which would leak across files).
         readFile: async (path: string) => {
           readFileCalls++;
           if (readFileCalls === 1) throw new Error('boom: fold failed');
@@ -91,8 +86,6 @@ describe('discover', () => {
     expect(failed?.diagnostics[0]?.message).toBe('boom: fold failed');
     expect(failed?.steps).toEqual([]);
 
-    // The throw did not abort the origin: the next current session and the
-    // legacy origin still stream.
     expect(bundles.some((b) => b.session.id === 'opencode:current:ses_all_child')).toBe(true);
     expect(bundles.some((b) => b.session.id === 'opencode:legacy:ses_all_legacy')).toBe(true);
   });
@@ -290,8 +283,6 @@ describe('sourceExists', () => {
 
   test('a present-but-unreadable directory locator (open throws) retains (returns true)', async () => {
     const ctx = ctxFor('small');
-    // The data dir exists (stat succeeds) but is not a SQLite DB, so opening it
-    // throws; sourceExists must return true so a transient error never deletes.
     const locator = join(FIXTURES_ROOT, 'small', 'home', '.local', 'share', 'opencode');
     const result = await sourceExists(ctx, {
       sourceId: 'opencode:current:ses_small',
@@ -302,7 +293,6 @@ describe('sourceExists', () => {
 
   test('a present-but-unreadable file locator (open throws) retains (returns true)', async () => {
     const ctx = ctxFor('small');
-    // A real file that exists but is not a SQLite DB (the fixture snapshot).
     const locator = join(FIXTURES_ROOT, 'small', 'expected.json');
     const result = await sourceExists(ctx, {
       sourceId: 'opencode:current:ses_small',
@@ -313,9 +303,6 @@ describe('sourceExists', () => {
 
   test('a missing locator retains (returns true) until core can signal ENOENT', async () => {
     const ctx = ctxFor('small');
-    // Adapter-only trade-off (M1): a deleted DB is retained, not deleted,
-    // because `fs.stat === undefined` cannot distinguish "missing" from
-    // "I/O error" under `createBunFs` (ARCHITECTURE §6 priority).
     const absent = await sourceExists(ctx, {
       sourceId: 'opencode:current:ses_small',
       sourceLocator: '/does/not/exist/opencode.db',
@@ -329,8 +316,6 @@ describe('sourceExists', () => {
       ...base,
       fs: {
         ...base.fs,
-        // The exact M1 shape: stat is opaque AND the read fails for another
-        // reason. `undefined` must never be read as "confirmed absent".
         stat: async () => undefined,
         openSqliteReadonly: () => {
           throw new Error('EACCES: permission denied, open opencode.db');

@@ -10,7 +10,6 @@ import { TOKEN_FIELDS } from '../contract/types';
 export type AdapterContractOptions = {
   adapter: HarnessAdapter;
   ctx?: AdapterContext;
-  /** session.id of a bundle with >= 1 diagnostic and no throw. */
   malformedSessionId?: string;
   canarySentinel?: string;
 };
@@ -36,7 +35,6 @@ async function collectAll(
   return out;
 }
 
-/** Recursively walks every string reached from `value` (objects, arrays, primitives). */
 function everyString(value: unknown, visit: (s: string) => void): void {
   if (typeof value === 'string') {
     visit(value);
@@ -55,11 +53,6 @@ function stepFieldValue(step: Step, field: string): unknown {
   return (step as unknown as Record<string, unknown>)[field];
 }
 
-/**
- * The adapter contract test suite (docs/ARCHITECTURE.md §8). Any harness
- * adapter must satisfy this on its fixtures. Call it from a *.test.ts file;
- * it registers `describe`/`test` blocks itself.
- */
 export function adapterContract(opts: AdapterContractOptions): void {
   const ctx = opts.ctx ?? defaultContext();
   const { adapter } = opts;
@@ -106,8 +99,6 @@ export function adapterContract(opts: AdapterContractOptions): void {
       const first = await collectAll(adapter, ctx);
       const known: Known = new Map();
       for (const bundle of first) {
-        // Key by the EFFECTIVE source id (sourceId ?? sourcePath), so an adapter
-        // that separates sourceId from sourcePath still feeds back a matching key.
         known.set(bundle.session.sourceId ?? bundle.session.sourcePath, {
           size: bundle.session.sourceSize,
           mtime: bundle.session.sourceMtime,
@@ -177,8 +168,6 @@ export function adapterContract(opts: AdapterContractOptions): void {
     }
 
     test('privacy.titles=false: no discovered session carries a title (D7)', async () => {
-      // A bundle must never carry a title when the caller opted out; persist
-      // enforces this too, but the adapter owns the opt-out at discovery time.
       const titlesOff: AdapterContext = { ...ctx, privacy: { titles: false } };
       const bundles = await collectAll(adapter, titlesOff);
       for (const bundle of bundles) {

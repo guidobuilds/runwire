@@ -9,12 +9,6 @@ export type ResolveProjectInput = {
 
 export type ResolveProjectOptions = { fs: RunwireFs; mode?: ProjectIdentityMode };
 
-/**
- * Normalizes `git@host:org/repo.git` and `https://host/org/repo.git` (and
- * similar variants) to `host/org/repo` (docs/ARCHITECTURE.md §3 Project.key).
- * Pi passes no remote hint, but `findGitRoot`'s discovered origin remote still
- * flows through this.
- */
 export function normalizeRemoteUrl(url: string): string | undefined {
   const trimmed = url.trim();
   let rest: string | undefined;
@@ -69,11 +63,6 @@ async function readOriginRemote(repoRoot: string, fs: RunwireFs): Promise<string
   return urlMatch?.[1]?.trim();
 }
 
-/**
- * Resolves a project grouping key from a session's cwd, per
- * docs/ARCHITECTURE.md §3/§4 (D8/D9). Pi's stream carries no remote or repo-root
- * hint (docs/adapters/pi.md §3.2), so this is the pure filesystem walk.
- */
 export async function resolveProject(
   input: ResolveProjectInput,
   opts: ResolveProjectOptions,

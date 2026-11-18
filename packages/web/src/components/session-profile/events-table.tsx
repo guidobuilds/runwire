@@ -50,7 +50,6 @@ const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200] as const;
 
 export type EventsTableProps = {
   sessionId: string;
-  /** Optional initial state for isolated component tests. */
   initialSort?: EventSortField;
   initialDir?: SortDirection;
   initialKind?: EventKind;
@@ -115,28 +114,21 @@ const ACTION_LABELS: Record<EventAction, string> = {
   other: 'Other',
 };
 
-/** Never the raw full session id in a cell (merged events span the whole
- * tree): the tail after the last '/' or ':' — used when the scope nodes
- * carry no agentType for this stream. */
 function agentLabel(sessionId: string): string {
   const cut = Math.max(sessionId.lastIndexOf('/'), sessionId.lastIndexOf(':'));
   return cut === -1 ? sessionId : sessionId.slice(cut + 1);
 }
 
-/** Prefer the scope node's agentType (human-readable); fall back to the short id tail. */
 function agentCell(sessionId: string, agentTypeById: Map<string, string | null>): string {
   const agentType = agentTypeById.get(sessionId);
   return agentType == null || agentType === '' ? agentLabel(sessionId) : readableAgent(agentType);
 }
 
-/** Model exists on `call` and `tool` events; every other kind shows an em dash. */
 function modelCell(event: Event): string {
   if (event.kind !== 'call' && event.kind !== 'tool') return EM_DASH;
   return event.model ? readableModel(event.model) : EM_DASH;
 }
 
-/** Server-owned metadata-only subject; a turn has none, so its duration is the
- * fallback so no row loses its only detail. */
 function subjectCell(event: Event): string {
   if (event.subject !== null) return event.subject;
   if (event.kind === 'turn' && event.durationMs !== null)
@@ -144,16 +136,11 @@ function subjectCell(event: Event): string {
   return EM_DASH;
 }
 
-/** The tooltip/fallback text for the subject cell: the raw subject (or its
- * duration fallback), never the em dash. */
 function subjectTitle(event: Event): string | undefined {
   const subject = subjectCell(event);
   return subject === EM_DASH ? undefined : subject;
 }
 
-/** The authoritative, complete stored MCP identity for an MCP tool row. Null
- * for a non-MCP event or a missing/partial/malformed pair, so the row falls
- * back to the raw subject instead of an invented identity. */
 function mcpIdentity(event: Event): { server: string; tool: string } | null {
   if (event.kind !== 'tool' || event.action !== 'mcp') return null;
   const { mcpServer, mcpTool } = event;
@@ -162,8 +149,6 @@ function mcpIdentity(event: Event): { server: string; tool: string } | null {
   return { server: mcpServer, tool: mcpTool };
 }
 
-/** A complete MCP pair renders as a truncated server/tool hierarchy with the
- * full values on hover; every other row keeps the raw subject. */
 function SubjectCell({ event }: { event: Event }) {
   const identity = mcpIdentity(event);
   if (identity) {
@@ -215,10 +200,6 @@ function SortHead({
   );
 }
 
-/** Server-driven merged events datatable (G8). Filtering, sorting, and
- * pagination are all owned by `/api/sessions/:id/profile/events`; the table
- * only holds the controls' state. Always scope=tree — the merged reader has no
- * per-lane view, it covers the whole session tree. */
 export function EventsTable({
   sessionId,
   initialSort = 'time',

@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest a capability, a new harness adapter or a UI improvement.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the situation, not only the proposed solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How you would like Runwire to behave.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Import / discovery
+        - Adapter (new harness)
+        - Adapter (existing harness)
+        - Database / schema
+        - API
+        - Web UI
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: This feature can work without reading or storing prompts, responses, code or tool I/O.
+          required: true

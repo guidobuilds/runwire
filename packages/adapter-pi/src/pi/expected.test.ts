@@ -7,8 +7,6 @@ import { createPiAdapter } from '../index';
 
 const FIXTURES_ROOT = join(import.meta.dir, '..', '..', '..', '..', 'fixtures', 'pi');
 
-// Every fixture case except all/ (a synthetic union, not a real per-case
-// snapshot target - see all/README.md).
 const CASES = [
   'small',
   'tree',
@@ -49,9 +47,6 @@ async function computeExpected(name: string): Promise<Expected> {
 
   const sessions: ExpectedSession[] = bundles.map((b) => {
     const { sourceMtime: _sourceMtime, sourcePath, ...rest } = b.session;
-    // expected.json stores a portable, redacted relative path (forward
-    // slashes) regardless of host OS; relative() returns OS-native
-    // separators (backslash on Windows), so normalize before comparing.
     return { ...rest, sourcePath: relative(ctx.home, sourcePath).replaceAll('\\', '/') };
   });
 

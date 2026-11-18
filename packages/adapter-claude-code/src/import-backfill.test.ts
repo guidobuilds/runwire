@@ -35,13 +35,6 @@ function sessionCount(db: ReturnType<typeof openStore>['db']): number {
   return (db.query('SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c;
 }
 
-/**
- * The pre-MCP-identity mapping (adapterVersion 2.0.0): it emits the same
- * bundles as the current adapter but strips `mcpServer`/`mcpTool`, exactly as
- * the shipped 2.0.0 code did. Used to seed a realistic legacy store (NULL
- * identity columns, a 2.0.0 completed marker and a warm size/mtime cache)
- * before the current adapter's automatic refresh runs.
- */
 function legacyClaudeAdapter(): HarnessAdapter {
   const current = createClaudeCodeAdapter();
   return {
@@ -58,8 +51,6 @@ function legacyClaudeAdapter(): HarnessAdapter {
   };
 }
 
-/** `stat(root)` succeeds once (probe), then reports the root gone, and its
- * `readdir` already returns empty - the root disappears after probe. */
 function fsWithRootVanishingAfterProbe(real: RunwireFs, root: string): RunwireFs {
   let rootChecks = 0;
   return {
@@ -82,8 +73,6 @@ describe('claude-code: automatic historical MCP-identity backfill (real fixture 
     const { db } = openStore(':memory:');
     const ctx = ctxWithFs(createBunFs());
 
-    // Run 1: the 2.0.0 mapping. Ledger rows land with NULL identity and the
-    // completed marker records 2.0.0.
     const legacy = await importAll({ adapters: [legacyClaudeAdapter()], db, ctx });
     expect(reportFor(legacy, 'claude-code').imported).toBeGreaterThan(0);
     expect(readImportedVersion(db, 'claude-code')).toBe('2.0.0');
@@ -92,9 +81,6 @@ describe('claude-code: automatic historical MCP-identity backfill (real fixture 
       .get() as { c: number };
     expect(nullIdentity.c).toBe(0);
 
-    // Run 2: the current 2.1.0 adapter, NO force. The marker mismatch makes
-    // importAll bypass the warm size/mtime cache and reparse every fixture
-    // source, backfilling the identity the old mapping could not write.
     const current = await importAll({ adapters: [createClaudeCodeAdapter()], db, ctx });
     expect(reportFor(current, 'claude-code').discovered).toBeGreaterThan(0);
     expect(readImportedVersion(db, 'claude-code')).toBe('2.1.0');
@@ -106,8 +92,6 @@ describe('claude-code: automatic historical MCP-identity backfill (real fixture 
     expect(backfilled).toEqual({ mcp_server: 'plugin_engram_engram', mcp_tool: 'mem_save' });
     expect(sessionCount(db)).toBeGreaterThan(0);
 
-    // Run 3: marker caught up and sizes unchanged -> incremental, nothing
-    // re-read and every source accounted for as skipped.
     const third = await importAll({ adapters: [createClaudeCodeAdapter()], db, ctx });
     expect(reportFor(third, 'claude-code').discovered).toBe(0);
     expect(reportFor(third, 'claude-code').skipped).toBeGreaterThan(0);
@@ -134,9 +118,7 @@ describe('claude-code: automatic historical MCP-identity backfill (real fixture 
     expect(report.error).toBeTruthy();
     expect(report.removed).toBe(0);
     expect(sessionCount(db)).toBe(before);
-    // Incomplete enumeration must not leave apparent success behind.
     expect(readImportedVersion(db, 'claude-code')).toBeNull();
-    // The fixture session this test seeded is still present.
     expect(db.query('SELECT id FROM sessions WHERE id = ?').get(MEDIUM_SESSION)).not.toBeNull();
   });
 });

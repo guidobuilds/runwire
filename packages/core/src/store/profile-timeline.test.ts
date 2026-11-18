@@ -9,7 +9,6 @@ function seed(db: Database): void {
     ['h', 'Harness', '1', '[]'],
   );
 }
-/** Idempotently upserts a raw model string and returns its `models.id`. */
 function modelId(db: Database, name: string): number {
   db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT DO NOTHING', [name]);
   return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
@@ -111,10 +110,6 @@ describe('readProfileTimeline', () => {
     call(db, 'n8', 1, 0, 'unknown', '2025-01-01T00:01:30Z');
     call(db, 'root', 0, null, null, '2025-01-01T00:02:00Z');
     const timeline = readProfileTimeline(db, 'root')!;
-    // 8 named models (model-0..model-7), top 7 by count/name stay visible;
-    // model-7 plus the two literal 'unknown' calls and the literal 'other'
-    // call collapse into the reserved 'other' bucket (4 calls); the single
-    // null-model call is 'unknown' (1 call).
     expect(timeline.series.map((s) => s.model).sort()).toEqual(
       [
         'model-0',

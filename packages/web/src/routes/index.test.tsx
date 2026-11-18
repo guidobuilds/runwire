@@ -7,9 +7,6 @@ import { mockPagedSessions, mockSessionSummary } from '@/mocks/handlers';
 import { server } from '@/mocks/node';
 import { routeTree } from '@/routeTree.gen';
 
-// f6: '/' no longer renders the dashboard itself -- it only redirects to
-// '/sessions'. The dashboard's own content assertions live in
-// sessions.index.test.tsx now.
 describe('index route (/ -> /sessions redirect)', () => {
   it('redirects to /sessions and renders the dashboard there', async () => {
     server.use(http.get('/api/sessions', () => HttpResponse.json(mockPagedSessions)));

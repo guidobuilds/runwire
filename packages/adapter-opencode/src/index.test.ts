@@ -25,9 +25,6 @@ async function collect(ctx: AdapterContext): Promise<SessionBundle[]> {
   return out;
 }
 
-// --- Adapter contract kit ---
-// Runs against fixtures/opencode/all: the union of current + legacy stores, so
-// the capabilities-consistency check sees the full repertoire in one discover().
 adapterContract({
   adapter: createOpencodeAdapter(),
   ctx: contextForFixture('all'),

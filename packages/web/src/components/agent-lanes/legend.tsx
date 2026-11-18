@@ -2,7 +2,6 @@ import { laneRoleSwatches } from './renderer/theme';
 
 export type LegendProps = { bucketSize: number };
 
-/** Footer below the canvas; the shell supplies its current viewport bucket size. */
 export function Legend({ bucketSize }: LegendProps) {
   const { kinds, tiers } = laneRoleSwatches();
   return (

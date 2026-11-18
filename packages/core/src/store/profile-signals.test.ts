@@ -161,17 +161,13 @@ describe('readProfileSignals', () => {
     const { db } = openStore(':memory:');
     seed(db);
     session(db, 'root');
-    // Legacy row: no stored identity, canonical Claude name.
     step(db, 'root', 0, 'tool', { category: 'mcp', toolName: 'mcp__legacy__call' });
-    // Malformed raw name: still an MCP call, but no fabricated server.
     step(db, 'root', 1, 'tool', { category: 'mcp', toolName: 'mcp__a__b__c' });
-    // Partial stored pair never combines with the parsed raw pair.
     step(db, 'root', 2, 'tool', {
       category: 'mcp',
       toolName: 'mcp__raw__thing',
       mcpServer: 'stored-only',
     });
-    // Non-MCP category is never classified from a raw mcp-looking name.
     step(db, 'root', 3, 'tool', { category: 'read', toolName: 'mcp__sneaky__tool' });
     const result = readProfileSignals(db, 'root')!;
     expect(result.toolCalls).toEqual({ total: 4, mcp: 3 });
@@ -217,8 +213,6 @@ describe('readProfileSignals', () => {
     session(db, 'root');
     session(db, 'child-a', 'root');
     session(db, 'child-b', 'root');
-    // Every tool step below carries a category, matching replaceToolCounts'
-    // real persist-time derivation (kind='tool' with a defined category).
     step(db, 'root', 0, 'tool', { category: 'read', toolName: 'Read' });
     step(db, 'root', 1, 'tool', { category: 'mcp', toolName: 'mcp__a__x' });
     step(db, 'child-a', 0, 'tool', { category: 'skill', toolName: 'Skill', skillName: 's' });

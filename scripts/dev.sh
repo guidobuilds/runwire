@@ -1,19 +1,11 @@
 #!/usr/bin/env bash
-#
-# runwire dev — brings up the whole app from the repo root:
-#   [api] @runwire/server  via `bun run runwire serve` (default 127.0.0.1:8787)
-#   [web] @runwire/web     via Vite dev server (its /api proxy targets that port)
-#
-# Both run as children, every line they print is prefixed, and one Ctrl-C
-# (or SIGTERM) takes the pair down. If either dies, the other is stopped too.
-# Written for bash 3.2, the macOS default.
 
 set -euo pipefail
-set -m # each child gets its own process group, so teardown can kill the group
+set -m
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
-API_PORT="${API_PORT:-8787}" # keep in sync with the /api proxy in packages/web/vite.config.ts
+API_PORT="${API_PORT:-8787}"
 DB_PATH="${RUNWIRE_DB:-}"
 IMPORT_FIRST=false
 LABELS=()
@@ -85,9 +77,6 @@ fi
 
 say() { printf '%s\n' "${C_DIM}$*${NC}"; }
 
-# launch <label> <color> <cwd> <cmd> [args...] — child stdout+stderr, line-prefixed.
-# Prefixing goes through process substitution so $! stays the child's own pid:
-# a plain `cmd | sed &` pipeline would report sed as the job and leave the child alive.
 launch() {
   local label="$1" color="$2" cwd="$3" prefix
   shift 3
@@ -97,9 +86,6 @@ launch() {
   PIDS+=("$!")
 }
 
-# Downward signal first to the process group (bun -> vite/node), then to the
-# job itself in case it is already gone from the group. DOWN guards a double
-# teardown: the INT/TERM handlers call down() and then exit through the EXIT trap.
 down() {
   [[ "$DOWN" == 1 ]] && return
   DOWN=1
@@ -117,7 +103,6 @@ trap 'down; exit 130' INT
 trap 'down; exit 143' TERM
 trap down EXIT
 
-# workspace deps are per package; install once if anything is missing
 if [[ ! -d "$ROOT/node_modules" || ! -d "$ROOT/packages/web/node_modules" ]]; then
   say "installing workspace dependencies"
   (cd "$ROOT" && bun install)
@@ -142,7 +127,6 @@ launch web "$C_WEB" "$ROOT/packages/web" bun run dev
 
 say "${C_API}api${NC} http://127.0.0.1:${API_PORT}  ${C_DIM}|${NC}  ${C_WEB}web${NC} http://localhost:5173  ${C_DIM}|${NC}  Ctrl-C stops both"
 
-# bash 3.2 has no `wait -n`: poll the children, and stop everything if one exits.
 while :; do
   i=0
   while [[ "$i" -lt "${#PIDS[@]}" ]]; do

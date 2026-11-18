@@ -29,7 +29,6 @@ const PERCENT_FORMATTER = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 0,
 });
 
-/** `null` means the source never reported this prompt input; render an em dash. */
 function formatPromptMetric(value: number | null): string {
   return value === null ? '—' : formatCompact(value);
 }
@@ -38,7 +37,6 @@ function formatCacheShare(value: number | null): string {
   return value === null ? '—' : PERCENT_FORMATTER.format(value);
 }
 
-/** Last `/`-separated segment, used when a descendant declares no agent type. */
 function shortId(id: string): string {
   const parts = id.split('/');
   return parts[parts.length - 1] ?? id;
@@ -99,9 +97,6 @@ function ContextRow({ node }: { node: ProfileContextDescendant }) {
   );
 }
 
-/** Descendant-subsession context comparison, mounted after the agent graph.
- * Renders nothing until a successful response actually carries descendants, and
- * preserves the endpoint's own depth-first order (no client re-sorting). */
 export function ContextTable({ sessionId, refresh = 0 }: ContextTableProps) {
   const query = useSessionProfileContext(sessionId, { refresh });
   const descendants = query.data?.descendants ?? [];

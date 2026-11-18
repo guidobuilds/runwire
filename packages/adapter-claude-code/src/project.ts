@@ -5,19 +5,12 @@ export type ProjectIdentityMode = 'repo' | 'cwd';
 
 export type ResolveProjectInput = {
   cwd: string;
-  /** A remote URL already known to the harness; preferred over the fs walk. */
   remoteHint?: string;
   repoRootHint?: string;
 };
 
 export type ResolveProjectOptions = { fs: RunwireFs; mode?: ProjectIdentityMode };
 
-/**
- * Normalizes `git@host:org/repo.git` and `https://host/org/repo.git` (and
- * similar variants) to `host/org/repo` (docs/ARCHITECTURE.md §3 Project.key).
- * Moved from packages/core/src/project/resolve.ts (plan.md P18, f2-t2):
- * project identity resolution is adapter-owned now, using ctx.fs only.
- */
 export function normalizeRemoteUrl(url: string): string | undefined {
   const trimmed = url.trim();
   let rest: string | undefined;
@@ -72,13 +65,6 @@ async function readOriginRemote(repoRoot: string, fs: RunwireFs): Promise<string
   return urlMatch?.[1]?.trim();
 }
 
-/**
- * Resolves a project grouping key from a session's cwd, per
- * docs/ARCHITECTURE.md §3/§4 (D8/D9). Harness-provided git facts
- * (`remoteHint`, `repoRootHint`) are used first; the filesystem walk only
- * fills gaps. Retyped to the contract `Project` (f2-t2); logic unchanged
- * from the legacy `packages/core/src/project/resolve.ts`.
- */
 export async function resolveProject(
   input: ResolveProjectInput,
   opts: ResolveProjectOptions,

@@ -31,9 +31,6 @@ const DEFINITION_SKELETON_KEYS = [
   'cost',
 ] as const;
 
-/** Parent navigation uses the typed router `Link` — no manual
- * percent-encoding, the router's own params-based encoding handles an id
- * containing a literal '/' or ':'. */
 function SessionRefLink({ session }: { session: ApiSessionSummary }) {
   return (
     <Link
@@ -46,8 +43,6 @@ function SessionRefLink({ session }: { session: ApiSessionSummary }) {
   );
 }
 
-/** `hint` (when given) is shown on hover — used for the project's repo/path,
- * which is kept out of the always-visible line to keep it to the plain name. */
 function DefinitionField({
   label,
   value,
@@ -80,8 +75,6 @@ function DefinitionField({
   );
 }
 
-/** Inclusive on top, own below (G3/G9); a single figure when there is nothing
- * to distinguish (no children means own === inclusive). */
 function TokenFieldStack({ session }: { session: ApiSessionDetail }) {
   const hasChildren = session.children.length > 0;
   return (
@@ -115,7 +108,6 @@ const PERCENT_FORMATTER = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 0,
 });
 
-/** `null` means the source never reported this prompt input; render an em dash. */
 function formatPromptMetric(value: number | null): string {
   return value === null ? '—' : formatCompact(value);
 }
@@ -134,9 +126,6 @@ const CONTEXT_FIELDS: readonly ContextField[] = [
   { label: 'Observed calls', read: (metrics) => COUNT_FORMATTER.format(metrics.observedCalls) },
 ];
 
-/** Prompt-context pressure (tree primary; own secondary only when descendants
- * exist, mirroring the token stack). Loads and errors in isolation so it can
- * never hide the rest of the header. */
 function ContextPressure({ sessionId, refresh }: { sessionId: string; refresh: number }) {
   const query = useSessionProfileContext(sessionId, { refresh });
 
@@ -189,9 +178,6 @@ function ContextPressure({ sessionId, refresh }: { sessionId: string; refresh: n
   );
 }
 
-/** Header: name/title, harness, project, timing, cost, own+inclusive totals.
- * No tool-call/turn/API-call counts here — those live in the signals accordion
- * or the agent graph (G9). */
 export function Header({ session, refresh = 0 }: HeaderProps) {
   const showTitle = session.title !== null && session.title !== session.name;
 

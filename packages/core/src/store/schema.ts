@@ -1,28 +1,5 @@
 import type { Database } from 'bun:sqlite';
 
-// docs/ARCHITECTURE.md §5. `sessions.parent_id` and `steps.child_id` are
-// plain indexed columns with NO foreign key (plan P20, spiked in
-// grill.md §3 / lessons `bun-sqlite-self-fk-rejects-orphans-and-prepare-is-
-// single-statement`): with `PRAGMA foreign_keys = ON`, a self-referencing FK
-// on `parent_id` rejects an orphan child at insert time even
-// `DEFERRABLE INITIALLY DEFERRED` (fails at the per-bundle COMMIT instead),
-// and link.ts (f1-t7) must be able to persist an orphan and NULL it out
-// afterward. `steps`, `session_tool_counts`, `diagnostics` and `rollups`
-// keep real `ON DELETE CASCADE` FKs to `sessions(id)`.
-//
-// Model identity is normalized: `steps.model_id` / `sessions.model_primary_id`
-// are hard FKs to `models(id)`, and the legacy text columns (`steps.model`,
-// `sessions.model_primary`) are eliminated by a shape-guarded rebuild in
-// `migrate()`. `models.name` is the exact raw harness model string (the
-// canonical key; reserved names such as 'unknown'/'other' are stored as-is).
-// Identity is `(provider, name)`: `provider` is the serving provider the
-// harness reported (e.g. 'nan', 'openai', 'openai-codex'); NULL when the
-// harness does not report one (Claude Code — Anthropic implicit). The same
-// model name from two providers must coexist (e.g. a proxy vs the first-party
-// API), so the unique constraint lives in two partial indexes (created in
-// `migrate()`) instead of the table body: SQLite UNIQUE treats NULLs as
-// distinct, and NULL-provider names must still dedup by name.
-
 const MODELS_TABLE_BODY = `(
   id INTEGER PRIMARY KEY,
   provider TEXT,
@@ -33,12 +10,6 @@ const MODELS_TABLE = `
 CREATE TABLE IF NOT EXISTS models ${MODELS_TABLE_BODY};
 `;
 
-// Canonical column/shape bodies shared by the DDL (fresh DBs) and the
-// shape-guarded rebuild (legacy DBs) so a rebuilt table is byte-identical to a
-// fresh one. `source_id`/`source_locator` live in the table body rather than
-// only being appended by `ensureColumn` so a rebuilt `sessions` keeps its
-// explicit (e.g. OpenCode) source identity instead of backfilling from
-// `source_path`.
 const SESSIONS_TABLE_BODY = `(
   id TEXT PRIMARY KEY,
   harness_id TEXT NOT NULL REFERENCES harnesses(id),
@@ -210,14 +181,6 @@ WHERE s.parent_id IS NULL
 GROUP BY h.id;
 `;
 
-/**
- * Adds a column to an existing table only when it is absent. `CREATE TABLE
- * IF NOT EXISTS` never alters a pre-existing table, so an existing (legacy)
- * DB would keep its old `steps` shape without the new `skill_name` column;
- * the `PRAGMA table_info` guard makes the `ALTER TABLE` a no-op on any DB
- * that already has the column (fresh `:memory:`, or a second `migrate()` run),
- * avoiding a "duplicate column name" error.
- */
 function ensureColumn(db: Database, table: string, column: string, type: string): void {
   if (!tableColumns(db, table).has(column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
@@ -229,9 +192,6 @@ function tableColumns(db: Database, table: string): Set<string> {
   return new Set(cols.map((c) => c.name));
 }
 
-// The canonical target column order for the rebuild copies. These mirror the
-// column lists in SESSIONS_TABLE_BODY / STEPS_TABLE_BODY (the INSERT lists
-// columns explicitly, so only the SELECT expression order must line up).
 const SESSION_TARGET_COLUMNS = [
   'id',
   'harness_id',
@@ -304,14 +264,6 @@ const STEP_TARGET_COLUMNS = [
   'to_value',
 ] as const;
 
-/**
- * Builds the row-for-row copy from a legacy table into its `*_new` rebuild.
- * Every canonical target column is selected; one the legacy table lacks is
- * filled with NULL (so an ancient shape with only a handful of columns still
- * rebuilds), and the model-id column is resolved from the raw model string via
- * the `models` LEFT JOIN (NULL text -> NULL id). A LEFT JOIN preserves every
- * source row even when the text is NULL or (defensively) unmatched.
- */
 function buildCopySql(
   target: string,
   source: string,
@@ -332,29 +284,6 @@ function buildCopySql(
   return `INSERT INTO ${target} (${cols}) SELECT ${exprs} FROM ${source} s${join}`;
 }
 
-/**
- * Shape-guarded, lossless, one-transaction rebuild that replaces the legacy
- * text model columns with hard FK ids. `steps` is rebuilt iff it still has
- * `model` or lacks `model_id` (the latter covers ancient pre-model DBs);
- * `sessions` likewise for `model_primary`/`model_primary_id`. Fresh DBs (and a
- * second `migrate()`) are a no-op, so they never regain the text columns.
- *
- * `PRAGMA foreign_keys` is a no-op inside a transaction, so it is switched off
- * before the transaction (the DROP/RENAME dance would otherwise cascade or
- * reject), then restored, and `foreign_key_check` runs last: any violation
- * throws so a corrupt rebuild can never commit silently.
- */
-/**
- * Shape-guarded rebuild of `models` for DBs created before provider identity
- *: the legacy body had an inline `name TEXT NOT NULL UNIQUE`, which
- * cannot be dropped without a table rebuild and would reject the same model
- * name from two providers. The dance mirrors `rebuildModelIdentity`: ids are
- * preserved (the copy keeps `id`), `provider` comes out NULL (no harness has
- * reported one yet), and inbound FKs from `steps`/`sessions` survive the
- * DROP/RENAME because `foreign_keys` is off while the tables swap. Any
- * leftover violation throws via the post-rebuild `foreign_key_check` in
- * `rebuildModelIdentity` (which runs after this on every legacy path).
- */
 function rebuildModelsProvider(db: Database): void {
   if (tableColumns(db, 'models').has('provider')) return;
 
@@ -381,9 +310,6 @@ function rebuildModelIdentity(db: Database): void {
   if (!rebuildSteps && !rebuildSessions) return;
 
   if (rebuildSteps) {
-    // A legacy table may predate `model`/`skill_name`; ensure they exist so the
-    // copy SELECT's source columns are all present. The rebuild then drops
-    // them for real, so a fresh/migrated DB never regains a text column.
     ensureColumn(db, 'steps', 'model', 'TEXT');
     ensureColumn(db, 'steps', 'skill_name', 'TEXT');
   }
@@ -394,8 +320,6 @@ function rebuildModelIdentity(db: Database): void {
   const stepsColumns = tableColumns(db, 'steps');
   const sessionsColumns = tableColumns(db, 'sessions');
 
-  // Snapshot the raw strings into `models` first. Only text columns that
-  // actually exist can contribute.
   const modelArms: string[] = [];
   if (stepsColumns.has('model')) {
     modelArms.push('SELECT model FROM steps WHERE model IS NOT NULL');
@@ -449,49 +373,22 @@ function rebuildModelIdentity(db: Database): void {
   }
 }
 
-/** Idempotent: every statement is IF NOT EXISTS, so running this twice is a no-op. */
 export function migrate(db: Database): void {
   db.exec(DDL);
-  // Provider identity: a pre-provider `models` table (inline
-  // `UNIQUE(name)`) is rebuilt to the `(provider, name)` body before anything
-  // inserts into it. A fresh DB (or a second `migrate()`) is a no-op.
   rebuildModelsProvider(db);
-  // Source-identity split (design §2.4): additive nullable columns + backfill
-  // + UNIQUE index on the effective source id. The backfill runs BEFORE the
-  // UNIQUE INDEX so no NULL source_id exists at index time. A second
-  // `migrate()` is a no-op: ensureColumn skips existing columns, the backfill
-  // only fires `WHERE source_id IS NULL`, and the index is IF NOT EXISTS.
   ensureColumn(db, 'sessions', 'source_id', 'TEXT');
   ensureColumn(db, 'sessions', 'source_locator', 'TEXT');
   db.exec(
     'UPDATE sessions SET source_id = source_path, source_locator = source_path WHERE source_id IS NULL',
   );
 
-  // MCP identity (nullable, additive): only a proven `mcp__server__tool` name
-  // populates these; a missing/malformed name leaves both NULL and the raw
-  // `tool_name` untouched. ensureColumn is a no-op on a fresh DB and on a
-  // second migrate(). For a legacy DB that also rebuilds model identity, the
-  // rebuild copies these two by name (missing source columns -> NULL).
   ensureColumn(db, 'steps', 'mcp_server', 'TEXT');
   ensureColumn(db, 'steps', 'mcp_tool', 'TEXT');
 
-  // Import completion marker (D82): `harness.adapter_version` stays the
-  // installed metadata, while this separate nullable column records the
-  // adapter mapping version whose full historical import last COMPLETED.
-  // NULL (a store predating this feature) or a value differing from the
-  // adapter's current version forces one bounded full rediscovery; the marker
-  // only advances after a run that enumerated, validated, persisted and
-  // cleaned up without a failed bundle or error-level diagnostic.
   ensureColumn(db, 'harnesses', 'imported_version', 'TEXT');
 
   rebuildModelIdentity(db);
 
-  // Every index on `sessions`/`steps` is created here, AFTER the rebuild: a
-  // rebuild drops those tables (taking their indexes with them), and
-  // `idx_steps_session_kind_model` references `model_id`, which a legacy table
-  // lacks until the rebuild has run. Idempotent (IF NOT EXISTS); no index is
-  // dropped as lateral cleanup (idx_steps_session_id is kept even though the
-  // (session_id, kind, model_id) index makes it redundant).
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_source_id ON sessions(source_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_parent_id ON sessions(parent_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_project_key ON sessions(project_key)');
@@ -500,10 +397,6 @@ export function migrate(db: Database): void {
     'CREATE INDEX IF NOT EXISTS idx_sessions_root_started ON sessions(started_at, id) WHERE parent_id IS NULL',
   );
   db.exec('CREATE INDEX IF NOT EXISTS idx_steps_session_id ON steps(session_id)');
-  // The two partial unique indexes are the (provider, name) identity: SQLite
-  // UNIQUE treats NULLs as distinct, so NULL-provider names need their own
-  // index to dedup among themselves. Created AFTER the rebuilds, like every
-  // other index here; idempotent (IF NOT EXISTS).
   db.exec(
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_models_provider_name ON models(provider, name) WHERE provider IS NOT NULL',
   );

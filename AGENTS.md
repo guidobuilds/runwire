@@ -41,5 +41,14 @@ Every adapter ships a canary fixture and must pass `@runwire/core/test-kit`.
 # Style
 
 Biome: single quotes, semicolons, trailing commas, 100 cols. TS is `strict` with
-`noUncheckedIndexedAccess`. Keep code self-explanatory; comment only the non-obvious.
-`docs/` is the source of truth — update it when behavior changes.
+`noUncheckedIndexedAccess`. Code is self-explanatory: do not add comments; improve names or
+`docs/` instead. `docs/` is the source of truth — update it when behavior changes.
+
+# Public repository rules
+
+- Runwire is **beta**; say so when describing scope or status.
+- Never write personal paths, secrets, session identifiers or private ticket identifiers in any
+  tracked file, including comments, tests, docs and commit content. Reference issues in the pull
+  request instead.
+- Fixtures must stay synthetic or fully redacted; never commit real prompts, responses or tool I/O.
+

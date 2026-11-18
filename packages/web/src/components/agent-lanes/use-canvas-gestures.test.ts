@@ -114,7 +114,6 @@ it('handles focused keyboard, double-click fit and two-axis pointer drag', () =>
   key('ArrowDown');
   expect(result.current.stateRef.current.view.start).toBeGreaterThan(start);
   expect(result.current.stateRef.current.scrollY).toBe(30);
-  // MouseEvent carries the pointer coordinates even in jsdom without PointerEvent.
   act(() => {
     canvas.dispatchEvent(new MouseEvent('pointerdown', { clientX: 400, clientY: 100, button: 0 }));
     canvas.dispatchEvent(new MouseEvent('pointermove', { clientX: 380, clientY: 80 }));

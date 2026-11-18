@@ -12,7 +12,6 @@ export const rules = [
 ] as const;
 export type RuleId = (typeof rules)[number]['id'];
 
-/** Stable ties follow prototype agent order, then tier/context/failure rule order. */
 export function detect(
   model: LaneModelData,
   enabled: readonly RuleId[] = rules.map((rule) => rule.id),

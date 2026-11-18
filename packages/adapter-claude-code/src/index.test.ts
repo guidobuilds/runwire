@@ -35,19 +35,12 @@ async function bundleFor(ctx: AdapterContext, sessionId: string): Promise<Sessio
   return found;
 }
 
-// --- Adapter contract kit ---
-// Runs against fixtures/claude-code/all: the union of every other fixture,
-// since the capabilities-consistency check needs to see the full repertoire
-// of real behavior in one discover() view (see all/README.md).
-
 adapterContract({
   adapter: createClaudeCodeAdapter(),
   ctx: contextForFixture('all'),
   malformedSessionId: 'claude-code:malformed-session',
   canarySentinel: 'RUNWIRE_CANARY_',
 });
-
-// --- Per-fixture correctness ---
 
 describe('claude-code adapter: small fixture', () => {
   test('discovers exactly one root session with no diagnostics', async () => {
@@ -65,8 +58,6 @@ describe('claude-code adapter: medium fixture (the dedupe regression)', () => {
   test('deduped output matches the known-good value, not the naive sum', async () => {
     const ctx = contextForFixture('medium');
     const bundle = await bundleFor(ctx, 'claude-code:3666e64a-bdeb-4ffb-82d4-ad06666a67a8');
-    // Known-good value from the real reference session (docs/adapters/claude-code.md):
-    // naive per-record sum is 1,117,279; deduped by requestId is 438,086.
     expect(bundle.session.output).toBe(438_086);
     expect(bundle.session.apiCalls).toBe(386);
     expect(bundle.session.compactions).toBeGreaterThanOrEqual(1);
@@ -116,7 +107,6 @@ describe('claude-code adapter: malformed fixture (beyond the generic contract ch
     expect(codes).toContain('source-truncated');
     expect(codes).toContain('malformed-json-line');
     expect(codes).toContain('unknown-record-type');
-    // Records before and after the broken line still produced real usage.
     expect(bundle.steps.some((s) => s.kind === 'call')).toBe(true);
   });
 });
@@ -151,8 +141,6 @@ describe('claude-code adapter: canary fixture (title privacy)', () => {
     expect(ambiguous?.mcpServer).toBeUndefined();
     expect(ambiguous?.mcpTool).toBeUndefined();
 
-    // The canary fixture puts RUNWIRE_CANARY_<n> in every content field; the
-    // MCP tool_use input is content and must never reach the bundle.
     expect(JSON.stringify(bundle)).not.toContain('RUNWIRE_CANARY_');
   });
 });
@@ -172,7 +160,6 @@ describe('claude-code adapter: MCP identity from proven mcp__server__tool names'
     });
     expect(mcpTools.some((s) => s.mcpServer === 'chrome-devtools')).toBe(true);
 
-    // Identity, when present, always reconstructs the raw name exactly.
     for (const step of mcpTools) {
       if (step.mcpServer === undefined && step.mcpTool === undefined) continue;
       expect(step.toolName).toBe(`mcp__${step.mcpServer}__${step.mcpTool}`);
@@ -222,8 +209,6 @@ describe('claude-code adapter: probe', () => {
     const result = await adapter.probe(ctx);
     expect(result.installed).toBe(true);
     expect(result.roots).toHaveLength(1);
-    // projectsRoot() is built with path.posix.join (see paths.ts), so the
-    // '.claude/projects' suffix is always '/'-joined regardless of host OS.
     expect(result.roots[0]).toContain('.claude/projects');
   });
 });

@@ -1,16 +1,5 @@
-/**
- * A nested description of the only keys a raw record may keep.
- * `true` keeps the value as-is (a leaf, trusted verbatim); a nested object
- * recurses into that key; a one-element array recurses into each array
- * element. Anything not named in the projection is dropped.
- */
 export type Projection = { [key: string]: true | Projection | [Projection] };
 
-/**
- * Builds a new object containing only the allowlisted keys, before any
- * further validation runs (docs/ARCHITECTURE.md §6, mechanism 1). Never
- * mutates `record`.
- */
 export function project(record: unknown, allowlist: Projection): unknown {
   if (record === null || typeof record !== 'object') return undefined;
   if (Array.isArray(record)) return undefined;

@@ -92,8 +92,6 @@ function median(values: readonly number[]): number {
     : (sorted[middle] ?? 0);
 }
 
-/** Finds unusually long periods between token observations. Long intervals are
- * excluded from the baseline so a pause does not define itself as "normal". */
 function findActivityGaps(data: readonly ChartDatum[]): ActivityGap[] {
   const times = [...new Set(data.map((datum) => datum.x))].sort((a, b) => a - b);
   const intervals = times.slice(1).map((time, index) => time - (times[index] ?? time));
@@ -179,12 +177,6 @@ function seriesColor(index: number) {
   return `var(--token-model-${(index % CHART_TOKEN_COUNT) + 1})`;
 }
 
-/** First point index where a model's cumulative value for the selected field is
- * positive, or null when the model never consumes the field. Core emits
- * leading zeros (and nulls for never-observed models) before that instant; the
- * chart starts the line there instead of drawing a connector from the origin.
- * Zeros and nulls before the first positive value stay invisible, tooltips
- * included; values after it are plotted unchanged, plateaus and all. */
 function firstPositivePointIndex(
   points: readonly { cumulative: readonly (number | null)[] }[],
   seriesIndex: number,
@@ -196,9 +188,6 @@ function firstPositivePointIndex(
   return null;
 }
 
-/** True when every point's `delta`/`cumulative` vector matches `series.length`
- * — F-7 guard from verification.md#f3. A mismatch means the response cannot
- * be trusted to attribute values to the right model, so no chart is drawn. */
 function seriesLengthsConsistent(
   series: readonly { model: string }[],
   points: readonly { delta: readonly (number | null)[]; cumulative: readonly (number | null)[] }[],
@@ -210,9 +199,6 @@ function seriesLengthsConsistent(
 
 type ChartDatum = Record<string, number | string | null> & { x: number; at: string };
 
-/** Finds the running total known at or before `x` — used to place a spawn
- * marker on the total line at a plausible y, never fabricating a value beyond
- * what the line already shows. */
 function totalAtOrBefore(data: readonly ChartDatum[], x: number): number | null {
   let value: number | null = null;
   for (const datum of data) {
@@ -363,12 +349,6 @@ function TokenChartBody({
     setDragSelection(null);
   }
 
-  // Only models that consume the selected field are drawn. The remaining ones
-  // keep their original index, so their color association never shifts. The
-  // activation threshold comes from the full timeline, but the marker count
-  // follows the displayed zoom slice: a multi-point series zoomed down to a
-  // single positive point still needs its isolated marker, and a slice with no
-  // visible point gets none.
   const visibleSeries = series.flatMap((item, seriesIndex) => {
     const startsAt = seriesStartIndex[seriesIndex];
     if (startsAt === null || startsAt === undefined) return [];

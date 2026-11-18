@@ -12,12 +12,6 @@ export type ImportOptions = {
   force?: boolean;
 };
 
-/**
- * Runs the real import orchestrator over the (optionally filtered) registry
- * and prints the `ImportReport` to stderr as human-readable text. Returns
- * the process exit code: 1 if any adapter's import failed (an `error`, or
- * `failed > 0`), else 0. Never writes anything to stdout.
- */
 export async function runImport(opts: ImportOptions): Promise<number> {
   let selected = opts.adapters;
   if (opts.adapterId !== undefined) {

@@ -16,10 +16,6 @@ import { DataTable } from '@/components/data-table';
 import { formatDateTime } from '@/components/relative-date';
 import { EMPTY_FILTERS, type SessionsFilters } from '@/lib/sessions-table';
 
-// The props-data swap regression from the original f4 suite: the table must
-// render straight from the `data` prop (a fresh array identity on every
-// refetch), never from stale first-render local state.
-
 const sessionA: ApiSessionSummary = {
   id: 'a',
   name: 'Session A',
@@ -63,17 +59,12 @@ const sessionB: ApiSessionSummary = { ...sessionA, id: 'b', name: 'Session B', t
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** An ISO timestamp unambiguously `daysAgo` old (one-minute buffer so real
- * clock drift cannot cross a whole-unit boundary). */
 function pastIso(daysAgo: number): string {
   return new Date(Date.now() - daysAgo * DAY_MS - 60_000).toISOString();
 }
 
 type DataTableProps = React.ComponentProps<typeof DataTable>;
 
-/** Minimal router tree so the name cell's `Link` can resolve a href and
- * navigate: the dashboard route hosts the table, and the profile target route
- * exists so a name click can actually land on `/sessions/$id`. */
 function createTestRouter() {
   const rootRoute = createRootRoute({ component: Outlet });
   const indexRoute = createRoute({
@@ -121,8 +112,6 @@ function renderTable(overrides: Partial<DataTableProps> = {}) {
   return { ...result, router };
 }
 
-/** The toolbar dropdown trigger for `name` (as opposed to the same-named
- * sortable column header button). */
 function toolbarMenuTrigger(name: RegExp): HTMLElement {
   const trigger = screen
     .getAllByRole('button', { name })
@@ -136,8 +125,6 @@ describe('DataTable prop-sync', () => {
     const { rerender } = renderTable({ data: [sessionA] });
     expect(screen.getByText('Session A')).toBeInTheDocument();
 
-    // Simulate a TanStack Query refetch replacing the whole items array (new
-    // object identity, as a real refetch would produce).
     rerender(<DataTable {...makeProps({ data: [sessionB] })} />);
 
     expect(screen.queryByText('Session B')).toBeInTheDocument();
@@ -157,8 +144,6 @@ describe('DataTable token totals', () => {
     const session: ApiSessionSummary = { ...sessionA, tokensOwn: totals, tokensInclusive: totals };
     renderTable({ data: [session] });
 
-    // prompt input (100+50+25) + output (50) = 225; re-adding reasoningOutput
-    // (50) would render 275.
     expect(screen.getByText('225')).toBeInTheDocument();
     expect(screen.queryByText('275')).not.toBeInTheDocument();
   });
@@ -169,7 +154,6 @@ describe('DataTable session name navigation (UX-1)', () => {
     const user = userEvent.setup();
     const { router } = renderTable();
 
-    // Per-row param binding: each name links to its own id, not a shared one.
     expect(screen.getByRole('link', { name: 'Session A' })).toHaveAttribute('href', '/sessions/a');
     const nameLink = screen.getByRole('link', { name: 'Session B' });
     expect(nameLink).toHaveAttribute('href', '/sessions/b');
@@ -177,9 +161,6 @@ describe('DataTable session name navigation (UX-1)', () => {
     await user.click(nameLink);
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/sessions/b'));
-    // The dashboard row stays mounted (the router context does not swap the
-    // matched view here) and no mini-profile chrome appears: neither the old
-    // drawer's "View details" footer link nor a dialog.
     expect(screen.getByText('Session B')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'View details' })).not.toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -194,7 +175,6 @@ describe('DataTable subagent count columns (UX-2)', () => {
     expect(screen.getByRole('columnheader', { name: 'Full tree' })).toBeInTheDocument();
     expect(screen.getByText('7')).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument();
-    // Display-only: the headers are plain text, never the server-sort button.
     expect(screen.queryByRole('button', { name: 'Direct' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Full tree' })).not.toBeInTheDocument();
   });
@@ -205,16 +185,13 @@ describe('DataTable subagent count columns (UX-2)', () => {
 
     await user.click(toolbarMenuTrigger(/Columns/));
 
-    // Human labels for the new columns, and the pre-existing ones too.
     expect(await screen.findByRole('menuitemcheckbox', { name: 'Direct' })).toBeInTheDocument();
     expect(await screen.findByRole('menuitemcheckbox', { name: 'Full tree' })).toBeInTheDocument();
     expect(screen.getByRole('menuitemcheckbox', { name: 'Started At' })).toBeInTheDocument();
-    // Raw DTO ids never leak into the menu.
     expect(screen.queryByRole('menuitemcheckbox', { name: 'subagentChildCount' })).toBeNull();
     expect(screen.queryByRole('menuitemcheckbox', { name: 'subagentDescendantCount' })).toBeNull();
     expect(screen.queryByRole('menuitemcheckbox', { name: 'startedAt' })).toBeNull();
 
-    // Hiding Direct removes its header and value, leaving Full tree visible.
     await user.click(screen.getByRole('menuitemcheckbox', { name: 'Direct' }));
     expect(screen.queryByRole('columnheader', { name: 'Direct' })).toBeNull();
     expect(screen.getByRole('columnheader', { name: 'Full tree' })).toBeInTheDocument();
@@ -244,10 +221,8 @@ describe('DataTable date column toggling (T5)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '3d ago' }));
 
-    // Both Started At cells switched, not just the clicked one.
     expect(screen.getByRole('button', { name: formatDateTime(startedA) })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: formatDateTime(startedB) })).toBeInTheDocument();
-    // Last Activity is untouched.
     expect(screen.getByRole('button', { name: '1d ago' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '2d ago' })).toBeInTheDocument();
   });
@@ -276,7 +251,6 @@ describe('DataTable date column toggling (T5)', () => {
   it('never changes a dashboard date format on hover, before or after toggling', () => {
     renderDated();
 
-    // While the pointer is over the relative cell it must still read relative.
     const relative = screen.getByRole('button', { name: '3d ago' });
     fireEvent.mouseEnter(relative);
     expect(screen.getByRole('button', { name: '3d ago' })).toBeInTheDocument();
@@ -294,7 +268,6 @@ describe('DataTable date column toggling (T5)', () => {
     const { rerender } = renderDated();
     fireEvent.click(screen.getByRole('button', { name: '3d ago' }));
 
-    // A refetch hands the table a fresh array with new row identities.
     rerender(<DataTable {...makeProps({ data: [{ ...datedA }, { ...datedB }] })} />);
 
     expect(screen.getByRole('button', { name: formatDateTime(startedA) })).toBeInTheDocument();
@@ -322,7 +295,6 @@ describe('DataTable date column toggling (T5)', () => {
     const lastAt = pastIso(1);
     renderTable({ data: [{ ...sessionA, startedAt: null, lastActivity: lastAt }], total: 1 });
 
-    // The Started At cell has no control to activate.
     expect(screen.queryByRole('button', { name: '—' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '1d ago' }));

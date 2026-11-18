@@ -15,7 +15,6 @@ export function useFullscreen(frame: RefObject<HTMLElement | null>) {
     active.current = true;
     setFullscreen(true);
     try {
-      // Include shadcn's body portals so menus remain visible in native fullscreen.
       target.current = frame.current?.ownerDocument.documentElement ?? null;
       void target.current
         ?.requestFullscreen?.()
@@ -25,9 +24,7 @@ export function useFullscreen(frame: RefObject<HTMLElement | null>) {
           }
         })
         .catch(() => {});
-    } catch {
-      // Fixed-position expanded mode also works without browser fullscreen permission.
-    }
+    } catch {}
   }, [frame]);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {

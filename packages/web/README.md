@@ -1,21 +1,18 @@
-# React + TypeScript + Vite + shadcn/ui
+# @runwire/web
 
-This is a template for a new Vite project with React, TypeScript, and shadcn/ui.
+The Runwire web explorer. It is a React 19 + Vite + TanStack Router single-page app that talks to
+`@runwire/server` over HTTP. It has no runtime imports from the rest of the repository.
 
-## Adding components
-
-To add components to your app, run the following command:
-
-```bash
-npx shadcn@latest add button
+```sh
+bun run dev        # Vite dev server on :5173, proxying /api to :8787
+bun run test       # Vitest + jsdom
+bun run typecheck
+bun run build
 ```
 
-This will place the ui components in the `src/components` directory.
+Run the API with `bun run runwire serve` from the repository root, or start both halves with
+`bun run dev` at the root.
 
-## Using components
-
-To use the components in your app, import them as follows:
-
-```tsx
-import { Button } from "@/components/ui/button"
-```
+This package is beta: some panels are still being designed. The router tree
+(`src/routeTree.gen.ts`) and the shadcn/ui primitives (`src/components/ui/**`) are generated; do not
+edit them by hand.

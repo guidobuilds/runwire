@@ -19,8 +19,6 @@ import {
 } from '@/mocks/session-profile';
 import { ContextTable } from './context-table';
 
-/** The agent cell's link needs a real router context to resolve a href, so a
- * minimal self-contained tree (like header.test.tsx) is used. */
 async function renderTable(sessionId = PROFILE_ROOT_ID) {
   const rootRoute = createRootRoute({ component: Outlet });
   const indexRoute = createRoute({
@@ -79,10 +77,9 @@ describe('ContextTable', () => {
   it('preserves the endpoint order and labels agentType with a short-id fallback', async () => {
     await renderTable();
     await screen.findByText('Subagent context');
-    const rows = screen.getAllByRole('row').slice(1); // drop the header row
+    const rows = screen.getAllByRole('row').slice(1);
     expect(rows).toHaveLength(2);
     expect(rows[0]?.textContent).toContain('Worker');
-    // The depth-2 grandchild declares no agentType -> last id segment.
     expect(rows[1]?.textContent).toContain('grand');
   });
 
@@ -111,9 +108,7 @@ describe('ContextTable', () => {
     await renderTable();
     await screen.findByText('Subagent context');
     const rows = screen.getAllByRole('row').slice(1);
-    // grandchild: model, cache-read and cost are all null -> at least 2 em dashes.
     expect((rows[1]?.textContent?.match(/—/g) ?? []).length).toBeGreaterThanOrEqual(2);
-    // child: model name and cost render; metrics are compacted.
     expect(rows[0]?.textContent).toContain('claude-sonnet-5');
     expect(rows[0]?.textContent).toContain('$0.12');
   });

@@ -26,7 +26,6 @@ export type LaneTheme = Record<LaneToken, string>;
 
 export type LaneSwatch = { label: string; token: LaneToken };
 
-/** Pure mapping shared by the HTML legend and canvas palette. CSS resolves the active theme. */
 export function laneRoleSwatches(): { kinds: LaneSwatch[]; tiers: LaneSwatch[] } {
   return {
     kinds: [
@@ -46,7 +45,6 @@ export function laneRoleSwatches(): { kinds: LaneSwatch[]; tiers: LaneSwatch[] }
   };
 }
 
-/** Call on mount and on theme changes, not from the frame loop. */
 export function readLaneTheme(element: Element): LaneTheme {
   const style = getComputedStyle(element);
   return Object.fromEntries(

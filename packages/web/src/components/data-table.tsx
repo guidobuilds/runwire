@@ -69,10 +69,6 @@ import {
 import { cn } from '@/lib/utils';
 import { useHarnesses } from '@/queries/harnesses';
 
-// v9: declare the features this table uses — anything you don't register is
-// tree-shaken out of the bundle. Sorting/filtering/pagination now live in the
-// server query, so only the client-only column-visibility and row-selection
-// features remain.
 const features = tableFeatures({
   columnVisibilityFeature,
   rowSelectionFeature,
@@ -103,8 +99,6 @@ function costLabel(value: CostPreset): string {
   return COST_OPTIONS.find((option) => option.value === value)?.label ?? 'All';
 }
 
-/** Human labels for the column-visibility menu, keyed by column id. Keeps the
- * menu readable instead of leaking raw DTO field ids (`startedAt`, …). */
 const COLUMN_LABELS: Record<string, string> = {
   name: 'Name',
   harness: 'Harness',
@@ -117,9 +111,6 @@ const COLUMN_LABELS: Record<string, string> = {
   subagentDescendantCount: 'Full tree',
 };
 
-/** The sorted state to display for a column (server-owned sort). With no
- * explicit sort the server orders by `DEFAULT_SORT`, so that column shows the
- * active direction instead of an unsorted chevron. */
 function toSortedState(sort: SessionsSortState, id: SortField): false | 'asc' | 'desc' {
   if (!sort) {
     if (DEFAULT_SORT.id !== id) return false;
@@ -129,7 +120,6 @@ function toSortedState(sort: SessionsSortState, id: SortField): false | 'asc' | 
   return sort.desc ? 'desc' : 'asc';
 }
 
-/** Clicking a header cycles its sort: asc -> desc -> unsorted. */
 function cycleSort(sort: SessionsSortState, id: SortField): SessionsSortState {
   if (!sort || sort.id !== id) return { id, desc: false };
   if (!sort.desc) return { id, desc: true };
@@ -137,9 +127,6 @@ function cycleSort(sort: SessionsSortState, id: SortField): SessionsSortState {
 }
 
 function sumTokens(totals: ApiTokenTotals): number {
-  // Total Tokens = prompt input + output. `reasoningOutput` is a separate
-  // breakdown and is never added here (it is already counted inside `output`
-  // for harnesses that report it that way, so adding it double-counts).
   return totals.uncachedInput + totals.cachedInput + totals.cacheWrite + totals.output;
 }
 
@@ -169,7 +156,6 @@ function formatCurrency(value: number | null): string {
   }).format(value);
 }
 
-/** A plain, server-controlled sortable header button. */
 function SortableHeader({
   label,
   align = 'left',
@@ -227,16 +213,10 @@ export function DataTable({
 }) {
   const [columnVisibility, setColumnVisibility] = React.useState<ColumnVisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState({});
-  // Per-column date format, owned by the mounted table so it survives refetch
-  // rerenders. Started At and Last Activity toggle independently; nothing is
-  // persisted (no storage or global preferences).
   const [absoluteDateColumns, setAbsoluteDateColumns] = React.useState({
     startedAt: false,
     lastActivity: false,
   });
-  // Read by the memoized column cells so the `columns` identity stays stable
-  // across a toggle. Re-creating the columns would remount the date controls
-  // and drop keyboard focus after Enter/Space.
   const absoluteDateColumnsRef = React.useRef(absoluteDateColumns);
   absoluteDateColumnsRef.current = absoluteDateColumns;
 
@@ -389,8 +369,6 @@ export function DataTable({
           ),
           cell: ({ getValue }) => <div className="text-right">{formatCurrency(getValue())}</div>,
         }),
-        // Display-only subagent counters (server computed). Plain-string headers,
-        // so they never become a sort button; hideable via the Columns menu.
         columnHelper.accessor('subagentChildCount', {
           id: 'subagentChildCount',
           header: 'Direct',

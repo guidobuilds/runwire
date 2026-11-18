@@ -95,11 +95,6 @@ function summaryFrom(input: {
   };
 }
 
-/**
- * Streams one `SessionSummary` per session across both origins, sorted by id
- * within each origin. Bounded memory: one summary (and one computed bundle)
- * is held at a time.
- */
 export async function* inventorySessions(
   ctx: AdapterContext,
   opts?: { includeLegacy?: boolean },
@@ -148,10 +143,6 @@ export async function* inventorySessions(
   }
 }
 
-/**
- * Returns the full metadata-only, CORE-representable `SessionDetails` for one
- * source (project + session + steps + diagnostics). Never persists into CORE.
- */
 export async function retrieveSession(
   ctx: AdapterContext,
   sourceId: string,
@@ -160,11 +151,6 @@ export async function retrieveSession(
   return details;
 }
 
-/**
- * Streams `Step[]` in `seq`-ordered pages (`pageSize`, default 200). Holds one
- * page in memory at a time. No `sensitive`/`enrich` options — the connector is
- * metadata-only.
- */
 export async function* retrieveSessionParts(
   ctx: AdapterContext,
   sourceId: string,

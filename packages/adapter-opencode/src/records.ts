@@ -10,9 +10,7 @@ import {
 } from './schema';
 
 export type OpenCodeMessage = {
-  /** The `session_message.type` column ('user' | 'assistant' | ...). */
   type: string;
-  /** The original `session_message.seq` (used only to order; reindexed later). */
   seq: number;
   data: OpenCodeMessageData;
 };
@@ -21,13 +19,11 @@ export type OpenCodeSession = {
   id: string;
   projectId: string;
   parentId?: string;
-  /** Explicit parent tool call whose metadata names this child session. */
   spawnCallId?: string;
   forkSessionId?: string;
   directory?: string;
   title?: string;
   agent?: string;
-  /** The `model` JSON string from the session row (parsed in compute). */
   model?: string;
   version?: string;
   cost?: number;
@@ -52,18 +48,9 @@ export type OriginRecords = {
   diagnostics: Diagnostic[];
 };
 
-/** Fixed, content-free message for an origin DB that exists but cannot be read. */
 export const ORIGIN_READ_FAILED_MESSAGE =
   'the origin database exists but could not be opened or read';
 
-/**
- * Reads one OpenCode origin DB read-only, WAL-aware (never `immutable=1`),
- * projecting + schema-checking every session and message row. It never throws:
- * a bad row is skipped with a content-free diagnostic; a DB-level failure
- * yields an empty read plus a fixed `source-read-failed` diagnostic (which the
- * caller treats as fatal). Message `seq` is left in source order here (the
- * caller reindexes to 0..n-1).
- */
 export async function readOrigin(ctx: AdapterContext, origin: DbOrigin): Promise<OriginRecords> {
   const diagnostics: Diagnostic[] = [];
   const kind = await detectDbKind(ctx, origin);
@@ -174,14 +161,6 @@ export async function readOrigin(ctx: AdapterContext, origin: DbOrigin): Promise
   }
 }
 
-/**
- * Links only explicit OpenCode evidence: the child must declare the message's
- * owner as its parent and a `subagent` tool part must name that exact child in
- * `state.metadata.sessionID`. No timestamps, titles, agent names, or other
- * heuristics are used. CORE has one `spawnCallId` per child, so the first
- * explicit match in source order is retained; later matches remain ordinary
- * agent tool steps.
- */
 export function attachSpawnCallIds(
   sessions: OpenCodeSession[],
   messagesBySession: Map<string, OpenCodeMessage[]>,

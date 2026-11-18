@@ -19,8 +19,6 @@ import { Header } from './header';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** An ISO timestamp unambiguously `daysAgo` old (one-minute buffer so real
- * clock drift cannot cross a whole-unit boundary). */
 function pastIso(daysAgo: number): string {
   return new Date(Date.now() - daysAgo * DAY_MS - 60_000).toISOString();
 }
@@ -29,11 +27,6 @@ function queryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }
 
-/** Header renders the parent link via the typed router `Link` (to
- * `/sessions/$id`), which needs a real router context to resolve a href.
- * A minimal self-contained tree — just enough for `Link`'s path-template
- * resolution to work — avoids depending on the real app's route tree/data
- * layer for what is otherwise a pure props-component test. */
 async function renderHeader(session: ApiSessionDetail) {
   const rootRoute = createRootRoute({ component: Outlet });
   const indexRoute = createRoute({
@@ -49,9 +42,6 @@ async function renderHeader(session: ApiSessionDetail) {
     history: createMemoryHistory({ initialEntries: ['/'] }),
     routeTree: rootRoute.addChildren([indexRoute, profileRoute]),
   });
-  // The router resolves its initial match asynchronously even with memory
-  // history; awaiting `load()` before rendering avoids every call site
-  // needing a `findBy*` just to observe Header's own synchronous output.
   await router.load();
   return render(
     <QueryClientProvider client={queryClient()}>
@@ -124,7 +114,6 @@ describe('Header — privacy rule', () => {
     expect(
       screen.queryByText(baseSummary.name, { selector: 'p, [data-slot=card-description]' }),
     ).not.toBeInTheDocument();
-    // The name itself still renders exactly once, as the heading.
     expect(screen.getAllByText(baseSummary.name)).toHaveLength(1);
   });
 
@@ -138,9 +127,7 @@ describe('Header — project field', () => {
   it('shows the project name on the line and keeps the key as a hover hint', async () => {
     await renderHeader(detail({ project: { key: 'github.com/acme/widgets', name: 'widgets' } }));
     expect(screen.getByText('widgets')).toBeInTheDocument();
-    // The key is not rendered inline next to the name.
     expect(screen.queryByText(/github\.com\/acme\/widgets/)).not.toBeInTheDocument();
-    // It is wired to the tooltip trigger for hover.
     expect(screen.getByText('widgets').closest('[data-slot="tooltip-trigger"]')).not.toBeNull();
   });
 
@@ -252,7 +239,6 @@ describe('Header — relative Started/Ended dates', () => {
 });
 
 describe('Header — model usage block', () => {
-  /** No parent link is rendered here, so the typed router is not needed. */
   function renderDirect(refresh: number, client = queryClient()) {
     return {
       client,
@@ -314,7 +300,6 @@ describe('Header — context pressure block', () => {
   it('renders the Context pressure block with tree primary and own secondary', async () => {
     renderDirect(0);
     await screen.findByText('Context pressure');
-    // Fixture tree observed-calls is 9; own is 4.
     expect(screen.getByText('9')).toBeInTheDocument();
     expect(screen.getByText('own 4')).toBeInTheDocument();
   });
@@ -364,7 +349,6 @@ describe('Header — context pressure block', () => {
     );
     renderDirect(0);
     await screen.findByText('Context pressure');
-    // 4 nullable fields render an em dash; observed calls is a real 0.
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(4);
     expect(screen.getByText('0')).toBeInTheDocument();
   });

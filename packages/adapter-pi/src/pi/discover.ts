@@ -1,7 +1,3 @@
-// See paths.ts: every path here is built for RunwireFs (stat/readdir/readFile),
-// not raw OS use, so it must stay '/'-joined via path.posix regardless of
-// host OS - createMemoryFs's virtual layout is always '/'-based, and a real
-// filesystem accepts '/' as a separator on Windows too.
 import { join } from 'node:path/posix';
 import type { AdapterContext, Diagnostic, Known, SessionBundle } from '@runwire/core';
 import { makeDiagnostic } from '@runwire/core';
@@ -12,12 +8,6 @@ import { readRecords } from './records';
 
 const HARNESS_ID = 'pi';
 
-/**
- * A directory the parent enumeration just returned cannot be silently skipped
- * when it is gone: its sources would drop out of `emitted`, letting core prune
- * their history and record a false success. Throwing makes importAll keep the
- * history and clear the completed-refresh marker so the next scan retries.
- */
 function enumeratedDirVanished(path: string): Error {
   return new Error(`enumerated directory vanished before its listing: ${path}`);
 }
@@ -73,7 +63,6 @@ type SourceBundleInput = {
   fallbackCwd?: string;
 };
 
-/** Reads + computes one source; a read failure yields a stub bundle instead of throwing. */
 async function computeSourceBundle(
   ctx: AdapterContext,
   input: SourceBundleInput,
@@ -120,16 +109,6 @@ async function computeSourceBundle(
   }
 }
 
-/**
- * Sorted walk of `<agentDir>/sessions` (docs/adapters/pi.md §9). The scan is
- * deliberately NOT a recursive walk of `agentDir`: that would pick up
- * extension-run child sessions such as `gentle-agents/sessions/*.jsonl` and
- * attribute them to Pi (pi.md §2.1, D81). Each file is independent (no Claude-
- * style parent+child group), and `known` keys by `sourcePath` (Pi emits no
- * `sourceId`), so core's effective key is the path. Sorting by project dir then
- * filename makes the stream chronological and deterministic, since uuidv7
- * filenames sort in creation order.
- */
 export async function* discover(ctx: AdapterContext, known: Known): AsyncIterable<SessionBundle> {
   const root = sessionsRoot(ctx);
   const projectDirNames = [...(await ctx.fs.readdir(root))].sort();
@@ -137,8 +116,6 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
   for (const projectDirName of projectDirNames) {
     const projectDir = join(root, projectDirName);
     const projectStat = await ctx.fs.stat(projectDir);
-    // A parent-enumerated directory that has vanished is an incomplete walk,
-    // not an absent optional path; a non-directory entry stays skipped.
     if (projectStat === undefined) throw enumeratedDirVanished(projectDir);
     if (!projectStat.isDirectory) continue;
 
@@ -164,11 +141,6 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
     }
   }
 
-  // Revalidate the probed root after the walk: a root that vanished (possibly
-  // before its own readdir, which would have returned []) means the enumera-
-  // tion was empty or partial. Throwing here, before importAll runs vanished-
-  // source cleanup, keeps the history and clears the marker instead of
-  // pruning everything and recording success. Point-in-time, not atomic.
   const rootStat = await ctx.fs.stat(root);
   if (!rootStat?.isDirectory) throw enumeratedDirVanished(root);
 }

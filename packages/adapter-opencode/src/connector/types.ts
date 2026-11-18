@@ -25,11 +25,6 @@ export const tokenTotalsSchema = z
   })
   .strict();
 
-/**
- * A metadata-only projection of a CORE `Session` for the inventory stream. All
- * fields are CORE `Session` fields or thin projections of them — non-sensitive,
- * CORE-representable, no content.
- */
 export type SessionSummary = {
   sourceId: string;
   sourceLocator: string;
@@ -84,10 +79,6 @@ export const sessionSummarySchema = z
   })
   .strict();
 
-/**
- * The metadata-only, CORE-representable full retrieval for one session
- * (project + session + steps + diagnostics). Every field is a CORE type.
- */
 export type SessionDetails = {
   harnessId: 'opencode';
   sourceId: string;

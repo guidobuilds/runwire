@@ -187,7 +187,7 @@ describe('computeBundle - mode primary and changes', () => {
       ]),
     );
     expect(bundle.session.modePrimary).toBe('auto');
-    expect(bundle.session.modeChanges).toBe(2); // auto->plan, plan->auto (not the initial auto)
+    expect(bundle.session.modeChanges).toBe(2);
     expect(bundle.steps.filter((s) => s.kind === 'mode-change')).toHaveLength(2);
   });
 

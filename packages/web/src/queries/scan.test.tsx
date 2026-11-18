@@ -40,8 +40,6 @@ describe('useScanMutation', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['sessions'] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['harnesses'] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['session-profile'] });
-    // Prefix-matched, so the list/detail entries and every profile view are
-    // marked stale even though the harnesses query lives at `staleTime: Infinity`.
     expect(queryClient.getQueryState(['sessions', {}])?.isInvalidated).toBe(true);
     expect(queryClient.getQueryState(['sessions', 'sess-1'])?.isInvalidated).toBe(true);
     expect(queryClient.getQueryState(['harnesses'])?.isInvalidated).toBe(true);
@@ -68,8 +66,6 @@ describe('useScanMutation', () => {
     const { queryClient, wrapper } = setup();
     queryClient.setQueryData(['sessions', {}], { items: [], total: 0, limit: 50, offset: 0 });
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
-    // The server mirrors the CLI failure rule with a non-2xx status plus the
-    // report, so the mutation must stay an error and leave caches untouched.
     server.use(
       http.post('/api/scan', () =>
         HttpResponse.json(

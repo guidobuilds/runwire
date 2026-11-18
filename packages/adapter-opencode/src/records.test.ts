@@ -167,7 +167,6 @@ describe('attachSpawnCallIds', () => {
     const messages = new Map<string, OpenCodeMessage[]>([
       ['root', [assistant(1, 'spawn-child', 'child'), assistant(2, 'resume-child', 'child')]],
       ['child', [assistant(1, 'spawn-grandchild', 'grandchild')]],
-      // Explicit target from the wrong parent must not link `unlinked`.
       ['other', [assistant(1, 'wrong-parent', 'unlinked')]],
     ]);
 

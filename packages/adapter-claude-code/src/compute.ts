@@ -25,17 +25,13 @@ export type ResolveProjectFn = (cwd: string) => Promise<Project>;
 
 export type ComputeBundleInput = {
   harnessId: string;
-  /** Full contract session id, e.g. `claude-code:<uuid>` or `.../<agentId>`. */
   sessionId: string;
-  /** Only root sources are checked for the unexpected-sidechain diagnostic. */
   isRoot: boolean;
   source: ComputeSource;
   link: ComputeLink;
   records: ReadonlyArray<{ record: ClaudeCodeRecord; line: number }>;
-  /** Diagnostics already accumulated while reading the source (records.ts). */
   recordDiagnostics: readonly Diagnostic[];
   resolveProject: ResolveProjectFn;
-  /** cwdFromProjectDirname(...) - used only when no record carries a cwd. */
   fallbackCwd?: string;
   ctx: AdapterContext;
 };
@@ -46,7 +42,6 @@ function isFiniteTimestamp(at: string | undefined): at is string {
   return typeof at === 'string' && Number.isFinite(Date.parse(at));
 }
 
-/** Normalizes to a strict ISO-8601 string (docs/ARCHITECTURE.md §3 "ISO-8601 UTC", plan P8). */
 function normAt(at: string | undefined): string | undefined {
   return isFiniteTimestamp(at) ? new Date(Date.parse(at)).toISOString() : undefined;
 }
@@ -101,13 +96,6 @@ function pickPrimaryModel(
   return pickMostFrequent(order, counts);
 }
 
-/**
- * Folds a whole source's records into a `SessionBundle` (docs/ARCHITECTURE.md
- * §3/§4). Single pass, plus the small look-ahead pre-pass every adapter needs
- * for file-wide facts (does this file report turn_duration at all? what is
- * the initial cwd/title?) - the same two-pass shape the old parse.ts used,
- * folded here with the old reduce.ts + trace.ts logic (plan.md P8/P9/P11/P12/P13).
- */
 export async function computeBundle(input: ComputeBundleInput): Promise<SessionBundle> {
   const {
     harnessId,
@@ -124,7 +112,6 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
 
   const diagnostics: Diagnostic[] = [...recordDiagnostics];
 
-  // --- pre-pass: file-wide facts ---
   const hasTurnDuration = records.some(
     (p) => p.record.type === 'system' && p.record.subtype === 'turn_duration',
   );
@@ -162,7 +149,6 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
     ? await resolveProject(cwd)
     : { key: sessionId, name: sessionId, identity: 'cwd' };
 
-  // --- main pass ---
   const steps: Step[] = [];
   let seq = 0;
 
@@ -276,9 +262,6 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
         for (const block of message?.content ?? []) {
           if (block.type === 'tool_use' && block.name) {
             const toolCategory = claudeCodeToolCategory(block.name);
-            // Identity only from a proven `mcp__server__tool` name; a
-            // malformed/ambiguous name stays undefined. The raw toolName is
-            // always preserved.
             const mcp = toolCategory === 'mcp' ? parseMcpIdentity(block.name) : null;
             const toolStep: Step = {
               sessionId,
@@ -380,7 +363,7 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
       }
 
       case 'ai-title':
-        break; // handled in the pre-pass
+        break;
 
       case 'attachment': {
         const name = attachmentHarnessName(record);
@@ -397,7 +380,7 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
       }
 
       default:
-        break; // unknown/known-ignored types contribute nothing (records.ts already diagnosed them)
+        break;
     }
   }
 

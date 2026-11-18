@@ -23,7 +23,6 @@ function renderTable(props: Partial<React.ComponentProps<typeof EventsTable>> = 
   return render(<EventsTable sessionId={PROFILE_ROOT_ID} {...props} />, { wrapper });
 }
 
-/** The default MCP tool fixture row, with additive overrides for API-shape tests. */
 function mcpItem(overrides: Partial<Extract<Event, { kind: 'tool' }>> = {}) {
   const base = mockProfileMergedEventsTree.items.find(
     (item): item is Extract<Event, { kind: 'tool' }> =>
@@ -208,12 +207,10 @@ describe('EventsTable — loaded state', () => {
     const subject = within(row).getAllByRole('cell')[4];
     expect(within(subject).getByText('plugin_engram_engram')).toBeInTheDocument();
     expect(within(subject).getByText('mem_save')).toBeInTheDocument();
-    // The raw subject is only the fallback/tooltip, never an invented value.
     expect(
       within(subject).queryByText('mcp__plugin_engram_engram__mem_save'),
     ).not.toBeInTheDocument();
     expect(subject).toHaveAttribute('title', 'mcp__plugin_engram_engram__mem_save');
-    // The legacy "category · toolName" concatenation is gone.
     expect(
       within(row).queryByText('mcp · mcp__plugin_engram_engram__mem_save'),
     ).not.toBeInTheDocument();

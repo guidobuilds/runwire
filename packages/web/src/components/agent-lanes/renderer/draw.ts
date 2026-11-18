@@ -14,7 +14,6 @@ export type FrameState = {
 };
 export type DrawOptions = LayoutOptions & {
   enabledIndicators?: readonly string[];
-  /** Findings must already be filtered by these rules; detection never runs inside draw. */
   enabledDetections?: readonly RuleId[];
   findings?: readonly Finding[];
   threshold?: number;
@@ -59,7 +58,6 @@ export function idleCuts(cols: readonly LaneColumn[]) {
   });
 }
 
-/** Labels occupy the lower axis row, with at least 8 CSS px between measured bounds. */
 export function idleLabels(
   cuts: ReturnType<typeof idleCuts>,
   x: (index: number) => number,
@@ -76,7 +74,6 @@ export function idleLabels(
   });
 }
 
-/** Same call centers as the context path; after-events sit at the trailing call edge. */
 export function compactionPositions(model: LaneModelData, view: Viewport, width: number) {
   const pixels = ppc(view, width);
   return model.cols.flatMap((col) =>
@@ -107,7 +104,6 @@ export function visibleColumns(
   return cols.slice(lowerBound(cols, from), lowerBound(cols, to));
 }
 
-/** Caller memoizes by model revision and plot width: one value per navigator pixel. */
 export function prepareOverview(model: LaneModelData, width: number): number[] {
   const bins = Array.from({ length: Math.max(0, Math.floor(width)) }, () => 0);
   for (const col of model.cols) {
@@ -129,7 +125,6 @@ function clip(ctx: CanvasRenderingContext2D, rect: Rect, draw: () => void) {
   ctx.restore();
 }
 
-/** Stateless complete frame in CSS pixels; the hook/shell owns requestAnimationFrame. */
 export function drawFrame(
   ctx: CanvasRenderingContext2D,
   model: LaneModelData,
@@ -239,7 +234,6 @@ export function drawFrame(
         ctx.setLineDash([3, 3]);
         line(x(first.index), parent.y + 17, x(last.index + 1), parent.y + 17, '--lane-muted');
         ctx.setLineDash([]);
-        // Retain the incoming connector if its spawn lies outside the visible range.
         if (first.index >= from && first.index < to) {
           const previous = parent.agent.cols[lowerBound(parent.agent.cols, first.index) - 1];
           if (!previous || previous.index < from) {
@@ -277,11 +271,9 @@ export function drawFrame(
     for (const tick of axisTicks(state.view, zones.axis.width))
       ctx.fillText(tick.label, x(tick.index) + 2, 7);
     if (enabled('idle')) {
-      // Include the preceding column to retain cuts at the viewport's left boundary.
       const start = Math.max(0, lowerBound(model.cols, state.view.start) - 1);
       const end = lowerBound(model.cols, state.view.start + state.view.span);
       const cuts = idleCuts(model.cols.slice(start, end));
-      // Keep all cut marks, even when a neighboring duration label has to be omitted.
       for (const cut of cuts) {
         line(x(cut.index), 15, x(cut.index) + 2, 25, '--lane-idle');
       }
@@ -341,7 +333,6 @@ export function drawFrame(
       ctx.strokeStyle = theme['--lane-context'];
       ctx.beginPath();
       let connected = false;
-      // Do not bucket this series: max buckets would move or hide compaction drops.
       for (const col of visibleColumns(agent.cols, from - size, to + size)) {
         if (col.contextPercent === null) {
           connected = false;

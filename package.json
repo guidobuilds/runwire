@@ -1,7 +1,22 @@
 {
   "name": "runwire-workspace",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
+  "description": "Local, read-only explorer of coding-agent sessions: token and time waste, without prompts or code.",
+  "license": "MIT",
+  "homepage": "https://github.com/guidobuilds/runwire",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/guidobuilds/runwire.git"
+  },
+  "bugs": {
+    "url": "https://github.com/guidobuilds/runwire/issues"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "packageManager": "bun@1.3.10",
   "workspaces": [
     "packages/*"
   ],

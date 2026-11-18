@@ -175,7 +175,6 @@ describe('readProfileLanes', () => {
     expect(c.at).toEqual([AT, AT, AT]);
     expect(c.promptInput).toEqual([0, 35, null]);
     expect(c.output).toEqual([null, null, 0]);
-    // The discarded echo remains a seq boundary: its tools do not migrate backwards.
     expect(c.tools).toEqual([0, 0, 0]);
     expect(c.events[2]).toEqual([TRAILING_COMPACTION]);
     for (const column of Object.values(c)) expect(column).toHaveLength(3);
@@ -231,7 +230,6 @@ describe('readProfileLanes', () => {
   });
 
   test('resolves the window per (provider, name) with overrides at request time', () => {
-    // Same model name through two providers: two rows since .
     db.run(
       `INSERT INTO models (id, provider, name) VALUES (1, 'openai', 'gpt-6.1-sol'), (2, 'openai-codex', 'gpt-6.1-sol')`,
     );
@@ -241,8 +239,6 @@ describe('readProfileLanes', () => {
       { provider: 'openai', model: 'gpt-6.1-sol', contextWindow: 500_000 },
     ]);
     if (response === null) throw new Error('expected lanes');
-    // Exact provider/model override wins for openai; the codex row falls to the
-    // exact-name built-in (1,050,000) — both dedup into distinct LaneModel rows.
     expect(response.models).toEqual([
       { name: 'gpt-6.1-sol', contextWindow: 500_000, tier: 'high' },
       { name: 'gpt-6.1-sol', contextWindow: 1_050_000, tier: 'high' },

@@ -304,7 +304,6 @@ describe('gentle-shell 4.x extension metadata (S3b)', () => {
   const childFile = '2026-01-12T01-00-00-000Z_child.jsonl';
   const parentPath = sessionFile('2026-01-12T00-00-00-000Z', 'parent');
 
-  /** One parent (records below) and the `task-9` child it spawned. */
   function spawnContext(parentRecords: unknown[]): AdapterContext {
     return deltaContext({
       [parentPath]: lines([
@@ -384,12 +383,9 @@ describe('gentle-shell 4.x extension metadata (S3b)', () => {
   test('receipts that do not corroborate a subagent link never supply one', async () => {
     const bundles = await collect(
       spawnContext([
-        // Not a subagent receipt.
         receipt('r1', { source: 'parent', taskId: 'task-9', toolCallId: 'tc-parent' }),
-        // Missing half of the identity.
         receipt('r2', { source: 'subagent', taskId: 'task-9' }),
         receipt('r3', { source: 'subagent', toolCallId: 'tc-x' }),
-        // A link for another task never fills this task's slot.
         subagentReceipt('r4', 'task-other', 'tc-other'),
       ]),
     );

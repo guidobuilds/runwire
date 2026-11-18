@@ -8,10 +8,6 @@ import { server } from '@/mocks/node';
 import { mockProfileTimelineTree, PROFILE_ROOT_ID } from '@/mocks/session-profile';
 import { TokenChart } from './token-chart';
 
-// Exercises the real, composed MSW `handlers` array (registered globally in
-// src/test/setup.ts via `@/mocks/node`), not a stubbed `fetch` — see
-// verification.md#f3 finding F-5.
-
 function wrapper({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider
@@ -34,8 +30,6 @@ const ZERO_TOKENS = {
 
 type TimelineRow = { cumulative: (number | null)[]; totalCumulative: number };
 
-/** Builds a timeline fixture with `timeDomain: null` so the chart uses call
- * order (an index x axis): predictable pixel spacing without gap compression. */
 function timelinePayload(models: readonly string[], rows: readonly TimelineRow[]) {
   const series = models.map((model) => ({
     model,
@@ -73,7 +67,6 @@ async function renderChart(payload: ReturnType<typeof timelinePayload>) {
   return view;
 }
 
-/** Reads a rendered line's SVG path by its stroke (the color-keyed series). */
 function curvePath(container: HTMLElement, stroke: string): string {
   const curve = [...container.querySelectorAll('.recharts-line-curve')].find(
     (element) => element.getAttribute('stroke') === stroke,
@@ -82,8 +75,6 @@ function curvePath(container: HTMLElement, stroke: string): string {
   return curve.getAttribute('d') ?? '';
 }
 
-/** On-curve points from an SVG path: the `M` endpoint plus each `C`/`L`
- * endpoint (Recharts emits `L` for flat plateau segments). */
 function onCurvePoints(path: string): { x: number; y: number }[] {
   return (path.match(/[MCL][^MCL]*/g) ?? []).map((segment) => {
     const numbers = segment
@@ -101,7 +92,6 @@ function legendNames(container: HTMLElement): string[] {
   );
 }
 
-/** Hovers the chart at a rendered x pixel and asserts the visible tooltip. */
 async function expectTooltip(
   container: HTMLElement,
   clientX: number,
@@ -122,8 +112,6 @@ async function expectTooltip(
   for (const name of options.excludes ?? []) expect(text).not.toContain(name);
 }
 
-/** Drives the chart's own drag-to-zoom, settling the Recharts active state at
- * each x pixel before firing the corresponding mouse event. */
 async function dragZoom(container: HTMLElement, fromX: number, toX: number) {
   const wrapperElement = container.querySelector('.recharts-wrapper');
   if (!wrapperElement) throw new Error('No rendered chart wrapper');
@@ -427,15 +415,12 @@ describe('TokenChart — first-positive model visibility', () => {
       ),
     );
 
-    // Full range: alpha has two visible points, so it stays dotless.
     expect(container.querySelectorAll('.recharts-line-dot').length).toBe(0);
     const total = onCurvePoints(curvePath(container, 'var(--foreground)'));
 
     await dragZoom(container, total[1]?.x ?? 0, total[2]?.x ?? 0);
     expect(screen.getByRole('button', { name: 'Reset zoom' })).toBeInTheDocument();
 
-    // Zoomed to [index 1, index 2]: only index 2 is positive, so alpha must
-    // render its isolated point as a marker instead of disappearing.
     const dots = [...container.querySelectorAll('.recharts-line-dot')];
     expect(dots.length).toBe(1);
     const zoomedTotal = onCurvePoints(curvePath(container, 'var(--foreground)'));
@@ -460,7 +445,6 @@ describe('TokenChart — first-positive model visibility', () => {
     );
     const total = onCurvePoints(curvePath(container, 'var(--foreground)'));
 
-    // Zoom to [index 0, index 1], entirely before alpha's first positive value.
     await dragZoom(container, total[0]?.x ?? 0, total[1]?.x ?? 0);
     expect(screen.getByRole('button', { name: 'Reset zoom' })).toBeInTheDocument();
     expect(container.querySelectorAll('.recharts-line-dot').length).toBe(0);

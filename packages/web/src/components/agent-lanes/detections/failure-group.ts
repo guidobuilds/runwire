@@ -3,7 +3,6 @@ import type { Finding } from './index';
 
 export const failureIndicators = ['failures'] as const;
 
-/** Prototype groups transitively by distance between adjacent failing calls. */
 export function failureGroup(model: LaneModelData): Finding[] {
   const found: Finding[] = [];
   for (const agent of model.agents) {

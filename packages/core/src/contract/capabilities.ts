@@ -1,6 +1,5 @@
 import type { Session, StepKind } from './types';
 
-/** ARCHITECTURE §3. No `trace.*` successor (dropped, plan P14). */
 export type Capability =
   | 'usage.perCall'
   | 'usage.cumulative'
@@ -46,30 +45,14 @@ export const CAPABILITIES: readonly Capability[] = [
   'steps.toolDurations',
 ];
 
-/**
- * A single step field is identified as `${kind}.${field}` so the same field
- * name on two different step kinds (e.g. `fromValue` on both `model-change`
- * and `mode-change`) can be gated by two different capabilities without
- * colliding.
- */
 export type StepFieldKey = `${StepKind}.${string}`;
 
 export type CapabilityGate = {
-  /** Session fields this capability is responsible for. */
   sessionFields: readonly (keyof Session)[];
-  /** Step kinds this capability introduces (each StepKind is owned by exactly one capability). */
   stepKinds: readonly StepKind[];
-  /** Step fields (as `kind.field`) this capability is responsible for. */
   stepFields: readonly StepFieldKey[];
 };
 
-/**
- * Maps every capability to the session fields, step kinds and step fields it
- * gates, both directions checked by capabilities.test.ts: every Capability
- * has an entry (enforced by the Record type + a runtime key-count check),
- * and every gated field/kind appears in exactly one entry (runtime check,
- * since two capabilities could otherwise both claim the same field).
- */
 export const CAPABILITY_FIELDS: Record<Capability, CapabilityGate> = {
   'usage.perCall': {
     sessionFields: [],
@@ -139,11 +122,6 @@ export const CAPABILITY_FIELDS: Record<Capability, CapabilityGate> = {
     stepKinds: ['compaction'],
     stepFields: ['compaction.compactionTrigger', 'compaction.preTokens', 'compaction.postTokens'],
   },
-  // `tool.childId` is deliberately NOT gated here: it is filled by core at
-  // link time, never emitted by an adapter, so it can
-  // never be "observed" straight from a bundle stream. What an adapter
-  // itself emits to say "I model subagents" is the session-level linkage
-  // fields on a child (parentId/relation/agentType/spawnCallId).
   subagents: {
     sessionFields: ['parentId', 'relation', 'agentType', 'spawnCallId'],
     stepKinds: [],

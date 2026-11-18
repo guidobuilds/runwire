@@ -32,17 +32,9 @@ export type ReadRecordsResult = { diagnostics: Diagnostic[] };
 
 export type ReadRecords = {
   records: AsyncIterable<ParsedRecord>;
-  /** Only meaningful after `records` has been fully consumed. */
   result(): ReadRecordsResult;
 };
 
-/**
- * Streams a Pi session file into allowlisted, schema-checked records
- * (docs/adapters/pi.md §7–§8). Pi's extension surface makes unknown entry
- * types and message roles *expected*, so both are aggregated at `info`
- * (unlike a malformed line, which is `warn`). The caller may supply its harness
- * projection; defaults retain the Pi allowlist and pre-1.2 vocabulary.
- */
 export function readRecords(
   ctx: AdapterContext,
   path: string,

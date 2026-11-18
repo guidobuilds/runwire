@@ -40,7 +40,6 @@ const EVENT_KINDS = new Set<EventKind>([
   'model-change',
   'mode-change',
 ]);
-/** Tool categories plus non-tool step kinds, mirroring core's EventAction. */
 const EVENT_ACTIONS = new Set<EventAction>([
   'call',
   'tool',
@@ -105,12 +104,6 @@ function invalid(parameter: string): ProfileQueryParseResult {
   return { ok: false, parameter };
 }
 
-/**
- * Splits a comma-separated allow-list param. Every segment must be non-empty
- * and a member of `allowed`; the result is de-duped and order-stable. A bare
- * blank, `a,,b`, or an unknown value returns null so the caller 400s naming the
- * param. Duplicate query params themselves are already rejected upstream.
- */
 function csvAllowList<T extends string>(raw: string, allowed: ReadonlySet<T>): readonly T[] | null {
   const seen = new Set<T>();
   for (const segment of raw.split(',')) {
@@ -121,8 +114,6 @@ function csvAllowList<T extends string>(raw: string, allowed: ReadonlySet<T>): r
   return [...seen];
 }
 
-/** Strict, view-specific parser. Nothing reaches a core reader before every
- * parameter and cross-parameter constraint has been checked. */
 export function parseProfileQuery(
   params: URLSearchParams,
   viewRaw: ParsedProfileQuery['view'],
@@ -136,11 +127,7 @@ export function parseProfileQuery(
     if (!VIEW_KEYS[viewRaw].has(key)) return invalid(key);
   }
 
-  // `models` accepts no query parameters: the empty key set above already
-  // rejects every param (including `scope`), so resolve it before the shared
-  // scope default would otherwise supply a value.
   if (viewRaw === 'models') return { ok: true, value: { view: 'models' } };
-  // `context` likewise accepts no query parameters.
   if (viewRaw === 'context') return { ok: true, value: { view: 'context' } };
 
   const scopeRaw = params.get('scope') ?? 'tree';
@@ -215,7 +202,6 @@ export function parseProfileQuery(
   }
   const qRaw = params.get('q');
   if (qRaw !== null) {
-    // Non-empty after trim, but passed verbatim (see parseFilterParams).
     if (qRaw.trim() === '') return invalid('q');
     query.q = qRaw;
   }

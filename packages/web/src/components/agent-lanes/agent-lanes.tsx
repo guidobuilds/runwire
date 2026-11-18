@@ -39,9 +39,7 @@ function usePreference<T>(key: string, fallback: T, valid: (value: unknown) => v
   useEffect(() => {
     try {
       localStorage.setItem(`agent-lanes:${key}`, JSON.stringify(value));
-    } catch {
-      /* Storage is optional. */
-    }
+    } catch {}
   }, [key, value]);
   return [value, setValue] as const;
 }
@@ -49,8 +47,6 @@ function usePreference<T>(key: string, fallback: T, valid: (value: unknown) => v
 export function AgentLanes(props: AgentLanesProps) {
   const query = useQuery(sessionProfileLanesOptions(props.sessionId, { scope: 'tree' }));
   const model = useMemo(() => (query.data ? buildModel(query.data) : null), [query.data]);
-  // dataUpdatedAt intentionally re-runs this after refetches with structurally
-  // identical data, restoring the node count the route header consumes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional refresh trigger
   useEffect(() => {
     props.onNodeCount(model && !query.isFetching ? Math.max(0, model.agents.length - 1) : null);
@@ -76,7 +72,6 @@ export function AgentLanes(props: AgentLanesProps) {
 type Hover = { agentId: string; column: number; endColumn: number; x: number; y: number };
 
 function LanesPanel({ model, onOpenNode, sessionId }: AgentLanesProps & { model: LaneModelData }) {
-  // Subscribe to the route's already-fetched session without a redundant metadata request.
   const session = useQuery({ ...sessionQueryOptions(sessionId), enabled: false });
   const frame = useRef<HTMLElement | null>(null);
   const container = useRef<HTMLDivElement | null>(null);
@@ -166,8 +161,6 @@ function LanesPanel({ model, onOpenNode, sessionId }: AgentLanesProps & { model:
       agentId: hit.lane,
       column,
       endColumn: Math.min(model.callCount - 1, column + bucket - 1),
-      // Anchor to the cell, never the moving cursor. The tooltip overlaps its
-      // bottom edge so the pointer can reach Open without crossing another cell.
       x: Math.max(
         0,
         Math.min(size.width - 296, current.axis.x + xOf(current.view, current.axis.width, column)),
@@ -241,7 +234,6 @@ function LanesPanel({ model, onOpenNode, sessionId }: AgentLanesProps & { model:
       setSize((previous) => resolveCanvasSize(measured, previous, fullscreen, inlineHeight));
     };
     resize();
-    // Fullscreen exit and ancestor/sidebar transitions may settle after this layout effect.
     const settled = requestAnimationFrame(resize);
     window.addEventListener('resize', resize);
     document.addEventListener('transitionend', resize);

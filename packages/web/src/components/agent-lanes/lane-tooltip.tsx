@@ -28,8 +28,6 @@ export function LaneTooltip({
   const active =
     (agent.cols[0]?.index ?? Infinity) <= column && (agent.cols.at(-1)?.index ?? -1) >= column;
   const sum = (read: (col: LaneColumn) => number) => calls.reduce((n, col) => n + read(col), 0);
-  // The frozen lanes contract has no per-category histogram. Show its primary kind,
-  // MCP/skill/subagent counters and failures instead of inventing category totals.
   const contexts = calls.flatMap((col) =>
     col.contextPercent === null ? [] : [col.contextPercent],
   );
@@ -60,7 +58,6 @@ export function LaneTooltip({
       </p>
       {first ? (
         <>
-          {/* Use global column numbering consistently, including aggregated cells. */}
           <p>
             Calls #{column + 1}–#{endColumn + 1}
           </p>

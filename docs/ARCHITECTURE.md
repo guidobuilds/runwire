@@ -22,7 +22,11 @@ harness files on disk ──▶ adapter ─────────────�
 ```text
 packages/core/                 types, SQLite store, import orchestrator, contract test kit, RunwireFs
 packages/adapter-claude-code/  Claude Code adapter
+packages/adapter-opencode/     OpenCode adapter
+packages/adapter-pi/           Pi and Gentle Shell adapters
 packages/cli/                  composition root (D76): adapter registry + the `runwire` command
+packages/server/               local HTTP API over SQLite
+packages/web/                  web explorer; talks to the server over HTTP only
 fixtures/<harness>/            redacted sessions: versions, subagents, canary, malformed
 ```
 
@@ -30,7 +34,9 @@ fixtures/<harness>/            redacted sessions: versions, subagents, canary, m
 |---|---|
 | `core` | nothing from the repo |
 | `adapter-*` | `@runwire/core` only (never another adapter) |
-| `cli` | `@runwire/core` and `@runwire/adapter-*` — the only package that knows which adapters exist |
+| `server` | `@runwire/core` only |
+| `cli` | `@runwire/core`, `@runwire/adapter-*` and `@runwire/server` — the only package that knows which adapters exist |
+| `web` | no runtime repo imports; it talks to the server over HTTP |
 
 Enforced by `.dependency-cruiser.cjs` inside `bun run lint`.
 
@@ -40,7 +46,7 @@ TS names are camelCase; the SQL columns in §5 are the same names in snake_case.
 
 ```ts
 interface HarnessAdapter {
-  id: string;                          // 'claude-code' | 'opencode'
+  id: string;                          // adapter id, e.g. 'claude-code'
   displayName: string;
   adapterVersion: string;              // bump when a mapping changes
   capabilities: readonly Capability[];
@@ -337,9 +343,10 @@ Foreign-key policy: `sessions.model_primary_id` and `steps.model_id` are hard FK
 | `bun run lint` | Biome + dependency-cruiser boundaries |
 | `bun run runwire import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles] [--force]` | Imports every registered adapter (or just `--adapter`) into `~/.runwire/runwire.db` (`--db` overrides, `--db :memory:` allowed); `--force` bypasses the size/mtime cache and recomputes every source; prints the `ImportReport` to stderr; exits 1 if any adapter errored or a bundle failed validation, else 0. |
 | `bun run runwire discover --adapter <id> [--home <dir>] [--json]` | Streams the named adapter's bundles read-only, without touching the store; `--json` writes one `SessionBundle` per line (NDJSON) to stdout and nothing else, so the output can be piped straight into a file or `jq`. |
+| `bun run runwire serve [--db <path>] [--host <host>] [--port <n>] [--no-titles] [--expose]` | Starts the local HTTP API. It reads SQLite live per request and never watches the database. `POST /api/scan` runs the same import as `runwire import`. |
 
 ## 10. Open items
 
-- Second harness (Codex) and the contract changes it forces.
-
-Closed in the 2026-09-04 build plan (`.forge/core-adapter-reset/plan.md`): rollups are a table (§6); the DB lives at `~/.runwire/runwire.db` (`runwire import --db <path>`, `:memory:` allowed); sessions whose source file disappeared are deleted on the next import (§6).
+- Codex and Grok Build adapters, and the contract changes they force.
+- A stable published package surface; everything is currently run from a clone.
+- The web explorer is beta and some panels are still being designed.

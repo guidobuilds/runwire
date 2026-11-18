@@ -1,18 +1,5 @@
 import { z } from 'zod';
 
-/**
- * Loose, version-tolerant Zod schemas (D21: loose schemas, version-gated field
- * maps, not one adapter per version). These validate AFTER the raw record has
- * been passed through `project(record, allowlist)`, so every field is optional
- * and loosely typed. `.passthrough()` on every object so an allowlisted-but-
- * unmodeled field never fails validation. `parse*` helpers return `undefined`
- * on a bad shape and never throw.
- *
- * The `session` row (legacy V1) is a strict subset of `session_v2` (current):
- * it has no `fork_session_id`/`time_suspended`/`tokens_*`-cumulative columns,
- * so the same schema (all-optional) serves both.
- */
-
 const sessionRowSchema = z
   .object({
     id: z.string().optional(),
@@ -22,7 +9,6 @@ const sessionRowSchema = z
     directory: z.string().nullable().optional(),
     title: z.string().nullable().optional(),
     agent: z.string().nullable().optional(),
-    // `model` is a JSON string (e.g. `{"id":"gpt-5.6-sol",...}`) on the row.
     model: z.string().nullable().optional(),
     version: z.string().nullable().optional(),
     cost: z.number().nullable().optional(),

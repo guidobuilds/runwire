@@ -5,18 +5,11 @@ import {
   classifyInitiator,
 } from './initiator';
 
-/**
- * The full `entrypoint` value space extracted from the Claude Code binary
- * (2.1.257), with the verdict each value must produce. Kept as one literal
- * table so a value silently dropped from the classifier's maps shows up as a
- * `unknown` mismatch on a named row rather than as missing coverage.
- */
 const ENTRYPOINT_TABLE: ReadonlyArray<{
   entrypoint: string;
   kind: 'human' | 'machine';
   automation?: string;
 }> = [
-  // --- machine ---
   { entrypoint: 'sdk-cli', kind: 'machine', automation: 'sdk' },
   { entrypoint: 'sdk-ts', kind: 'machine', automation: 'sdk' },
   { entrypoint: 'sdk-py', kind: 'machine', automation: 'sdk' },
@@ -33,8 +26,6 @@ const ENTRYPOINT_TABLE: ReadonlyArray<{
   { entrypoint: 'remote_cowork_trigger', kind: 'machine' },
   { entrypoint: 'remote_desktop', kind: 'machine' },
   { entrypoint: 'remote_mobile', kind: 'machine' },
-  // --- human (the surface is interaction-capable, not proof a person typed -
-  // `claude -p` in CI reports `cli`) ---
   { entrypoint: 'cli', kind: 'human' },
   { entrypoint: 'claude-desktop', kind: 'human' },
   { entrypoint: 'claude-desktop-3p', kind: 'human' },
@@ -67,7 +58,6 @@ describe('classifyInitiator: the entrypoint table', () => {
   }
 
   test('the machine majority observed on real disk (sdk-cli + sdk-py) is sdk', () => {
-    // 184 sdk-cli + 124 sdk-py = 308 of 383 real roots (80.4%).
     for (const surface of ['sdk-cli', 'sdk-py']) {
       const result = classifyInitiator({ entrypoint: surface, dispatched: false });
       expect(result?.kind).toBe('machine');
@@ -78,8 +68,6 @@ describe('classifyInitiator: the entrypoint table', () => {
 
 describe('classifyInitiator: the dispatch marker', () => {
   test('a dispatched cli root is machine/subagent-dispatch, keeping cli as the surface', () => {
-    // The 10 real `cli` roots that are agent-dispatched workers: entrypoint
-    // alone calls these human, and they hold ~96% of the hidden token mass.
     expect(classifyInitiator({ entrypoint: 'cli', dispatched: true })).toEqual({
       kind: 'machine',
       surface: 'cli',
@@ -124,8 +112,6 @@ describe('classifyInitiator: the open-set / unknown branch', () => {
   });
 
   test('an empty-string entrypoint is treated as an unrecognized value, not as absent', () => {
-    // '' is falsy, so a caller finding it via `.find(r => r.entrypoint)` will
-    // pass undefined; a caller passing it explicitly must not crash.
     expect(classifyInitiator({ entrypoint: '', dispatched: false })?.kind).toBe('unknown');
   });
 });
@@ -138,10 +124,6 @@ describe('promptSource is allowlisted but never classified on', () => {
   });
 
   test('it is not an input to the classifier at all', () => {
-    // Guards the verified trap: promptSource 'sdk' covers all 308 machine
-    // roots AND the one claude-desktop root that is unambiguously human
-    // (13.3h, 86.5M tokens, 23 user turns). Classifying on it would
-    // misclassify that session as machine.
     const signals = { entrypoint: 'claude-desktop', dispatched: false };
     expect(classifyInitiator({ ...signals, ...({ promptSource: 'sdk' } as object) })).toEqual(
       classifyInitiator(signals),

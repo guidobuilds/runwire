@@ -16,7 +16,6 @@ function seed(db: Database) {
   ]);
 }
 
-/** Idempotently upserts a raw model string and returns its `models.id`. */
 function modelId(db: Database, name: string): number {
   db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT DO NOTHING', [name]);
   return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
@@ -89,10 +88,6 @@ function insertCallStep(db: Database, sessionId: string, seq: number, model: str
   ]);
 }
 
-/**
- * Runs `run` with `db.query` shadowed by a counter, restoring it afterwards.
- * Batching proof: a per-row implementation issues strictly more queries as the
- * row count grows, a batched one issues the same fixed number. */
 function countQueries<T>(db: Database, run: (db: Database) => T): { result: T; queries: number } {
   let queries = 0;
   const original = db.query.bind(db);
@@ -112,7 +107,6 @@ describe('listSessions', () => {
   test('returns roots only, sorted by started_at DESC id, with correct accounting', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // root1 (later start) + root2 (earlier start) are roots; child1 and grandchild are descendants.
     insertSession(db, 'fake:root1', {
       modelPrimary: 'root-model',
       startedAt: '2024-01-02T00:00:00Z',
@@ -166,20 +160,17 @@ describe('listSessions', () => {
 
     const { items, total } = listSessions(db);
 
-    // Roots only, sorted by started_at DESC.
     expect(items.map((s) => s.id)).toEqual(['fake:root1', 'fake:root2']);
-    // total is the pre-pagination COUNT of the filtered root set.
     expect(total).toBe(2);
 
     const root1 = items[0]!;
-    expect(root1.name).toBe('Project One'); // title NULL -> project.name
+    expect(root1.name).toBe('Project One');
     expect(root1.title).toBeNull();
     expect(root1.harness).toEqual({ id: 'fake', displayName: 'Fake', adapterVersion: '1.0.0' });
     expect(root1.project).toEqual({ key: 'p1', name: 'Project One' });
     expect(root1.parentId).toBeNull();
-    expect(root1.childCount).toBe(1); // child1
-    expect(root1.descendantCount).toBe(2); // child1 + grandchild
-    // own models = root's own steps + model_primary; descendants = descendant models.
+    expect(root1.childCount).toBe(1);
+    expect(root1.descendantCount).toBe(2);
     expect(root1.modelsOwn).toEqual(['root-model', 'root-model2']);
     expect(root1.modelsDescendants).toEqual(['child-model', 'grand-model']);
     expect(root1.tokensOwn).toEqual({
@@ -203,12 +194,11 @@ describe('listSessions', () => {
     expect(root1.compactionsOwn).toBe(1);
     expect(root1.compactionsInclusive).toBe(1);
     expect(root1.turnsOwn).toBe(4);
-    // There is no inclusive turns field (rollups has no turns column).
     expect('turnsInclusive' in root1).toBe(false);
     expect(root1.costUsd).toBe(1.25);
 
     const root2 = items[1]!;
-    expect(root2.name).toBe('fake:root2'); // title NULL, no project -> id
+    expect(root2.name).toBe('fake:root2');
     expect(root2.project).toBeNull();
     expect(root2.childCount).toBe(0);
     expect(root2.descendantCount).toBe(0);
@@ -227,10 +217,6 @@ describe('listSessions', () => {
 });
 
 describe('listSessions sort order (started_at DESC, id)', () => {
-  // Regression for the confirmed defect (verify-009): ITEM_SQL had no ORDER BY,
-  // so listSessions returned roots in SQLite insertion (rowid) order. These
-  // cases deliberately INVERT the insertion order vs. the original fixture so
-  // that a correct sort is the only thing that can make them pass.
   test('inverted insertion order: earlier-starting root inserted first must sort LAST (DESC)', () => {
     const { db } = openStore(':memory:');
     seed(db);
@@ -282,7 +268,6 @@ describe('listSessions filters (harness / startedAfter / model)', () => {
     expect(total).toBe(1);
     expect(items.map((s) => s.id)).toEqual(['fake:cc']);
 
-    // Case mismatch (display name, wrong case) => no match.
     expect(listSessions(db, { harness: 'Fake' }).items).toEqual([]);
     db.close();
   });
@@ -290,18 +275,14 @@ describe('listSessions filters (harness / startedAfter / model)', () => {
   test('startedAfter is exclusive, NULL never matches, and a millis-less value is normalized', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // Canonical `.sssZ` stored values (design D-4 invariant).
     insertSession(db, 'fake:bound', { startedAt: '2024-01-01T00:00:00.000Z' });
     insertSession(db, 'fake:after', { startedAt: '2024-01-01T00:00:00.001Z' });
     insertSession(db, 'fake:null', { startedAt: null });
     recomputeRollups(db);
 
-    // Exclusive: the exact-instant session is excluded; the 1-ms-later is included.
     const res = listSessions(db, { startedAfter: '2024-01-01T00:00:00Z' });
     expect(res.items.map((s) => s.id)).toEqual(['fake:after']);
-    // A millis-less bound must compare correctly against canonical stored values.
     expect(res.total).toBe(1);
-    // NULL started_at never matches even when it is the only other row.
     expect(
       listSessions(db, { startedAfter: '2024-01-01T00:00:00.000Z' }).items.map((s) => s.id),
     ).toEqual(['fake:after']);
@@ -345,7 +326,6 @@ describe('listSessions filters (harness / startedAfter / model)', () => {
     insertCallStep(db, 'fake:root1/child', 0, 'deep-model');
     recomputeRollups(db);
 
-    // `deep-model` is used only by root1's descendant; root1 must match.
     const { items } = listSessions(db, { model: 'deep-model' });
     expect(items.map((s) => s.id)).toEqual(['fake:root1']);
     db.close();
@@ -372,7 +352,6 @@ describe('listSessions pagination (limit / offset / total-before-pagination)', (
   test('limit/offset select a page; total is the pre-pagination count', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // Insert in DESC start order (latest first) so page order is deterministic.
     insertSession(db, 'fake:a', { startedAt: '2024-01-04T00:00:00Z' });
     insertSession(db, 'fake:b', { startedAt: '2024-01-03T00:00:00Z' });
     insertSession(db, 'fake:c', { startedAt: '2024-01-02T00:00:00Z' });
@@ -412,8 +391,6 @@ describe('listSessions pagination (limit / offset / total-before-pagination)', (
   test('models/childCounts are computed only for the paginated slice', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // Seed > limit roots, each with a distinct subtree model. Page 1 (limit 2)
-    // should compute models only for the two roots on that page.
     insertSession(db, 'fake:r1', { modelPrimary: 'm1', startedAt: '2024-01-04T00:00:00Z' });
     insertSession(db, 'fake:r1/c1', { parentId: 'fake:r1', modelPrimary: 'm1-child' });
     insertSession(db, 'fake:r2', { modelPrimary: 'm2', startedAt: '2024-01-03T00:00:00Z' });
@@ -425,26 +402,14 @@ describe('listSessions pagination (limit / offset / total-before-pagination)', (
     const page1 = listSessions(db, { limit: 2, offset: 0 });
     expect(page1.total).toBe(3);
     expect(page1.items.map((s) => s.id)).toEqual(['fake:r1', 'fake:r2']);
-    // Page-1 roots carry their own subtree models.
     expect(page1.items.find((s) => s.id === 'fake:r1')!.modelsDescendants).toEqual(['m1-child']);
     expect(page1.items.find((s) => s.id === 'fake:r2')!.modelsDescendants).toEqual(['m2-child']);
-    // Page-2 root (r3) is NOT in the response; its subtree model is not computed.
     expect(page1.items.find((s) => s.id === 'fake:r3')).toBeUndefined();
     db.close();
   });
 });
 
 describe('listSessions/getSession subagent counts (Direct / Full tree)', () => {
-  /**
-   * root
-   * ├─ sub        (subagent)
-   * │  └─ subsub  (subagent)
-   * │     └─ leaf (subagent)
-   * ├─ team       (teammate)  <- not counted, but MUST NOT prune the walk
-   * │  └─ tchild  (subagent)
-   * └─ fork       (fork)      <- not counted, but MUST NOT prune the walk
-   *    └─ fchild  (subagent)
-   */
   function seedMixedTree(db: Database) {
     seed(db);
     insertSession(db, 'fake:root', { startedAt: '2024-01-01T00:00:00Z' });
@@ -466,12 +431,8 @@ describe('listSessions/getSession subagent counts (Direct / Full tree)', () => {
     seedMixedTree(db);
 
     const root = listSessions(db).items.find((s) => s.id === 'fake:root')!;
-    // Direct: only `sub` — team and fork are excluded.
     expect(root.subagentChildCount).toBe(1);
-    // Full tree: sub, subsub, leaf, team/tchild, fork/fchild = 5.
-    // Traversal passes THROUGH the teammate/fork nodes to their subagent children.
     expect(root.subagentDescendantCount).toBe(5);
-    // The pre-existing counts are unchanged: 3 immediate children, 7 descendants.
     expect(root.childCount).toBe(3);
     expect(root.descendantCount).toBe(7);
     db.close();
@@ -483,29 +444,23 @@ describe('listSessions/getSession subagent counts (Direct / Full tree)', () => {
 
     const root = listSessions(db).items.find((s) => s.id === 'fake:root')!;
     const detail = getSession(db, 'fake:root')!;
-    // list/get parity for the root summary.
     expect(detail.subagentChildCount).toBe(root.subagentChildCount);
     expect(detail.subagentDescendantCount).toBe(root.subagentDescendantCount);
 
     const byId = new Map(detail.children.map((c) => [c.id, c]));
-    // sub -> subsub -> leaf.
     expect(byId.get('fake:sub')!.subagentChildCount).toBe(1);
     expect(byId.get('fake:sub')!.subagentDescendantCount).toBe(2);
-    // teammate counts its own subagent child in the full tree.
     expect(byId.get('fake:team')!.subagentChildCount).toBe(1);
     expect(byId.get('fake:team')!.subagentDescendantCount).toBe(1);
-    // fork likewise.
     expect(byId.get('fake:fork')!.subagentChildCount).toBe(1);
     expect(byId.get('fake:fork')!.subagentDescendantCount).toBe(1);
 
     const subsub = getSession(db, 'fake:sub/subsub')!;
     expect(subsub.subagentChildCount).toBe(1);
     expect(subsub.subagentDescendantCount).toBe(1);
-    // A leaf: no subagent children, no subagent descendants.
     const leaf = getSession(db, 'fake:sub/subsub/leaf')!;
     expect(leaf.subagentChildCount).toBe(0);
     expect(leaf.subagentDescendantCount).toBe(0);
-    // Its parent summary (subsub) is the full subtree including this leaf.
     expect(leaf.parent!.id).toBe('fake:sub/subsub');
     expect(leaf.parent!.subagentDescendantCount).toBe(1);
     db.close();
@@ -514,18 +469,16 @@ describe('listSessions/getSession subagent counts (Direct / Full tree)', () => {
   test('a subagent never counts itself (orphan self-exclusion)', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // An orphan subagent root (parent_id NULL) with one subagent child.
     insertSession(db, 'fake:orphan', { relation: 'subagent', startedAt: '2024-01-01T00:00:00Z' });
     insertSession(db, 'fake:orphan/kid', { parentId: 'fake:orphan', relation: 'subagent' });
     recomputeRollups(db);
 
     const orphan = listSessions(db).items.find((s) => s.id === 'fake:orphan')!;
     expect(orphan.subagentChildCount).toBe(1);
-    expect(orphan.subagentDescendantCount).toBe(1); // kid only, never self
+    expect(orphan.subagentDescendantCount).toBe(1);
     expect(orphan.childCount).toBe(1);
     expect(orphan.descendantCount).toBe(1);
 
-    // A lone subagent with no descendants reports 0, not 1.
     insertSession(db, 'fake:solo', {
       relation: 'subagent',
       startedAt: '2024-01-02T00:00:00Z',
@@ -540,17 +493,15 @@ describe('listSessions/getSession subagent counts (Direct / Full tree)', () => {
   test('a hand-made parent cycle terminates without counting the seed as its own descendant', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // a <-> b: a.parent = b, b.parent = a. Neither is a root, so this is
-    // exercised through getSession (the list only seeds roots).
     insertSession(db, 'fake:a', { parentId: 'fake:b', relation: 'subagent' });
     insertSession(db, 'fake:b', { parentId: 'fake:a', relation: 'subagent' });
     recomputeRollups(db);
 
     const a = getSession(db, 'fake:a')!;
-    expect(a.subagentChildCount).toBe(1); // b
-    expect(a.subagentDescendantCount).toBe(1); // b; a excluded, walk terminates
+    expect(a.subagentChildCount).toBe(1);
+    expect(a.subagentDescendantCount).toBe(1);
     const b = getSession(db, 'fake:b')!;
-    expect(b.subagentChildCount).toBe(1); // a
+    expect(b.subagentChildCount).toBe(1);
     expect(b.subagentDescendantCount).toBe(1);
     db.close();
   });
@@ -558,10 +509,6 @@ describe('listSessions/getSession subagent counts (Direct / Full tree)', () => {
   test('comma-containing IDs: a substring-matching child is not mistaken for visited', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // The ancestor id contains a comma and its child id is a suffix-looking
-    // substring of the ancestor path (`,fake:a,fake:b,` contains `,fake:b,`). A
-    // comma-delimited visited test wrongly treats `fake:b` as already visited
-    // and silently drops it and its whole subtree.
     insertSession(db, 'fake:root', { startedAt: '2024-01-01T00:00:00Z' });
     insertSession(db, 'fake:a,fake:b', { parentId: 'fake:root', relation: 'subagent' });
     insertSession(db, 'fake:b', { parentId: 'fake:a,fake:b', relation: 'subagent' });
@@ -570,12 +517,8 @@ describe('listSessions/getSession subagent counts (Direct / Full tree)', () => {
 
     const root = listSessions(db).items.find((s) => s.id === 'fake:root')!;
     expect(root.subagentChildCount).toBe(1);
-    // 'fake:a,fake:b', 'fake:b' and 'fake:b/kid' -> 3 (the buggy guard yields 1).
     expect(root.subagentDescendantCount).toBe(3);
-    // The direct child count is grouped, not path-based, so it is unaffected.
     expect(root.childCount).toBe(1);
-    // NOTE: `descendantCount` comes from `rollups`, whose own comma-delimited
-    // traversal is pre-existing and explicitly out of scope for this fix.
 
     const ancestor = getSession(db, 'fake:a,fake:b')!;
     expect(ancestor.subagentChildCount).toBe(1);
@@ -586,23 +529,18 @@ describe('listSessions/getSession subagent counts (Direct / Full tree)', () => {
   test('comma-containing cycle terminates and traverses a mixed teammate branch', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // c,a <-> c,a,b is a true cycle between two comma-containing ids.
     insertSession(db, 'c,a', { parentId: 'c,a,b', relation: 'subagent' });
     insertSession(db, 'c,a,b', { parentId: 'c,a', relation: 'subagent' });
-    // A teammate branch (not counted) whose comma-id subagent child MUST still be walked.
     insertSession(db, 'c,a,t', { parentId: 'c,a', relation: 'teammate' });
     insertSession(db, 'c,a,b,t', { parentId: 'c,a,t', relation: 'subagent' });
     recomputeRollups(db);
 
     const a = getSession(db, 'c,a')!;
-    // Direct counts only the immediate subagent child; c,a,t is a teammate.
     expect(a.subagentChildCount).toBe(1);
-    // Descendants: c,a,b (subagent), c,a,t (teammate), c,a,b,t (subagent) = 2 counted.
     expect(a.subagentDescendantCount).toBe(2);
 
     const b = getSession(db, 'c,a,b')!;
-    expect(b.subagentChildCount).toBe(1); // c,a
-    // Walk c,a,b -> c,a -> {c,a,b cycle stop, c,a,t -> c,a,b,t}; counted: c,a + c,a,b,t = 2.
+    expect(b.subagentChildCount).toBe(1);
     expect(b.subagentDescendantCount).toBe(2);
     db.close();
   });
@@ -610,8 +548,6 @@ describe('listSessions/getSession subagent counts (Direct / Full tree)', () => {
   test('counts are computed for the whole page with a fixed number of queries (no N+1)', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // Five roots, each with one subagent child, so a per-row implementation
-    // would issue visibly more queries as the page grows.
     for (let i = 0; i < 5; i++) {
       insertSession(db, `fake:r${i}`, { startedAt: `2024-01-0${i + 1}T00:00:00Z` });
       insertSession(db, `fake:r${i}/sub`, { parentId: `fake:r${i}`, relation: 'subagent' });
@@ -620,11 +556,9 @@ describe('listSessions/getSession subagent counts (Direct / Full tree)', () => {
 
     const one = countQueries(db, (d) => listSessions(d, { limit: 1 }));
     const five = countQueries(db, (d) => listSessions(d, { limit: 5 }));
-    // Same fixed statement count regardless of page size => batched, not per-row.
     expect(five.queries).toBe(one.queries);
     expect(five.result.items).toHaveLength(5);
 
-    // Page isolation: only the requested slice is returned and computed.
     const page1 = listSessions(db, { limit: 1, offset: 0 }).items;
     expect(page1.map((s) => s.id)).toEqual(['fake:r4']);
     expect(page1[0]!.subagentChildCount).toBe(1);
@@ -678,7 +612,6 @@ describe('getSession', () => {
     insertCallStep(db, 'fake:root1/child/grand', 0, 'grand-model');
     recomputeRollups(db);
 
-    // A subagent id containing a literal '/' must resolve, not 404.
     const detail = getSession(db, 'fake:root1/child');
     expect(detail).not.toBeNull();
     expect(detail!.id).toBe('fake:root1/child');
@@ -725,7 +658,6 @@ describe('getSession', () => {
   });
 });
 
-/** Adds a harness row; `seed` already inserts `fake`/`Fake`. */
 function insertHarness(db: Database, id: string, displayName: string) {
   db.run(
     'INSERT INTO harnesses (id, display_name, adapter_version, capabilities) VALUES (?, ?, ?, ?)',
@@ -738,9 +670,7 @@ describe('listSessions q filter (title / project / id, LIKE escaping)', () => {
     const { db } = openStore(':memory:');
     seed(db);
     insertSession(db, 'fake:title', { title: 'Hello World', startedAt: '2024-01-03T00:00:00Z' });
-    // title NULL -> project.name ("Project One")
     insertSession(db, 'fake:project', { title: null, startedAt: '2024-01-02T00:00:00Z' });
-    // title NULL + project NULL -> id
     insertSession(db, 'fake:id-only', {
       title: null,
       projectKey: null,
@@ -750,11 +680,8 @@ describe('listSessions q filter (title / project / id, LIKE escaping)', () => {
 
     expect(listSessions(db, { q: 'hello' }).items.map((s) => s.id)).toEqual(['fake:title']);
     expect(listSessions(db, { q: 'HELLO WORLD' }).items.map((s) => s.id)).toEqual(['fake:title']);
-    // title-null session falls back to project.name
     expect(listSessions(db, { q: 'project one' }).items.map((s) => s.id)).toEqual(['fake:project']);
-    // title-null + project-null session falls back to id
     expect(listSessions(db, { q: 'id-only' }).items.map((s) => s.id)).toEqual(['fake:id-only']);
-    // total is the real pre-pagination count
     expect(listSessions(db, { q: 'hello' }).total).toBe(1);
     db.close();
   });
@@ -767,11 +694,8 @@ describe('listSessions q filter (title / project / id, LIKE escaping)', () => {
     insertSession(db, 'fake:plain', { title: 'abcX', startedAt: '2024-01-01T00:00:00Z' });
     recomputeRollups(db);
 
-    // '%' is literal: only the title containing '%' matches.
     expect(listSessions(db, { q: '100%' }).items.map((s) => s.id)).toEqual(['fake:pct']);
-    // '_' is literal: 'ab_cd' matches, 'abcX' must NOT (an unescaped _ would match it).
     expect(listSessions(db, { q: 'ab_c' }).items.map((s) => s.id)).toEqual(['fake:under']);
-    // a literal backslash in the query neither throws nor over-matches
     expect(listSessions(db, { q: '\\' }).items).toEqual([]);
     db.close();
   });
@@ -819,7 +743,6 @@ describe('listSessions costOnly filter', () => {
     const res = listSessions(db, { costOnly: true });
     expect(res.items.map((s) => s.id)).toEqual(['fake:paid']);
     expect(res.total).toBe(1);
-    // false applies no filter at all
     expect(listSessions(db, { costOnly: false }).items).toHaveLength(3);
     db.close();
   });
@@ -834,18 +757,14 @@ describe('listSessions harness comma-list filter', () => {
     insertSession(db, 'oc:one', { harnessId: 'opencode', startedAt: '2024-01-02T00:00:00Z' });
     recomputeRollups(db);
 
-    // unknown + known -> known (the row from the unknown id is simply absent)
     expect(listSessions(db, { harness: 'missing,opencode' }).items.map((s) => s.id)).toEqual([
       'oc:one',
     ]);
-    // whitespace trimmed, duplicates removed, order irrelevant
     expect(
       listSessions(db, { harness: ' opencode , fake , fake ' }).items.map((s) => s.id),
     ).toEqual(['fake:cc', 'oc:one']);
-    // a single id remains exact and case-sensitive
     expect(listSessions(db, { harness: 'OpenCode' }).items).toEqual([]);
     expect(listSessions(db, { harness: 'opencode' }).items.map((s) => s.id)).toEqual(['oc:one']);
-    // an all-empty list applies no filter (safe default; server rejects it)
     expect(listSessions(db, { harness: ' , ' }).items).toHaveLength(2);
     db.close();
   });
@@ -855,7 +774,6 @@ describe('listSessions sort whitelist', () => {
   test('name sorts case-insensitively by the name expression', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // Inverted insertion vs. LOWER(order): default (id ASC) puts `one` first.
     insertSession(db, 'fake:one', { title: 'Zebra' });
     insertSession(db, 'fake:two', { title: 'apple' });
     recomputeRollups(db);
@@ -877,7 +795,6 @@ describe('listSessions sort whitelist', () => {
     seed(db);
     insertHarness(db, 'zzz', 'Zulu');
     insertHarness(db, 'aaa', 'alpha');
-    // Inverted insertion vs. LOWER(display_name): alpha, Fake, Zulu.
     insertSession(db, 'zzz:root', { harnessId: 'zzz' });
     insertSession(db, 'fake:root', { harnessId: 'fake' });
     insertSession(db, 'aaa:root', { harnessId: 'aaa' });
@@ -894,10 +811,8 @@ describe('listSessions sort whitelist', () => {
   test('startedAt sorts ascending/descending and ties fall back to id ASC', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // Inverted insertion: earlier first, later second (default DESC differs).
     insertSession(db, 'fake:early', { startedAt: '2024-01-01T00:00:00Z' });
     insertSession(db, 'fake:late', { startedAt: '2024-01-02T00:00:00Z' });
-    // A tie on started_at must break by id ASC regardless of direction.
     insertSession(db, 'fake:zid', { startedAt: '2024-06-01T00:00:00Z' });
     insertSession(db, 'fake:aid', { startedAt: '2024-06-01T00:00:00Z' });
     recomputeRollups(db);
@@ -938,7 +853,6 @@ describe('listSessions sort whitelist', () => {
   test('tokens sorts by the sum of the prompt+output rollup fields (missing rollup -> 0)', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // 40+30+20+10 = 100, spread across every summed field.
     insertSession(db, 'fake:multi', {
       uncachedInput: 40,
       cachedInput: 30,
@@ -947,7 +861,6 @@ describe('listSessions sort whitelist', () => {
       reasoningOutput: 0,
       startedAt: '2024-01-03T00:00:00Z',
     });
-    // 99 via a single field: any comparator that drops a summed field changes the order.
     insertSession(db, 'fake:single', { output: 99, startedAt: '2024-01-02T00:00:00Z' });
     recomputeRollups(db);
 
@@ -960,7 +873,6 @@ describe('listSessions sort whitelist', () => {
       'fake:single',
     ]);
 
-    // A session inserted after the rollup pass has no rollups row -> counts as 0.
     insertSession(db, 'fake:norow', { uncachedInput: 999, startedAt: '2024-01-01T00:00:00Z' });
     expect(listSessions(db, { sort: 'tokens' }).items.map((s) => s.id)).toEqual([
       'fake:norow',
@@ -973,8 +885,6 @@ describe('listSessions sort whitelist', () => {
   test('tokens sort excludes reasoning_output (reasoning must not re-enter the total)', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // ASC: reasoning-heavy (100) < output-only (150). Including reasoning would
-    // flip this to reasoning-heavy first (1100 > 150).
     insertSession(db, 'fake:reasoning-heavy', {
       output: 100,
       reasoningOutput: 1000,
@@ -1022,7 +932,6 @@ describe('listSessions sort whitelist', () => {
   test('a DESC sort still ends with the id ASC tie-break', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // Equal names, but distinct start times so the default order is NOT id ASC.
     insertSession(db, 'fake:z', { title: 'Same', startedAt: '2024-01-02T00:00:00Z' });
     insertSession(db, 'fake:a', { title: 'Same', startedAt: '2024-01-01T00:00:00Z' });
     recomputeRollups(db);
@@ -1071,11 +980,9 @@ describe('lastActivity (tree-inclusive latest activity)', () => {
     recomputeRollups(db);
 
     const root = listSessions(db).items.find((s) => s.id === 'fake:root')!;
-    // The root's own ended_at is untouched, but lastActivity walks the subtree.
     expect(root.endedAt).toBe('2024-01-01T00:10:00Z');
     expect(root.lastActivity).toBe('2024-01-05T00:00:00Z');
 
-    // An intermediate node is inclusive too; a leaf reports only itself.
     const child = getSession(db, 'fake:root/child')!;
     expect(child.lastActivity).toBe('2024-01-05T00:00:00Z');
     expect(child.children[0]!.lastActivity).toBe('2024-01-03T01:00:00Z');
@@ -1088,9 +995,7 @@ describe('lastActivity (tree-inclusive latest activity)', () => {
     const { db } = openStore(':memory:');
     seed(db);
     insertSession(db, 'fake:noevents', { startedAt: '2024-02-02T00:00:00Z', endedAt: null });
-    // A descendant with nothing at all does not turn the parent's fallback into null.
     insertSession(db, 'fake:noevents/child', { parentId: 'fake:noevents' });
-    // No ended_at and no started_at anywhere -> null, never source_mtime.
     insertSession(db, 'fake:neither', { startedAt: null, endedAt: null });
     recomputeRollups(db);
 
@@ -1104,7 +1009,6 @@ describe('lastActivity (tree-inclusive latest activity)', () => {
   test('own/inclusive invariance: descendant activity wins over the root fallback', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // The root itself emitted no ended_at; its subtree activity must still win.
     insertSession(db, 'fake:root', { startedAt: '2024-01-01T00:00:00Z', endedAt: null });
     insertSession(db, 'fake:root/child', {
       parentId: 'fake:root',
@@ -1126,13 +1030,11 @@ describe('lastActivity (tree-inclusive latest activity)', () => {
       startedAt: '2024-01-01T00:00:00Z',
       endedAt: '2024-01-01T00:10:00Z',
     });
-    // Descendant starts much later but never emitted an event (ended_at null).
     insertSession(db, 'fake:root/child', {
       parentId: 'fake:root',
       startedAt: '2024-06-01T00:00:00Z',
       endedAt: null,
     });
-    // Deeper nesting: a grandchild also starts later with no ended_at.
     insertSession(db, 'fake:root/child/grand', {
       parentId: 'fake:root/child',
       startedAt: '2024-07-01T00:00:00Z',
@@ -1141,11 +1043,7 @@ describe('lastActivity (tree-inclusive latest activity)', () => {
     recomputeRollups(db);
 
     const root = listSessions(db).items.find((s) => s.id === 'fake:root')!;
-    // The latest ACTUAL event is the root's own ended_at; started-only descendants
-    // must NOT override it (per-node COALESCE(ended, started) would wrongly win here).
     expect(root.lastActivity).toBe('2024-01-01T00:10:00Z');
-    // The intermediate node's own subtree has no ended_at anywhere, so it falls
-    // back to ITS startedAt (the subtree seed), not the grandchild's later start.
     const child = getSession(db, 'fake:root/child')!;
     expect(child.lastActivity).toBe('2024-06-01T00:00:00Z');
     db.close();
@@ -1163,8 +1061,6 @@ describe('lastActivity (tree-inclusive latest activity)', () => {
     recomputeRollups(db);
 
     const root = listSessions(db).items.find((s) => s.id === 'fake:root')!;
-    // No ended_at exists anywhere in the subtree -> fall back to the seed's own
-    // startedAt; a later-started descendant must not become the fallback.
     expect(root.lastActivity).toBe('2024-02-02T00:00:00Z');
     db.close();
   });
@@ -1172,9 +1068,7 @@ describe('lastActivity (tree-inclusive latest activity)', () => {
   test('default order is lastActivity DESC (not started_at) with id ASC tie-break', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // Later start, earlier activity: default must NOT pick this first.
     insertSession(db, 'fake:late-start', { startedAt: '2024-06-01T00:00:00Z' });
-    // Earlier start, but a descendant's late event is the real last activity.
     insertSession(db, 'fake:early-start', {
       startedAt: '2024-01-01T00:00:00Z',
       endedAt: '2024-01-02T00:00:00Z',
@@ -1184,7 +1078,6 @@ describe('lastActivity (tree-inclusive latest activity)', () => {
       startedAt: '2024-12-01T00:00:00Z',
       endedAt: '2024-12-01T01:00:00Z',
     });
-    // Equal lastActivity -> deterministic id ASC.
     insertSession(db, 'fake:z-tie', {
       startedAt: '2024-03-01T00:00:00Z',
       endedAt: '2024-03-01T00:00:00Z',
@@ -1196,9 +1089,9 @@ describe('lastActivity (tree-inclusive latest activity)', () => {
     recomputeRollups(db);
 
     expect(listSessions(db).items.map((s) => s.id)).toEqual([
-      'fake:early-start', // 2024-12-01 via descendant
-      'fake:late-start', // 2024-06-01
-      'fake:a-tie', // 2024-03-01, id ASC tie-break
+      'fake:early-start',
+      'fake:late-start',
+      'fake:a-tie',
       'fake:z-tie',
     ]);
     db.close();
@@ -1251,8 +1144,6 @@ describe('lastActivity (tree-inclusive latest activity)', () => {
   test('a hand-made parent cycle terminates with the seed excluded from its own walk', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // a <-> b cycle, both with distinct ended_at values. getSession is the only
-    // way to reach non-root nodes; the recursive guard must terminate.
     insertSession(db, 'fake:a', {
       parentId: 'fake:b',
       startedAt: '2024-01-01T00:00:00Z',
@@ -1266,7 +1157,7 @@ describe('lastActivity (tree-inclusive latest activity)', () => {
     recomputeRollups(db);
 
     const a = getSession(db, 'fake:a')!;
-    expect(a.lastActivity).toBe('2024-02-02T00:00:00Z'); // seed + b
+    expect(a.lastActivity).toBe('2024-02-02T00:00:00Z');
     db.close();
   });
 });
@@ -1282,14 +1173,10 @@ describe('listHarnesses', () => {
     insertSession(db, 'fake:root', { harnessId: 'fake' });
     insertSession(db, 'zzz:root', { harnessId: 'zzz' });
     insertSession(db, 'aaa:root', { harnessId: 'aaa' });
-    // childonly has only a descendant row (non-null parent_id) -> excluded.
     insertSession(db, 'childonly/kid', { harnessId: 'childonly', parentId: 'some-parent' });
     recomputeRollups(db);
 
     const harnesses = listHarnesses(db);
-    // ORDER BY h.display_name is SQLite's default BINARY collation, so uppercase
-    // sorts before lowercase (Fake, Zulu, alpha). Only harnesses with a root row
-    // are present: `empty` has none and `childonly` has only a descendant.
     expect(harnesses).toEqual([
       { id: 'fake', displayName: 'Fake' },
       { id: 'zzz', displayName: 'Zulu' },
@@ -1300,11 +1187,6 @@ describe('listHarnesses', () => {
 });
 
 describe('getSessionsStats', () => {
-  /**
-   * root1 (tokens + a token-bearing child + a model used only by the child),
-   * root2, and root3 (no started_at/duration/cost). All three are roots; the
-   * child must never be counted in the totals.
-   */
   function seedStatsFixture(db: Database) {
     seed(db);
     insertSession(db, 'fake:root1', {
@@ -1345,15 +1227,10 @@ describe('getSessionsStats', () => {
 
     const stats = getSessionsStats(db);
 
-    // root1 + root2 + root3; the child is NOT a root.
     expect(stats.totalSessions).toBe(3);
     expect(stats.totalCostUsd).toBeCloseTo(3.5);
-    // root1 inclusive (own + child) prompt+output = 120/12/6/1200 = 1338
-    // (reasoning_output is NOT part of the total), root2 = 110; root3 = 0.
     expect(stats.totalTokens).toBe(1338 + 110);
-    // NULL duration (root3) excluded from the mean.
     expect(stats.avgDurationMs).toBe((3_600_000 + 1_800_000) / 2);
-    // Day buckets, ascending; root3 has no started_at and is excluded.
     expect(stats.series).toEqual([
       { date: '2024-01-02', sessions: 1 },
       { date: '2024-01-03', sessions: 1 },
@@ -1381,21 +1258,16 @@ describe('getSessionsStats', () => {
     const { db } = openStore(':memory:');
     seedStatsFixture(db);
 
-    // costOnly excludes NULL/0 cost rows.
     const costOnly = getSessionsStats(db, { costOnly: true });
     expect(costOnly.totalSessions).toBe(2);
     expect(costOnly.totalCostUsd).toBeCloseTo(3.5);
 
-    // durationMin is inclusive and excludes NULL durations.
     expect(getSessionsStats(db, { durationMin: 30 }).totalSessions).toBe(2);
 
-    // startedAfter is exclusive and excludes NULL started_at.
     expect(getSessionsStats(db, { startedAfter: '2024-01-02T12:00:00Z' }).totalSessions).toBe(1);
 
-    // harness is exact.
     expect(getSessionsStats(db, { harness: 'fake' }).totalSessions).toBe(3);
 
-    // q matches the project-name fallback (title NULL).
     expect(getSessionsStats(db, { q: 'Project' }).totalSessions).toBe(3);
 
     db.close();
@@ -1407,7 +1279,6 @@ describe('getSessionsStats', () => {
 
     const stats = getSessionsStats(db, { model: 'm-child' });
     expect(stats.totalSessions).toBe(1);
-    // root1's inclusive tokens (prompt+output only), proving the descendant-scoped match.
     expect(stats.totalTokens).toBe(1338);
 
     db.close();
@@ -1433,7 +1304,6 @@ describe('getSessionsStats', () => {
     const { db } = openStore(':memory:');
     seedStatsFixture(db);
 
-    // Only root2 starts after this bound (root3 has NULL started_at).
     const stats = getSessionsStats(db, { startedAfter: '2024-01-02T12:00:00Z' });
     expect(stats.totalSessions).toBe(1);
     expect(stats.totalTokens).toBe(110);

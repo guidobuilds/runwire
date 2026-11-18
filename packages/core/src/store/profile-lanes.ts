@@ -39,8 +39,6 @@ type StepRow = {
   to_value: string | null;
 };
 
-// Include immediate children outside `own` solely for spawn attribution. SQL's
-// NULL-first, binary ordering also supplies the sibling order for the DFS.
 const NODES_SQL = `
   SELECT s.id, s.parent_id, s.agent_type, s.spawn_call_id,
     s.id IN (SELECT id FROM profile_scope) AS in_scope
@@ -103,8 +101,6 @@ function emptyCalls(): LaneCalls {
   };
 }
 
-/** One pass over an agent's seq-ordered stream. Dropped calls still delimit
- * tool ownership; pending events instead wait for the next drawable call. */
 function assemble(
   rows: readonly StepRow[],
   children: ReadonlyMap<string, string[]>,
@@ -182,7 +178,6 @@ function assemble(
   return { calls, excluded };
 }
 
-/** Metadata-only, unpaginated lanes. No content/name-bearing tool columns are read. */
 export function readProfileLanes(
   db: Database,
   sessionId: string,
@@ -219,9 +214,6 @@ export function readProfileLanes(
   const modelIndices = new Map<string, number>();
   const modelIndex = (name: string | null, provider: string | null): number => {
     if (name === null) return -1;
-    // Identity is (provider, name): the same name through two
-    // providers can resolve to different windows via overrides, so both get
-    // their own LaneModel row.
     const key = JSON.stringify([provider, name]);
     const existing = modelIndices.get(key);
     if (existing !== undefined) return existing;

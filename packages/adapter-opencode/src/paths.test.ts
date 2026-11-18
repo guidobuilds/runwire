@@ -53,7 +53,6 @@ describe('paths', () => {
   test('detectDbKind detects session_v2 (current) vs session (legacy) vs not-opencode', async () => {
     expect(await detectDbKind(ctxFor('small'), 'current')).toBe('current');
     expect(await detectDbKind(ctxFor('legacy'), 'legacy')).toBe('legacy');
-    // A missing DB file is not-opencode, never a throw.
     expect(await detectDbKind(ctxFor('legacy'), 'current')).toBe('not-opencode');
     expect(await detectDbKind(ctxFor('small'), 'legacy')).toBe('not-opencode');
   });

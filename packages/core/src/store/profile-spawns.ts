@@ -38,8 +38,6 @@ function node(row: NodeRow): ProfileNode {
 }
 
 function key(parentId: string, callId: string): string {
-  // A Map key, not SQL or a persisted identifier; NUL cannot collide with a
-  // pair of SQLite TEXT values made by this function.
   return `${parentId}\0${callId}`;
 }
 
@@ -52,11 +50,6 @@ const EMPTY_COUNTS: Record<CausalStatus, number> = {
   unresolved: 0,
 };
 
-/**
- * Metadata-only spawn evidence.  A session row is a candidate by its declared
- * parent/spawn_call_id, never by steps.child_id: that column is merely cached
- * link evidence and may be stale, dangling, or collision-pruned by linkSessions.
- */
 export function readProfileSpawns(
   db: Database,
   sessionId: string,
@@ -68,8 +61,6 @@ export function readProfileSpawns(
 
   const prefix = profileScopeCte(scope);
   const params = profileScopeParams(sessionId);
-  // Children are intentionally not joined back to profile_scope.  In `own`,
-  // they provide causal context for the root without becoming scope consumers.
   const children = db
     .query(
       `${prefix}
@@ -124,8 +115,6 @@ export function readProfileSpawns(
     for (const child of childrenByParent.get(parent.id) ?? []) {
       const childNode = node(child);
       let causalStatus: CausalStatus;
-      // Set only for an unambiguous single-action match; ambiguous/unmatched
-      // items have no single action to attribute a spawn instant to.
       let callAt: string | null = null;
       if (child.spawn_call_id === null) {
         causalStatus = 'missing-call-id';
@@ -152,8 +141,6 @@ export function readProfileSpawns(
         callAt,
       });
     }
-    // An agent action with a child candidate is represented by that child item.
-    // Actions without one remain visible, including a missing call id.
     for (const action of actionsByParent.get(parent.id) ?? []) {
       const candidates =
         action.call_id === null ? [] : (childrenByCall.get(key(parent.id, action.call_id)) ?? []);
@@ -164,9 +151,6 @@ export function readProfileSpawns(
         childInScope: false,
         callId: action.call_id,
         causalStatus: action.call_id === null ? 'missing-call-id' : 'unresolved',
-        // Each row here is exactly one action instance, never a grouped
-        // multi-match, so its own `at` is unambiguous; a missing call id
-        // means there is no spawn call to attribute an instant to.
         callAt: action.call_id === null ? null : action.at,
       });
     }

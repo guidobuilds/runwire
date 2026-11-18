@@ -49,7 +49,7 @@ describe('readRecords', () => {
   test('a truncated last line (no trailing newline) yields source-truncated but still parses the line', async () => {
     const line1 = JSON.stringify({ type: 'user', timestamp: '2026-01-01T00:00:00.000Z' });
     const line2 = JSON.stringify({ type: 'user', timestamp: '2026-01-01T00:00:01.000Z' });
-    const ctx = ctxWith(`${line1}\n${line2}`); // no trailing \n
+    const ctx = ctxWith(`${line1}\n${line2}`);
     const { records, diagnostics } = await collect(ctx);
     expect(records).toHaveLength(2);
     expect(diagnostics.some((d) => d.code === 'source-truncated')).toBe(true);
@@ -67,13 +67,12 @@ describe('readRecords', () => {
     });
     const ctx = ctxWith(`${known}\n${unknown1}\n${unknown2}\n`);
     const { records, diagnostics } = await collect(ctx);
-    expect(records).toHaveLength(3); // unknown types still yield a record; compute.ts ignores them
+    expect(records).toHaveLength(3);
     const d = diagnostics.find((x) => x.code === 'unknown-record-type');
     expect(d?.count).toBe(2);
   });
 
   test('a record that fails schema validation yields invalid-record and is skipped', async () => {
-    // message.usage.input_tokens must be a number; a string fails the schema.
     const bad = JSON.stringify({
       type: 'assistant',
       timestamp: '2026-01-01T00:00:00.000Z',

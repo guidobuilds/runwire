@@ -10,12 +10,10 @@ export type CanvasGestureOptions = {
   callCount: number;
   maxScrollY: number;
   fullscreen?: boolean;
-  /** Change this on session replacement to reset the viewport. */
   resetKey?: string;
   onDraw: (state: CanvasViewState) => void;
 };
 
-/** View changes never set React state. Subscribe notifications share the redraw rAF. */
 export function useCanvasGestures(options: CanvasGestureOptions) {
   const latest = useRef(options);
   const stateRef = useRef<CanvasViewState>({ view: fitView(options.callCount), scrollY: 0 });
@@ -69,7 +67,6 @@ export function useCanvasGestures(options: CanvasGestureOptions) {
     actions.setView(stateRef.current.view);
   }, [options, actions]);
   useEffect(() => {
-    // A new session should fit, but a size/theme change must preserve the user's view.
     void options.resetKey;
     actions.setView(fitView(latest.current.callCount), 0);
   }, [options.resetKey, actions]);
@@ -87,8 +84,6 @@ export function useCanvasGestures(options: CanvasGestureOptions) {
       const dx = event.deltaX * unit;
       const dy = event.deltaY * unit;
       const realZoom = event.ctrlKey || event.metaKey;
-      // Inline plain wheel keeps page scrolling. Only Ctrl/⌘ (including pinch)
-      // may preventDefault there; fullscreen has no page scroll to preserve.
       if (realZoom) {
         event.preventDefault();
         actions.zoom(Math.exp(-Math.max(-600, Math.min(600, dy)) * 0.002), x - LABEL_WIDTH);

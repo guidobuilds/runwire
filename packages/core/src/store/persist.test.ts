@@ -38,14 +38,12 @@ function bundle(
   };
 }
 
-/** The id of a `models` row by its UNIQUE name; throws when absent so a bug is loud, not `undefined`. */
 function modelIdByName(models: { id: number; name: string }[], name: string): number {
   const found = models.find((m) => m.name === name);
   if (found === undefined) throw new Error(`models row for '${name}' not found`);
   return found.id;
 }
 
-/** Every session references a harnesses row via a real FK; the orchestrator upserts it once per adapter run. */
 function storeWithFakeHarness() {
   const store = openStore(':memory:');
   upsertHarness(store.db, {
@@ -57,12 +55,10 @@ function storeWithFakeHarness() {
   return store;
 }
 
-/** persistBundle with titles on: the D7 opt-in default these tests don't exercise. */
 function persistWithTitles(db: Database, b: SessionBundle): void {
   persistBundle(db, b, true);
 }
 
-/** A minimal AdapterContext for removeVanished's `opts.ctx` (the sourceExists callback ignores it). */
 function adapterCtx(): AdapterContext {
   return {
     home: '/home/u',
@@ -223,7 +219,6 @@ describe('persistBundle', () => {
       mcp_tool: string | null;
     };
     expect(row).toEqual({
-      // The raw name is preserved verbatim alongside the normalized pair.
       tool_name: 'mcp__plugin_engram_engram__mem_save',
       mcp_server: 'plugin_engram_engram',
       mcp_tool: 'mem_save',
@@ -602,7 +597,6 @@ describe('persistInvalidBundle', () => {
     );
     recomputeRollups(db);
 
-    // Sanity: the valid child contributes its exclusive totals to the parent.
     const before = db
       .query('SELECT uncached_input, output, descendants FROM rollups WHERE session_id = ?')
       .get('fake:parent') as {
@@ -612,7 +606,6 @@ describe('persistInvalidBundle', () => {
     };
     expect(before).toEqual({ uncached_input: 101, output: 251, descendants: 1 });
 
-    // Same id/source re-imported as invalid: the row must become a pure stub.
     const ok = persistInvalidBundle(
       db,
       'fake',
@@ -664,7 +657,6 @@ describe('persistInvalidBundle', () => {
       'source_mtime',
     ];
     for (const column of cleared) expect(row[column]).toBeNull();
-    // Identity and the stub defaults survive.
     expect(row.id).toBe('fake:child');
     expect(row.harness_id).toBe('fake');
     expect(row.source_path).toBe('/fake/child.jsonl');
@@ -675,7 +667,6 @@ describe('persistInvalidBundle', () => {
       .all('fake:child') as { code: string; message: string }[];
     expect(diags).toEqual([{ code: 'bundle-invalid', message: 'session.depth: too_small' }]);
 
-    // The stale exclusive totals can no longer inflate the parent's inclusive rollup.
     recomputeRollups(db);
     const after = db
       .query('SELECT uncached_input, output, descendants FROM rollups WHERE session_id = ?')
@@ -819,8 +810,6 @@ describe('loadKnown: identity-keyed and locator-scoped', () => {
         sourcePath: 'opencode:current:ses_1',
       }),
     );
-    // A root that does NOT contain the locator (e.g. an opaque id prefix) must
-    // not include the row.
     const known = loadKnown(db, 'fake', ['opencode:']);
     expect(known.size).toBe(0);
   });
@@ -843,7 +832,7 @@ describe('removeVanished', () => {
       ]),
     );
     const known = loadKnown(db, 'fake', ['/fake']);
-    const fs = createMemoryFs({ files: {} }); // nothing exists
+    const fs = createMemoryFs({ files: {} });
     const removed = await removeVanished(db, 'fake', known, new Set(), fs);
     expect(removed).toBe(1);
     expect(db.query('SELECT * FROM sessions WHERE id = ?').all('fake:gone').length).toBe(0);
@@ -926,7 +915,6 @@ describe('removeVanished', () => {
 
   test('a NULL-source_id stub row is still deletable via the COALESCE delete', async () => {
     const { db } = storeWithFakeHarness();
-    // A raw test insert / invalid stub with NULL source_id (no sourceId emitted).
     persistInvalidBundle(
       db,
       'fake',

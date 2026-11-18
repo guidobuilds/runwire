@@ -74,7 +74,6 @@ describe('computeBundle: model provider', () => {
     ]);
     const tools = bundle.steps.filter((s) => s.kind === 'tool');
     expect(tools.map((s) => [s.model, s.modelProvider])).toEqual([['glm5.3-flash', 'nan']]);
-    // gpt-6.1-sol has the largest output -> primary.
     expect(bundle.session.modelPrimary).toBe('gpt-6.1-sol');
     expect(bundle.session.modelPrimaryProvider).toBe('openai');
   });
@@ -292,8 +291,6 @@ describe('computeBundle', () => {
     const records = await readOrigin(ctx, 'current');
     const session = records.sessions[0]!;
     const sessionsById = new Map(records.sessions.map((s) => [s.id, s]));
-    // Force the harness-reported tokens_input to disagree with the Σ of call
-    // steps (300 here).
     const drifted = { ...session, tokensInput: 500 };
     const bundle = await computeBundle({
       harnessId: 'opencode',
@@ -306,7 +303,6 @@ describe('computeBundle', () => {
       ctx,
     });
     expect(bundle.diagnostics.map((d) => d.code)).toContain('token-total-drift');
-    // The session token field is still the per-call sum, never the harness total.
     expect(bundle.session.uncachedInput).toBe(300);
   });
 });

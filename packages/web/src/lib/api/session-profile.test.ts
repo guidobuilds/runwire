@@ -253,9 +253,7 @@ describe('session profile API', () => {
       .mockResolvedValue(new Response(JSON.stringify(mergedEventsResponse), { status: 200 }));
     vi.stubGlobal('fetch', fetch);
     const result = await fetchSessionProfileMergedEvents('root', { scope: 'tree' });
-    // Tool row whose source carried a model: it survives normalization verbatim.
     expect(result.items[1]).toMatchObject({ kind: 'tool', model: 'claude-sonnet-5' });
-    // Tool row whose source omitted `model`: additive-with-default → null, never a throw.
     expect(result.items[2]).toMatchObject({ kind: 'tool', model: null });
   });
 
@@ -366,7 +364,6 @@ describe('session profile API', () => {
       '/api/sessions/root%2Fa%2525/profile/models',
       expect.any(Object),
     );
-    // The endpoint accepts no query parameters: the path must not gain a `?`.
     expect(fetch.mock.calls[0]?.[0]).not.toContain('?');
   });
 
@@ -486,7 +483,6 @@ describe('session profile API', () => {
       '/api/sessions/root%2Fa%2525/profile/context',
       expect.any(Object),
     );
-    // The endpoint accepts no query parameters: the path must not gain a `?`.
     expect(fetch.mock.calls[0]?.[0]).not.toContain('?');
   });
 

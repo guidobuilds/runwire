@@ -4,7 +4,6 @@ import type { ImportReport } from '@runwire/core';
 import { openStore, recomputeRollups } from '@runwire/core';
 import { createServer } from './createServer';
 
-/** Idempotently upserts a raw model string and returns its `models.id`. */
 function modelId(db: Database, name: string): number {
   db.run('INSERT INTO models (name) VALUES (?) ON CONFLICT DO NOTHING', [name]);
   return (db.query('SELECT id FROM models WHERE name = ?').get(name) as { id: number }).id;
@@ -37,7 +36,6 @@ function seed(db: Database) {
       '/fake/root1.jsonl',
     ],
   );
-  // A subagent whose id contains a literal '/'.
   db.run(
     `INSERT INTO sessions (
        id, harness_id, project_key, parent_id, depth, title, model_primary_id,
@@ -58,7 +56,6 @@ async function startServer(opts: { scan?: () => Promise<ImportReport> } = {}) {
   const store = openStore(':memory:');
   seed(store.db);
   const server = createServer({ db: store.db, host: '127.0.0.1', port: 0, ...opts });
-  // fetch needs a concrete origin; use the server's bound port.
   const base = `http://127.0.0.1:${server.port}`;
   return { store, server, base };
 }
@@ -100,7 +97,6 @@ describe('createServer', () => {
       };
       expect(body.total).toBe(1);
       expect(body.items.map((s) => s.id)).toEqual(['fake:root1']);
-      // Effective (defaulted) limit/offset are echoed.
       expect(body.limit).toBe(50);
       expect(body.offset).toBe(0);
     } finally {
@@ -112,7 +108,6 @@ describe('createServer', () => {
   test('valid filters and pagination round-trip through HTTP', async () => {
     const { store, server, base } = await startServer();
     try {
-      // harness filter (exact), model filter, startedAfter, limit/offset.
       const res = await fetch(
         `${base}/api/sessions?harness=fake&model=root-model&startedAfter=2024-01-01T00:00:00Z&limit=10&offset=0`,
       );
@@ -162,10 +157,7 @@ describe('createServer', () => {
           ],
         );
       };
-      // A matching second root whose later started_at means the DEFAULT order
-      // would put it first; `sort=-duration` must reverse that.
       insertRoot('fake:root2', null, 'p1', 1_800_000, 1, '2024-01-03T00:00:00Z', 'm2');
-      // Each of these fails exactly one new filter:
       insertRoot('fake:other-q', 'Other', null, 3_600_000, 1, '2024-01-01T00:00:00Z', 'm3');
       insertRoot('fake:other-duration', null, 'p1', 0, 1, '2024-01-01T00:00:00Z', 'm4');
       insertRoot('fake:other-cost', null, 'p1', 3_600_000, 0, '2024-01-01T00:00:00Z', 'm5');
@@ -178,8 +170,6 @@ describe('createServer', () => {
         items: { id: string }[];
         total: number;
       };
-      // `durationMin=30` is inclusive (root2 is exactly 30m) and `q=project`
-      // matches root1/root2 via the project name; the other three roots fail.
       expect(body.total).toBe(2);
       expect(body.items.map((s) => s.id)).toEqual(['fake:root1', 'fake:root2']);
     } finally {
@@ -191,7 +181,6 @@ describe('createServer', () => {
   test('costOnly=false is accepted and applies no cost filter', async () => {
     const { store, server, base } = await startServer();
     try {
-      // A zero-cost root would be excluded by costOnly=true but not by false.
       store.db.run(
         `INSERT INTO sessions (
            id, harness_id, project_key, parent_id, depth, title, started_at,
@@ -231,8 +220,6 @@ describe('createServer', () => {
         subagentChildCount: number;
         subagentDescendantCount: number;
       };
-      // seed() links root1 -> child; make that child a subagent and add a
-      // subagent grandchild so Direct (1) and Full tree (2) differ from zero.
       store.db.run("UPDATE sessions SET relation = 'subagent' WHERE id = 'fake:root1/child'");
       store.db.run(
         `INSERT INTO sessions (
@@ -248,14 +235,13 @@ describe('createServer', () => {
       const root1 = listBody.items.find((s) => s.id === 'fake:root1')!;
       expect(root1.childCount).toBe(1);
       expect(root1.subagentChildCount).toBe(1);
-      expect(root1.subagentDescendantCount).toBe(2); // child + grandchild
+      expect(root1.subagentDescendantCount).toBe(2);
 
       const detailRes = await fetch(`${base}/api/sessions/fake:root1`);
       const detailBody = (await detailRes.json()) as { session: Summary };
       expect(detailBody.session.subagentChildCount).toBe(1);
       expect(detailBody.session.subagentDescendantCount).toBe(2);
 
-      // A /-containing subagent id resolves and carries its own counts.
       const childRes = await fetch(`${base}/api/sessions/fake:root1/child`);
       const childBody = (await childRes.json()) as { session: Summary };
       expect(childBody.session.subagentChildCount).toBe(1);
@@ -269,7 +255,6 @@ describe('createServer', () => {
   test('GET /api/sessions/{id} serves a /-containing subagent id (whole remainder)', async () => {
     const { store, server, base } = await startServer();
     try {
-      // The raw path has a literal '/' inside the id; it must resolve, not 404.
       const res = await fetch(`${base}/api/sessions/fake:root1/child`);
       expect(res.status).toBe(200);
       const body = (await res.json()) as { session: { id: string; parent: { id: string } | null } };
@@ -341,7 +326,6 @@ describe('createServer', () => {
         const body = await res.json();
         expect(body, legacy).toEqual({ error: 'not found' });
       }
-      // Neither prefix nor slug: /api alone is service info, /api/sessions is list.
       expect((await fetch(`${base}/api/sessions`)).status).toBe(200);
     } finally {
       server.stop();
@@ -516,8 +500,6 @@ describe('createServer /api/sessions query-param strictness', () => {
   test('default order is lastActivity DESC and the explicit sorts round-trip', async () => {
     const { store, server, base } = await startServer();
     try {
-      // root1 starts later (2024-01-02) but has no events past that; root2 starts
-      // earlier yet its descendant is the most recent activity (2024-06-01).
       store.db.run(
         `INSERT INTO sessions (
            id, harness_id, project_key, parent_id, depth, started_at, ended_at,
@@ -541,7 +523,6 @@ describe('createServer /api/sessions query-param strictness', () => {
           .items;
       };
 
-      // Default is most-recent-activity first, which is NOT started_at order here.
       const byDefault = await items('');
       expect(byDefault.map((s) => s.id)).toEqual(['fake:root2', 'fake:root1']);
       expect(byDefault[0]!.lastActivity).toBe('2024-06-01T00:00:00Z');
@@ -615,8 +596,6 @@ describe('createServer /api/harnesses', () => {
 });
 
 describe('createServer /api/scan', () => {
-  /** The CSRF header the UI sends; every POST that must reach the handler
-   * proves it is same-origin with it (SEC-02). */
   const scanHeaders = { 'X-Runwire-Scan': '1' };
 
   const report: ImportReport = {
@@ -633,12 +612,6 @@ describe('createServer /api/scan', () => {
     fetch: (req: Request, server: Bun.Server<unknown>) => Response | Promise<Response>;
   };
 
-  /**
-   * Wraps `Bun.serve` for one test to observe the transport config
-   * `createServer` passes (F1) while the real transport still serves requests.
-   * The handler's per-request `server` argument is replaced with a recorder so
-   * the `server.timeout(req, 0)` call is observable too.
-   */
   function captureServeConfig() {
     const globalBun = Bun as unknown as {
       serve: (options: ServeConfig) => Bun.Server<unknown>;
@@ -676,8 +649,6 @@ describe('createServer /api/scan', () => {
     };
     const { store, server, base } = await startServer({ scan });
     try {
-      // A cross-site HTML form is a simple request: it cannot set
-      // `X-Runwire-Scan`, so the guard rejects it before any side effect.
       const res = await fetch(`${base}/api/scan`, { method: 'POST' });
       expect(res.status).toBe(403);
       expect(await res.json()).toEqual({ error: 'forbidden' });
@@ -730,11 +701,9 @@ describe('createServer /api/scan', () => {
     try {
       const { store, server, base } = await startServer({ scan: async () => report });
       try {
-        // The default 10s idle timeout would close a large scan mid-await.
         expect(capture.idleTimeout()).toBe(0);
         const res = await fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
         expect(res.status).toBe(200);
-        // `server.timeout(req, 0)` runs before the import is awaited.
         expect(capture.timeoutSeconds).toEqual([0]);
       } finally {
         server.stop();
@@ -799,12 +768,10 @@ describe('createServer /api/scan', () => {
     const { store, server, base } = await startServer({ scan });
     try {
       const first = fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
-      // Wait until the first handler owns the lock before firing the second.
       await started;
       const second = await fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
       expect(second.status).toBe(409);
       expect(await second.json()).toEqual({ error: 'scan in progress' });
-      // The rejected POST never reached the scan callback.
       expect(calls).toBe(1);
 
       release();
@@ -812,7 +779,6 @@ describe('createServer /api/scan', () => {
       expect(firstRes.status).toBe(200);
       expect(await firstRes.json()).toEqual(report);
 
-      // The lock was released in `finally`: a fresh POST runs again.
       const third = await fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
       expect(third.status).toBe(200);
       expect(calls).toBe(2);
@@ -888,7 +854,6 @@ describe('createServer /api/scan', () => {
     const scan = async (): Promise<ImportReport> => report;
     const { store, server, base } = await startServer({ scan });
     try {
-      // Method is checked before the CSRF guard: a GET is a 405 either way.
       const bare = await fetch(`${base}/api/scan`);
       expect(bare.status).toBe(405);
       expect(bare.headers.get('allow')).toBe('POST');
@@ -916,7 +881,6 @@ describe('createServer /api/scan', () => {
       expect(res.status).toBe(500);
       expect(await res.json()).toEqual({ error: 'internal error' });
 
-      // The throw path clears the lock too, so the next scan is not a 409.
       const retry = await fetch(`${base}/api/scan`, { method: 'POST', headers: scanHeaders });
       expect(retry.status).toBe(200);
       expect(await retry.json()).toEqual(report);
@@ -964,13 +928,8 @@ describe('createServer /api/sessions/stats', () => {
     );
   }
 
-  /**
-   * Three roots — r1 (tokens + a token-bearing child whose model r1 does not
-   * use directly), r2, r3 (no started_at/duration/cost) — plus rollups.
-   */
   async function startStatsServer() {
     const store = openStore(':memory:');
-    // Harness + project only (unlike `seed`, no extra root session).
     store.db.run(
       'INSERT INTO harnesses (id, display_name, adapter_version, capabilities) VALUES (?, ?, ?, ?)',
       ['fake', 'Fake', '1.0.0', '[]'],
@@ -1028,11 +987,8 @@ describe('createServer /api/sessions/stats', () => {
       expect(await res.json()).toEqual({
         totalSessions: 3,
         totalCostUsd: 3.5,
-        // r1 inclusive (own + child) prompt+output 120/12/6/1200 = 1338
-        // (reasoning_output is not part of the total), plus r2 110.
         totalTokens: 1448,
         avgDurationMs: 2_700_000,
-        // r3 has no started_at, so only two day buckets (ascending).
         series: [
           { date: '2024-01-02', sessions: 1 },
           { date: '2024-01-03', sessions: 1 },
@@ -1075,19 +1031,13 @@ describe('createServer /api/sessions/stats', () => {
           totalCostUsd: number;
         };
 
-      // durationMin is inclusive (r1 = 60m, r2 = 30m) and excludes NULL (r3).
       expect((await totals('?durationMin=30')).totalSessions).toBe(2);
-      // costOnly excludes NULL/0 cost (r3), leaving r1 + r2.
       expect((await totals('?costOnly=true')).totalSessions).toBe(2);
       const costOnly = await totals('?costOnly=true');
       expect(costOnly.totalCostUsd).toBe(3.5);
-      // startedAfter is exclusive; only r2 starts later (r3 NULL excluded).
       expect((await totals('?startedAfter=2024-01-02T12:00:00Z')).totalSessions).toBe(1);
-      // harness exact (all roots are 'fake').
       expect((await totals('?harness=fake')).totalSessions).toBe(3);
-      // model matches a descendant-only model, so r1 is included.
       expect((await totals('?model=m-child')).totalSessions).toBe(1);
-      // q matches the project-name fallback (titles are NULL) -> all 3.
       expect((await totals('?q=Project')).totalSessions).toBe(3);
     } finally {
       server.stop();

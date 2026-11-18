@@ -15,7 +15,6 @@ import { formatNumber } from './format';
 export type SignalsAccordionProps = {
   sessionId: string;
   session: ApiSessionDetail;
-  /** From the already-fetched agent graph node list (nodes.length - 1); null while unknown. */
   subagentCount: number | null;
   refresh?: number;
 };
@@ -28,7 +27,6 @@ function percentage(part: number, total: number): string {
   return `${Math.round((part / total) * 100)}%`;
 }
 
-/** 1 - own[field]/inclusive[field]; "not comparable" when there is nothing to divide by. */
 function delegationShare(session: ApiSessionDetail, field: TokenField): string {
   const inclusive = session.tokensInclusive[field];
   const own = session.tokensOwn[field];
@@ -58,10 +56,6 @@ function BadgeList({ items }: { items: readonly string[] }) {
   );
 }
 
-/** Collapsed-by-default accordion of waste-pattern signals (G5), a secondary
- * insight, not the hero. Fetches on mount regardless of expand state — the
- * query hook runs at this component's own render, independent of whether the
- * Accordion panel keeps its children mounted while collapsed. */
 export function SignalsAccordion({
   sessionId,
   session,

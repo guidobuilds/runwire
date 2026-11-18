@@ -21,7 +21,6 @@ function renderModelUsage(props: Partial<React.ComponentProps<typeof ModelUsage>
   return render(<ModelUsage sessionId={PROFILE_ROOT_ID} {...props} />, { wrapper });
 }
 
-/** Rendered sector label strings (recharts' `.recharts-pie-label-text`). */
 function labelTexts(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll('.recharts-pie-label-text')).map(
     (node) => node.textContent ?? '',
@@ -58,8 +57,6 @@ describe('ModelUsage — donut slices', () => {
   it('excludes share-0 entries from both slices and labels', async () => {
     const { container } = renderModelUsage();
 
-    // 1 non-zero model in the session group + 2 in the descendants group;
-    // the session group's share-0 `claude-haiku-4` entry is neither.
     await waitFor(() => {
       expect(container.querySelectorAll('.recharts-pie-sector')).toHaveLength(3);
     });

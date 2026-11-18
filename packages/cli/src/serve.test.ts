@@ -4,12 +4,6 @@ import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import type { AdapterContext, ImportReport } from '@runwire/core';
 
-// Proves `runServe`'s flag parsing and DB resolution by injecting fakes for the
-// seams it depends on (no real server, no ~/.runwire side effect). Each test
-// triggers shutdown via `process.emit('SIGINT')` and asserts the fake server was
-// stopped (no leaked server). `runServe` removes its signal handlers on
-// shutdown, so handlers do not accumulate across tests.
-
 const REPO_ROOT = resolve(import.meta.dir, '../../..');
 const CLI_SCRIPT = 'packages/cli/src/index.ts';
 
@@ -115,7 +109,6 @@ describe('runServe', () => {
     expect(code).toBe(0);
     expect(ensureDbDir).toHaveBeenCalledWith(expected);
     expect(openStore).toHaveBeenCalledWith(expected);
-    // Never the literal cwd-based '~' path the bug produced.
     expect(expected).not.toBe(resolve('~/.runwire/runwire.db'));
     expect(stopMock).toHaveBeenCalled();
   });
@@ -124,8 +117,6 @@ describe('runServe', () => {
     const captured: CapturedServerOpts[] = [];
     const { stopMock, createServerMock } = makeServerMock(captured);
     const { runServe } = await import('./commands/serve');
-    // An empty registry keeps importAll on the in-memory store, so the scan
-    // callback can be exercised without probing the real home directory.
     const p = runServe(
       { db: ':memory:', titles: true },
       { createServer: createServerMock, adapters: [] },
@@ -150,8 +141,6 @@ describe('runServe', () => {
       (_opts: { home?: string; titles: boolean }) => ({}) as AdapterContext,
     );
     const { runServe } = await import('./commands/serve');
-    // An empty registry keeps `importAll` off the context, so a bare stub is
-    // enough; the assertion is what `runServe` passes to `createContext`.
     const p = runServe(
       { db: ':memory:', titles: false },
       { createServer: createServerMock, createContext: createContextMock, adapters: [] },
@@ -286,8 +275,6 @@ describe('runwire serve (cli entry)', () => {
     ]);
     expect(stdout).toBe('');
     expect(code).toBe(2);
-    // Reaching the port validation proves the strict parser accepted
-    // `--no-titles`; an unknown flag would have failed with a usage error first.
     expect(stderr).toContain('--port must be an integer between 0 and 65535');
     expect(stderr).not.toContain('Unknown option');
   });
@@ -337,7 +324,6 @@ describe('runwire serve (cli entry)', () => {
     ]);
     expect(stdout).toBe('');
     expect(code).toBe(2);
-    // `--port` is validated before `--host`; document + pin that order.
     expect(stderr).toContain('--port must be an integer between 0 and 65535');
     expect(stderr).not.toContain('refusing to bind');
   });

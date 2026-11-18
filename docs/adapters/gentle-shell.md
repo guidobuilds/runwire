@@ -14,7 +14,7 @@ Evidence base:
 - Installed package read locally: `~/.gentle-shell/versions/4.3.0-1.2.0/node_modules/gentle-pi`
   (launcher, `lib/`, `extensions/`, `docs/`) and `.../@earendil-works/pi-coding-agent/docs/`
   (`session-format.md`, `message-types.md`).
-- Structure-only inspection of the real data on the reference machine: 30 session files in the
+- Structure-only inspection of the real data on the inspected machine: 30 session files in the
   isolated home, 332 in the Pi home, plus the task ledgers. Only keys, record types, counts and
   numeric aggregates were read; no prompt, response, code, tool I/O or reasoning was retained.
   Appendix A has the numbers.
@@ -140,8 +140,8 @@ change. What is new:
 | Addition | Where | Effect on Runwire |
 |---|---|---|
 | `message.role: "system"` with `sections`, `toolsAdded`, `toolsRemoved` | messages | Today the Pi adapter counts it in `unknown-message-role`. `sections` is prompt content — never read. Metadata worth nothing per session; recognise and ignore (or a `harness` step). |
-| `usage` entry type | entries | Real spend that is not attached to an assistant message (e.g. `kind: "cache_warm"`). The Pi adapter currently reports `unknown-entry-type` and **undercounts**. Must become an extra `call` step, like Pi 0.85's `compaction.usage`/`toolResult.usage` (§5.2 of `pi.md`). Not observed on this machine. |
-| `context_edit` entry type | entries | Append-only context rewrite; `replacement` is content. Presence only. Not observed on this machine. |
+| `usage` entry type | entries | Real spend that is not attached to an assistant message (e.g. `kind: "cache_warm"`). The Pi adapter currently reports `unknown-entry-type` and **undercounts**. Must become an extra `call` step, like Pi 0.85's `compaction.usage`/`toolResult.usage` (§5.2 of `pi.md`). Not observed on the inspected machine. |
+| `context_edit` entry type | entries | Append-only context rewrite; `replacement` is content. Presence only. Not observed on the inspected machine. |
 | `assistant.durationMs`, `toolResult.durationMs` | messages | Provider/tool durations measured with a monotonic clock and **persisted**. Tool durations become direct (§4.3) instead of a timestamp delta; assistant duration has no contract column. |
 | `toolResult.nestedCalls` | tool results | Bounded metadata for calls a tool made to other tools (observed only for `codemode`). `arguments` and `error` are content; `name`/`status`/`durationMs` are metadata. |
 | `assistant.thinkingLevel` | messages | Per-response level; `effort` can use it as a fallback. |
@@ -266,7 +266,7 @@ inflating `tool_calls`.
   homes (**0 arithmetic drift**), so `input` and `cacheRead` are disjoint and the D5 mapping is
   a rename: `uncached_input = input`, `cached_input = cacheRead`, `cache_write = cacheWrite`,
   `output = output`, `reasoning_output = reasoning` (⊂ `output`).
-- `cacheWrite` was 0 everywhere on this machine (the nan/codex providers report none); the
+- `cacheWrite` was 0 everywhere on the inspected machine (the nan/codex providers report none); the
   capability must be observed on an Anthropic-backed fixture before it is trusted.
 - `cost.total` is harness-computed from Pi's pricing table. Models without a pricing entry
   (`nan/*` here) report **0** for every call — 10,516 of 14,777 in the Pi home, 617 of 1,101 in
@@ -321,7 +321,7 @@ was pruned has:
 - no `parentSessionId` → no `parentId`, no `agentType`, no `spawnCallId`, no `depth`;
 - still **full token usage**, so it must be imported as a root session, not dropped.
 
-Measured on the reference machine:
+Measured on the inspected machine:
 
 | Home | Children on disk | Ledger tasks | Linkable | Unlinked |
 |---|---|---|---|---|
@@ -353,7 +353,7 @@ subagent. The ledger is read for **linkage metadata only** (§5.1).
 
 Runwire identifies a harness by adapter id, and each adapter owns a disjoint source universe.
 That maps cleanly to shape A but not to B/C, where Gentle Shell sessions and plain-Pi sessions
-share one directory. Measured on this machine:
+share one directory. Measured on the inspected machine:
 
 Pre-implementation snapshot (2026-10-22); the previously missing stores now import as
 `gentle-shell`, while shared-home parents still import as `pi` (D88).
@@ -395,7 +395,7 @@ Fingerprinting a shared parent root is *possible* but not free:
 Decision (D88): **A implemented**, plus the upstream header marker ask. If exact re-attribution of
 existing history becomes a product requirement, evaluate **B′** (fingerprint + negative cache,
 no permanent re-read) before jumping to **C**; do not start with plain **B** and pay the
-re-read forever. (Decision recorded in Linear , 2026-10-22 challenge.)
+re-read forever. (Decision recorded 2026-10-22.)
 
 ## 7. Implemented allowlist
 
@@ -578,7 +578,7 @@ fixtures/gentle-shell/<case>/home/.gentle-shell/agent/…
 4. **Package shape** — shape 1 implemented: two factories in `packages/adapter-pi`, `src/pi/`
    and `src/gentle-shell/` (D84). No shared-format package or boundary change.
 5. **Pi 1.2 refresh** — Gentle Shell handles Pi 1.2 now. Plain Pi behaviour is preserved;
-   refreshing that adapter is separate follow-up work, not part of .
+   refreshing that adapter is separate follow-up work, not part of this adapter.
 6. **Harness order and naming** — registered as `gentle-shell` after Pi (D25/D84), display
    name “Gentle Shell”. The web intentionally uses its neutral glyph with this display label.
 7. **Unavailable signals** — `mode`, `version`, `title`, `git` stay undeclared (D87); header
@@ -593,7 +593,7 @@ fixtures/gentle-shell/<case>/home/.gentle-shell/agent/…
 
 ## Implementation validation (2026-10-22)
 
-Counts only, from the registered CLI on the live reference machine. This later snapshot does
+Counts only, from the registered CLI on the inspected machine. This later snapshot does
 not replace the historical investigation in Appendix A.
 
 | Store | Imported sessions | Resolved parent links | Agent type / positive depth | Spawn call ids |

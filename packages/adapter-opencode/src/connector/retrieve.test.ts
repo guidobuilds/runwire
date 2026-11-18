@@ -30,7 +30,6 @@ describe('inventorySessions', () => {
     for (const s of summaries) {
       const r = sessionSummarySchema.safeParse(s);
       expect(r.success).toBe(true);
-      // No content-bearing field may appear on the summary.
       expect('text' in s).toBe(false);
       expect('content' in s).toBe(false);
     }
@@ -53,7 +52,6 @@ describe('retrieveSession', () => {
     expect(details.dbOrigin).toBe('current');
     const json = JSON.stringify(details);
     expect(json.includes('RUNWIRE_CANARY_')).toBe(false);
-    // Steps are CORE Steps: no content-carrying key beyond the contract schema.
     for (const step of details.steps) {
       expect('text' in step).toBe(false);
       expect('content' in step).toBe(false);
@@ -78,6 +76,6 @@ describe('retrieveSessionParts', () => {
     }
     expect(pages.length).toBeGreaterThan(1);
     const flat = pages.flat();
-    expect(flat).toEqual([...Array(flat.length).keys()]); // seq 0..n-1 contiguous
+    expect(flat).toEqual([...Array(flat.length).keys()]);
   });
 });

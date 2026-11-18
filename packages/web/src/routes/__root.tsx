@@ -9,9 +9,6 @@ export const Route = createRootRoute({
   component: RootComponent,
 });
 
-// f6: AppSidebar/SiteHeader chrome moved here from the dashboard route so it's
-// shared app-wide (every route renders through this layout via <Outlet/>),
-// letting the sidebar highlight the active section on any page.
 function RootComponent() {
   return (
     <ThemeProvider>

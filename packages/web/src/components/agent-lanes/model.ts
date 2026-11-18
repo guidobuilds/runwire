@@ -36,7 +36,6 @@ export type LaneModelData = {
   excludedNullAtCount: number;
 };
 
-/** Caller memoizes by response identity/session revision, never by sessionId alone. */
 export function buildModel(response: LanesResponse): LaneModelData {
   const cols: LaneColumn[] = [];
   const shortTypes = response.agents.map((agent) => {

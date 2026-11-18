@@ -26,9 +26,6 @@ function renderAt(path: string) {
   return { ...view, router, history };
 }
 
-/** Captures every request to the distinct profile endpoints without
- * intercepting the response: the resolver returns `undefined`, so MSW falls
- * through to the real composed handlers, exercising the shipped views. */
 function captureProfileRequests(): URL[] {
   const requests: URL[] = [];
   for (const endpoint of ['lanes', 'signals', 'timeline', 'events'] as const) {

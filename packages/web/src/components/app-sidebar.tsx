@@ -24,12 +24,6 @@ import {
 } from '@/components/ui/sidebar';
 import { useScanMutation } from '@/queries/scan';
 
-// Runwire branding + navigation. `navClouds`/`documents` from the CLI-generated
-// dashboard-01 block had no Runwire equivalent (fictional proposal/document-library
-// nav) and were dropped rather than repurposed. f6: "Projects"/"Harnesses" are
-// inert placeholders (no views yet); user-account chrome removed entirely (local-
-// only app, no accounts). "Scan" is the one sidebar action: it opens a confirmation
-// overlay rather than navigating.
 const data = {
   navMain: [
     {
@@ -60,11 +54,6 @@ const data = {
   ],
 };
 
-/**
- * Confirmation overlay for the web-triggered scan. Kept intentionally minimal and
- * inline: it must show the scan's progress (the request is synchronous) and leave
- * a clear escape hatch while it runs.
- */
 function ScanConfirmDialog({
   open,
   isPending,
@@ -130,7 +119,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       title: 'Scan',
       icon: <ScanSearchIcon />,
       onClick: () => {
-        // Clear any error from a previous attempt before reopening.
         scan.reset();
         setScanOpen(true);
       },
@@ -157,6 +145,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             >
               <RunwireMark className="size-5 shrink-0" />
               <span className="text-base font-semibold tracking-tight">runwire</span>
+              <span
+                className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 font-medium text-[10px] text-amber-700 uppercase tracking-wide dark:text-amber-400"
+                title="Runwire is early beta: interfaces and data may change"
+              >
+                beta
+              </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

@@ -13,12 +13,6 @@ type StepRow = {
   compaction_trigger: string | null;
 };
 
-/**
- * Metadata-only signals reader: waste-pattern counts (compactions, model
- * changes, MCP/skill tool calls) aggregated over the scope's `steps`, not
- * `session_tool_counts` — sharing the same code path as every other profile
- * reader instead of a second, adapter-populated aggregate that could drift.
- */
 export function readProfileSignals(
   db: Database,
   sessionId: string,

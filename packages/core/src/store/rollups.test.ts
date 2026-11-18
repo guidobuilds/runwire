@@ -85,7 +85,6 @@ describe('recomputeRollups', () => {
   test('a 3-level tree plus a sibling sums every level inclusively', () => {
     const { db } = openStore(':memory:');
     seed(db);
-    // R -> A -> C (grandchild); R -> B (sibling of A). descendants(R) = {A, B, C} = 3.
     insertSession(db, 'fake:R', {
       uncachedInput: 10,
       cachedInput: 2,
@@ -134,7 +133,7 @@ describe('recomputeRollups', () => {
     expect(root?.descendants).toBe(3);
 
     const a = rollupOf(db, 'fake:A');
-    expect(a?.output).toBe(800); // A(300) + C(500)
+    expect(a?.output).toBe(800);
     expect(a?.descendants).toBe(1);
 
     const b = rollupOf(db, 'fake:B');
@@ -170,7 +169,6 @@ describe('recomputeRollups', () => {
 
     const x = rollupOf(db, 'fake:X');
     const y = rollupOf(db, 'fake:Y');
-    // Each node's own tree walk includes both cycle members exactly once.
     expect(x?.output).toBe(30);
     expect(x?.descendants).toBe(1);
     expect(y?.output).toBe(30);

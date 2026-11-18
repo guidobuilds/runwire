@@ -1,6 +1,6 @@
 # Command reference
 
-The three commands of the `runwire` CLI. Definitions of the stored fields: [what-runwire-knows.md](what-runwire-knows.md) and [ARCHITECTURE.md §5](../ARCHITECTURE.md#5-sqlite-schema).
+The commands of the `runwire` CLI. Definitions of the stored fields: [what-runwire-knows.md](what-runwire-knows.md) and [ARCHITECTURE.md §5](../ARCHITECTURE.md#5-sqlite-schema).
 
 ## `runwire import`
 
@@ -12,7 +12,7 @@ Runs adapters and stores their sessions. Reads harness data; writes only to the 
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `--adapter <id>` | all registered adapters | Restrict to one adapter. Valid ids: `claude-code`, `opencode`. Unknown ids fail with exit `1`. |
+| `--adapter <id>` | all registered adapters | Restrict to one adapter. Valid ids: `claude-code`, `opencode`, `pi`, `gentle-shell`. Unknown ids fail with exit `1`. |
 | `--home <dir>` | real OS home | Where adapters look for harness data. |
 | `--db <path>` | `~/.runwire/runwire.db` | Database location. `--db :memory:` imports into RAM. |
 | `--no-titles` | off | Do not store harness-generated session titles. |

@@ -32,7 +32,6 @@ describe('migrate(): source_id/source_locator columns, backfill and UNIQUE index
       `INSERT INTO sessions (id, harness_id, project_key, depth, source_path, source_size, source_mtime)
        VALUES ('fake:s1', 'fake', NULL, 0, '/fake/s1.jsonl', 10, 1)`,
     );
-    // Simulate a pre-migration row by NULLing the new columns.
     db.run('UPDATE sessions SET source_id = NULL, source_locator = NULL');
 
     migrate(db);
@@ -97,7 +96,6 @@ describe('migrate(): MCP identity columns', () => {
   test('an existing canonical DB without the columns gains them additively (no rebuild)', () => {
     const db = new Database(':memory:');
     migrate(db);
-    // Simulate a DB created before the MCP-identity columns existed.
     db.exec('ALTER TABLE steps DROP COLUMN mcp_server');
     db.exec('ALTER TABLE steps DROP COLUMN mcp_tool');
     db.run(
@@ -115,7 +113,6 @@ describe('migrate(): MCP identity columns', () => {
 
     expect(columns(db, 'steps')).toContain('mcp_server');
     expect(columns(db, 'steps')).toContain('mcp_tool');
-    // The pre-existing row survives with NULL identity (nothing was fabricated).
     expect(db.query('SELECT session_id, seq, mcp_server, mcp_tool FROM steps').all()).toEqual([
       { session_id: 'fake:s1', seq: 0, mcp_server: null, mcp_tool: null },
     ]);
@@ -129,7 +126,6 @@ describe('migrate(): MCP identity columns', () => {
     const cols = columns(db, 'steps');
     expect(cols).toContain('mcp_server');
     expect(cols).toContain('mcp_tool');
-    // Every row survived the rebuild with a NULL identity.
     expect((db.query('SELECT COUNT(*) AS n FROM steps').get() as { n: number }).n).toBe(8);
     expect(
       (
@@ -142,7 +138,6 @@ describe('migrate(): MCP identity columns', () => {
     ).toBe(8);
     expect(db.query('PRAGMA foreign_key_check').all()).toEqual([]);
 
-    // Idempotent: a second migrate() changes nothing.
     const before = snapshot(db);
     migrate(db);
     expect(snapshot(db)).toBe(before);
@@ -185,13 +180,11 @@ describe('migrate(): imported_version completion marker (D82)', () => {
     migrate(db);
 
     expect(columns(db, 'harnesses')).toContain('imported_version');
-    // A NULL marker is what forces the one bounded historical refresh.
     expect(db.query("SELECT imported_version FROM harnesses WHERE id = 'fake'").get()).toEqual({
       imported_version: null,
     });
     expect(db.query('PRAGMA foreign_key_check').all()).toEqual([]);
 
-    // Idempotent: a second migrate() leaves the shape and data unchanged.
     const before = snapshot(db);
     const harnessColumns = columns(db, 'harnesses');
     migrate(db);
@@ -212,9 +205,6 @@ describe('migrate(): imported_version completion marker (D82)', () => {
   });
 });
 
-// The pre-normalization shape: `sessions.model_primary` and `steps.model` are
-// raw text, `models` does not exist, and the source-identity columns are
-// absent (they were added by ensureColumn, so the rebuild must re-add them).
 const LEGACY_MODEL_DDL = `
 CREATE TABLE harnesses (
   id TEXT PRIMARY KEY,
@@ -298,7 +288,6 @@ CREATE TABLE steps (
 );
 `;
 
-/** A legacy-shaped DB with model text columns (and NULL-model rows) pre-seeded. */
 function seedLegacyModelDb(): Database {
   const db = new Database(':memory:');
   db.exec(LEGACY_MODEL_DDL);
@@ -359,11 +348,8 @@ describe('migrate(): models provider identity', () => {
       [null, 'claude-opus-5-5'],
       [null, 'gpt-6.1-sol'],
     ]);
-    // The legacy inline UNIQUE(name) is gone: the same name from two providers is legal.
     db.run("INSERT INTO models (provider, name) VALUES ('openai', 'gpt-6.1-sol')");
-    // NULL-provider names still dedup among themselves.
     expect(() => db.run("INSERT INTO models (name) VALUES ('claude-opus-5-5')")).toThrow();
-    // Non-NULL (provider, name) pairs dedup too.
     expect(() =>
       db.run("INSERT INTO models (provider, name) VALUES ('openai', 'gpt-6.1-sol')"),
     ).toThrow();
@@ -407,8 +393,6 @@ describe('migrate(): models table + model-identity rebuild', () => {
         .map((r) => r.name)
         .includes('models'),
     ).toBe(true);
-    // Identity is (provider, name): same name from two providers is legal; the
-    // same (provider, name) pair is not; NULL-provider names dedup by name.
     db.run("INSERT INTO models (provider, name) VALUES ('openai', 'x')");
     expect(() =>
       db.run("INSERT INTO models (provider, name) VALUES ('openai-codex', 'x')"),
@@ -432,19 +416,15 @@ describe('migrate(): models table + model-identity rebuild', () => {
     expect(columns(db, 'sessions')).toContain('model_primary_id');
     expect(columns(db, 'sessions')).not.toContain('model_primary');
 
-    // Every pre-existing row survives row-for-row.
     expect((db.query('SELECT COUNT(*) AS n FROM sessions').get() as { n: number }).n).toBe(4);
     expect((db.query('SELECT COUNT(*) AS n FROM steps').get() as { n: number }).n).toBe(8);
 
-    // Each distinct raw string lands in `models` exactly once, written as-is
-    // (including the reserved 'unknown'/'other' literals).
     expect(
       (db.query('SELECT name FROM models ORDER BY name').all() as { name: string }[]).map(
         (r) => r.name,
       ),
     ).toEqual(['claude-sonnet-4', 'gpt-5', 'other', 'unknown']);
 
-    // Ids resolve by exact string match; NULL stays NULL.
     expect(
       db
         .query(
@@ -479,8 +459,6 @@ describe('migrate(): models table + model-identity rebuild', () => {
       { sid: 's3', seq: 1, kind: 'call', model: 'other', output: 1 },
     ]);
 
-    // Non-model columns copy verbatim (and the source identity is preserved
-    // through the ensureColumn backfill before the rebuild).
     expect(db.query('SELECT * FROM sessions WHERE id = ?').get('s1')).toMatchObject({
       started_at: '2026-01-01T00:00:00Z',
       output: 100,
@@ -497,8 +475,6 @@ describe('migrate(): models table + model-identity rebuild', () => {
   test('a sessions-only rebuild (already-canonical steps) resolves names and leaves steps untouched', () => {
     const db = new Database(':memory:');
     migrate(db);
-    // Simulate the intermediate shape: `steps` already normalized, `sessions`
-    // still text-keyed.
     db.exec('PRAGMA foreign_keys = OFF');
     db.exec('DROP TABLE sessions');
     db.exec(
@@ -591,15 +567,12 @@ describe('migrate(): models table + model-identity rebuild', () => {
       (db.query("SELECT COUNT(*) AS n FROM steps WHERE session_id = 's1'").get() as { n: number })
         .n,
     ).toBe(0);
-    // 8 seeded steps minus s1's four.
     expect((db.query('SELECT COUNT(*) AS n FROM steps').get() as { n: number }).n).toBe(4);
     db.close();
   });
 
   test('a rebuild that would leave an FK violation throws instead of committing silently', () => {
     const db = seedLegacyModelDb();
-    // A dangling harness reference survives the copy (foreign_keys is OFF) but
-    // must be caught by the post-rebuild `foreign_key_check`.
     db.exec('DELETE FROM harnesses');
     expect(() => migrate(db)).toThrow(/foreign-key violation/);
     db.close();

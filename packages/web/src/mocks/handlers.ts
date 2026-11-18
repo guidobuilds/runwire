@@ -78,10 +78,6 @@ export const mockPagedSessions: PagedSessions = {
   offset: 0,
 };
 
-/** A second root session, used only by dashboard-composition tests (f4) that
- * need more than one row to exercise aggregate metrics/columns meaningfully.
- * Kept separate from `mockPagedSessions` so f3's exact-shape contract tests
- * (which assert on the single-item list) are unaffected. */
 export const mockSessionSummary2: ApiSessionSummary = {
   ...mockSessionSummary,
   id: 'sess-2',
@@ -105,8 +101,6 @@ export const mockPagedSessionsMulti: PagedSessions = {
   offset: 0,
 };
 
-/** Full-filtered-set aggregates matching `mockPagedSessions` (1 root). The
- * dashboard cards/chart read this instead of computing from the page. */
 export const mockSessionsStats: ApiSessionsStats = {
   totalSessions: 1,
   totalCostUsd: 0.42,
@@ -115,8 +109,6 @@ export const mockSessionsStats: ApiSessionsStats = {
   series: [{ date: '2026-09-01', sessions: 1 }],
 };
 
-/** Aggregates matching `mockPagedSessionsMulti` (2 roots) — the fixture the
- * dashboard-composition tests assert exact card values against. */
 export const mockSessionsStatsMulti: ApiSessionsStats = {
   totalSessions: 2,
   totalCostUsd: 0.6,
@@ -138,8 +130,6 @@ export const mockHarnessOptions: ApiHarnessOption[] = [
   { id: 'claude-code', displayName: 'Claude Code' },
 ];
 
-/** A shaped `ImportReport` for `POST /api/scan`, with per-adapter entries so
- * consumers can rely on the map being present. */
 export const mockImportReport: ImportReport = {
   perAdapter: {
     'claude-code': { discovered: 3, imported: 2, skipped: 1, removed: 0, failed: 0 },
@@ -150,8 +140,6 @@ export const mockImportReport: ImportReport = {
 
 export const handlers = [
   http.get('/api/sessions', () => HttpResponse.json(mockPagedSessions)),
-  // Registered before `/api/sessions/:id` so the literal `stats` path is not
-  // swallowed as an `id` by the param route.
   http.get('/api/sessions/stats', () => HttpResponse.json(mockSessionsStats)),
   http.get('/api/harnesses', () => HttpResponse.json(mockHarnessOptions)),
   http.post('/api/scan', () => HttpResponse.json(mockImportReport)),

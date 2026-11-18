@@ -5,12 +5,10 @@ export interface SqliteReader {
   close(): void;
 }
 
-/** Read-only filesystem/DB abstraction adapters use instead of node:fs directly. */
 export interface RunwireFs {
   stat(path: string): Promise<FsStat | undefined>;
   readdir(path: string): Promise<string[]>;
   readFile(path: string): Promise<string | undefined>;
-  /** Raw byte stream; adapter/lines.ts wraps this with size-guard and truncation detection. */
   openStream(path: string): ReadableStream<Uint8Array>;
   openSqliteReadonly(path: string): SqliteReader;
 }
@@ -22,7 +20,6 @@ export interface Logger {
 }
 
 export type AdapterContext = {
-  /** User home; overridable for tests and `--home`. */
   home: string;
   platform: NodeJS.Platform;
   env: Record<string, string | undefined>;

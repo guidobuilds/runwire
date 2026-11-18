@@ -25,16 +25,11 @@ const EXACT: Record<string, ToolCategory> = {
   Skill: 'skill',
 };
 
-/** docs/adapters/claude-code.md "Tool categories". Total: unknown names fall back to 'other'. */
 export function claudeCodeToolCategory(name: string): ToolCategory {
   if (name.startsWith('mcp__')) return 'mcp';
   return EXACT[name] ?? 'other';
 }
 
-/**
- * hook:<hookEvent> only (the tool name after the colon is dropped so the
- * vocabulary stays finite), plus the fixed non-hook event names.
- */
 export const CLAUDE_CODE_HOOK_EVENTS = [
   'PreToolUse',
   'PostToolUse',

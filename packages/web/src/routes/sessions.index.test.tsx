@@ -17,14 +17,7 @@ import {
 import { server } from '@/mocks/node';
 import { routeTree } from '@/routeTree.gen';
 
-// f6: moved from index.test.tsx (renamed alongside the dashboard's move from
-// routes/index.tsx to routes/sessions.index.tsx) -- the dashboard now lives at
-// /sessions, not /. index.test.tsx (new, minimal) covers the / -> /sessions
-// redirect separately.
-
 beforeEach(() => {
-  // The harness filter dropdown renders from GET /api/harnesses (shared default
-  // handler, pinned here so these route tests are explicit about the dependency).
   server.use(http.get('/api/harnesses', () => HttpResponse.json(mockHarnessOptions)));
 });
 
@@ -41,8 +34,6 @@ function renderDashboard() {
   return { ...result, router };
 }
 
-/** The toolbar dropdown trigger for `name` (as opposed to the same-named
- * sortable column header button). */
 function toolbarMenuTrigger(name: RegExp): HTMLElement {
   const trigger = screen
     .getAllByRole('button', { name })
@@ -60,12 +51,8 @@ describe('/sessions route (sessions dashboard)', () => {
 
     renderDashboard();
 
-    // A real mocked session's name appears (from the DataTable's name column).
     expect(await screen.findByText(mockSessionSummary2.name)).toBeInTheDocument();
 
-    // "Total Sessions" card reflects the mocked stats fixture's total (2). Scoped
-    // to the card itself so the assertion cannot accidentally match the same
-    // figure elsewhere on the page (e.g. the table's "0 of 2 row(s) selected").
     const totalSessionsLabel = await screen.findByText('Total Sessions');
     const card = totalSessionsLabel.closest('[data-slot="card"]') as HTMLElement | null;
     expect(card).not.toBeNull();
@@ -73,12 +60,6 @@ describe('/sessions route (sessions dashboard)', () => {
       within(card as HTMLElement).getByText(String(mockSessionsStatsMulti.totalSessions)),
     ).toBeInTheDocument();
 
-    // The other three cards' values, against the known stats fixture
-    // (totalCostUsd = 0.60, totalTokens = 4900 -> "4.9K",
-    // avgDurationMs = 1_350_000 -> "22m 30s"). A regression in any of these
-    // formulas would previously ship silently green (see f4 verify finding
-    // #3/#6): total_cost mutated to only the first session's value still passed
-    // all tests, since nothing asserted an exact figure here.
     const totalCostLabel = await screen.findByText('Total Cost');
     const totalCostCard = totalCostLabel.closest('[data-slot="card"]') as HTMLElement | null;
     expect(totalCostCard).not.toBeNull();
@@ -106,15 +87,11 @@ describe('/sessions route (sessions dashboard)', () => {
     await screen.findByText(mockSessionSummary2.name);
     expect(screen.getByRole('columnheader', { name: 'Direct' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Full tree' })).toBeInTheDocument();
-    // mockSessionSummary carries 4 direct / 11 full-tree subagents; the DTO
-    // values must reach the visible cells.
     expect(screen.getByText('4')).toBeInTheDocument();
     expect(screen.getByText('11')).toBeInTheDocument();
   });
 
   it('shows a loading state before sessions resolve', async () => {
-    // Hold the request pending indefinitely so the loading state is
-    // deterministic instead of racing the mocked fetch's own resolution.
     server.use(
       http.get('/api/sessions', async () => {
         await delay('infinite');
@@ -170,9 +147,6 @@ describe('shared sidebar chrome (f6)', () => {
   });
 });
 
-// The table's filters/sort/pagination are client-only state: typing debounces
-// to a single request, discrete controls commit immediately, and nothing ever
-// navigates or writes search params.
 describe('/sessions table state (URL-free)', () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -199,12 +173,10 @@ describe('/sessions table state (URL-free)', () => {
       fireEvent.change(input, { target: { value: 'auth' } });
     });
 
-    // Keystrokes alone must not fetch.
     expect(sessionsRequests).toBe(1);
 
     act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
     await vi.waitFor(() => expect(sessionsRequests).toBe(2));
-    // Exactly one commit -- not one request per keystroke.
     expect(sessionsRequests).toBe(2);
 
     expect(router.state.location.pathname).toBe('/sessions');
@@ -235,8 +207,6 @@ describe('/sessions table state (URL-free)', () => {
   it('issues exactly one offset=0 request when a filter changes from page 2', async () => {
     const user = userEvent.setup();
     const requests: string[] = [];
-    // total 50 so the footer's "next page" control is enabled; the default page
-    // size is 10, making page 2 (pageIndex 1) offset=10.
     const bigPage: PagedSessions = {
       items: Array.from({ length: 10 }, (_, index) => ({
         ...mockSessionSummary,
@@ -258,13 +228,10 @@ describe('/sessions table state (URL-free)', () => {
     renderDashboard();
     await screen.findByText('Session 0');
 
-    // Navigate to page 2 first: the second request is the offset=10 page.
     await user.click(screen.getByRole('button', { name: /go to next page/i }));
     await waitFor(() => expect(requests.length).toBe(2));
     expect(requests[1]).toContain('offset=10');
 
-    // A filter commit from page 2 must reset to page 0 in the SAME render, so
-    // exactly one request is issued — no intermediate old-offset request.
     const before = requests.length;
     await user.click(toolbarMenuTrigger(/Duration/));
     await user.click(await screen.findByRole('menuitemradio', { name: '≥ 30m' }));
@@ -306,8 +273,6 @@ describe('/sessions table state (URL-free)', () => {
 
     fireEvent.change(screen.getByLabelText('Search sessions'), { target: { value: 'auth' } });
 
-    // Wait past the debounce so the filtered request is in flight, then assert
-    // the anti-flash contract: old rows stay, no page-level loading returns.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, SEARCH_DEBOUNCE_MS + 50));
     });
@@ -333,8 +298,6 @@ describe('/sessions table state (URL-free)', () => {
   });
 });
 
-// The cards/chart are driven by GET /api/sessions/stats over the FULL filtered
-// set: page size/page number must not change them, filter changes must.
 describe('/sessions cards+chart stats wiring', () => {
   it('renders full-set stats and does not refetch them on a page change', async () => {
     const user = userEvent.setup();
@@ -365,8 +328,6 @@ describe('/sessions cards+chart stats wiring', () => {
     renderDashboard();
     await screen.findByText('Session 0');
 
-    // The Total Sessions card shows the full filtered set (50), not the 10 rows
-    // on the current page.
     const label = await screen.findByText('Total Sessions');
     const card = label.closest('[data-slot="card"]') as HTMLElement | null;
     expect(card).not.toBeNull();
@@ -374,8 +335,6 @@ describe('/sessions cards+chart stats wiring', () => {
 
     expect(statsSearches).toHaveLength(1);
 
-    // Page 2 changes only the list query; the stats query has no pagination and
-    // must stay untouched.
     await user.click(screen.getByRole('button', { name: /go to next page/i }));
     await waitFor(() => expect(sessionsRequests).toBe(2));
     expect(statsSearches).toHaveLength(1);
@@ -407,8 +366,6 @@ describe('/sessions cards+chart stats wiring', () => {
     await waitFor(() => expect(statsSearches.length).toBeGreaterThan(1));
     expect(statsSearches.at(-1)).toContain('durationMin=30');
 
-    // The card reflects the newly-returned full-set total (1), proving the UI
-    // consumed the refetched stats rather than only issuing a request.
     await waitFor(() => {
       const label = screen.getByText('Total Sessions');
       const card = label.closest('[data-slot="card"]') as HTMLElement;

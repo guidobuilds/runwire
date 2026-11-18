@@ -1,9 +1,3 @@
-// Paths built here are handed to RunwireFs (createBunFs or createMemoryFs), not
-// used as opaque OS file paths directly — createMemoryFs's virtual layout is
-// always '/'-joined regardless of host OS, and a real filesystem on Windows
-// accepts '/' as a path separator just as readily as '\', so path.posix.join
-// keeps both backends correct on every platform. (Same convention as the
-// Claude Code adapter's paths.ts.)
 import { join } from 'node:path/posix';
 import type { AdapterContext, SqliteReader } from '@runwire/core';
 
@@ -21,30 +15,16 @@ export function opencodeDbPath(ctx: AdapterContext, origin: DbOrigin): string {
     : join(opencodeDataDir(ctx), 'opencode-tui-v2.db');
 }
 
-/**
- * Opaque, stable, namespaced identity (design §2.1): `opencode:<origin>:<id>`.
- * Not a filesystem path. `opencode:current:ses_x` and `opencode:legacy:ses_x`
- * are distinct even if the same session id ever appeared in both stores.
- */
 export function sourceIdFor(origin: DbOrigin, id: string): string {
   return `opencode:${origin}:${id}`;
 }
 
-/** The physical DB file path (the `sourceLocator`). Many sessions share one. */
 export function sourceLocatorFor(ctx: AdapterContext, origin: DbOrigin): string {
   return opencodeDbPath(ctx, origin);
 }
 
 export type DbKind = 'current' | 'legacy' | 'not-opencode' | 'unreadable';
 
-/**
- * Schema/version discriminator: `PRAGMA user_version` is 0 for both stores, so
- * table presence in `sqlite_master` decides. `session_v2` present -> current;
- * `session` present and no `session_v2` -> legacy; a readable DB with neither
- * -> not-opencode. Never throws: a missing DB file (stat undefined) returns
- * 'not-opencode'; a present file whose `openSqliteReadonly` or `sqlite_master`
- * query throws returns 'unreadable' (fatal for the caller).
- */
 export async function detectDbKind(ctx: AdapterContext, origin: DbOrigin): Promise<DbKind> {
   const path = opencodeDbPath(ctx, origin);
   const stat = await ctx.fs.stat(path);
@@ -66,13 +46,11 @@ export async function detectDbKind(ctx: AdapterContext, origin: DbOrigin): Promi
   }
 }
 
-/** Parses the origin out of an `opencode:<origin>:<id>` sourceId. */
 export function parseOriginFromSourceId(sourceId: string): DbOrigin | undefined {
   const m = /^opencode:(current|legacy):/.exec(sourceId);
   return m ? (m[1] as DbOrigin) : undefined;
 }
 
-/** Parses the harness session id out of an `opencode:<origin>:<id>` sourceId. */
 export function parseIdFromSourceId(sourceId: string): string | undefined {
   const m = /^opencode:(?:current|legacy):(.*)$/.exec(sourceId);
   return m ? m[1] : undefined;

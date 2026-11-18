@@ -59,11 +59,11 @@ describe('readLines', () => {
   });
 
   test('decodes multi-byte UTF-8 characters split across chunk boundaries', async () => {
-    const text = 'café\n'; // "café\n"
+    const text = 'café\n';
     const bytes = new TextEncoder().encode(text);
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
-        controller.enqueue(bytes.slice(0, 4)); // splits the 2-byte é
+        controller.enqueue(bytes.slice(0, 4));
         controller.enqueue(bytes.slice(4));
         controller.close();
       },

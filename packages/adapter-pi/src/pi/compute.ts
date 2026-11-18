@@ -20,29 +20,18 @@ export type ComputeSource = { path: string; sizeBytes: number; mtimeMs: number }
 export type ResolveProjectFn = (cwd: string) => Promise<Project>;
 
 export type ComputeBundleInput = {
-  /** Full contract session id, `pi:<uuid from filename>`. */
   sessionId: string;
   source: ComputeSource;
   records: ReadonlyArray<{ record: PiRecord; line: number }>;
-  /** Diagnostics already accumulated while reading the source (records.ts). */
   recordDiagnostics: readonly Diagnostic[];
   resolveProject: ResolveProjectFn;
-  /** decodeProjectDirname(...) - used only when the header carries no cwd. */
   fallbackCwd?: string;
-  /** The uuid in the filename, used only for the session-id-mismatch check. */
   headerUuid: string;
-  /** Harness id for `session.harnessId` and the fork prefix; defaults to `pi`. */
   harnessId?: string;
   subagent?: { parentId: string; agentType: string; spawnCallId?: string; depth: number };
   initiator?: { kind: 'human' | 'machine'; surface?: string; automation?: string };
   toolCategory?: (name: string) => ToolCategory;
   pi12?: boolean;
-  /**
-   * Uuids of the sessions the caller is importing. Gentle Shell passes these so
-   * a Pi 1.5.0 `parentSession` header only becomes a fork link when its basename
-   * names an imported session; Pi omits them and keeps linking unconditionally
-   * (pi.md §5.3: a deleted parent file must not orphan the fork).
-   */
   knownSessionUuids?: ReadonlySet<string>;
   ctx: AdapterContext;
 };
@@ -93,7 +82,6 @@ function pickPrimaryModel(
   return pickMostFrequent(order, counts);
 }
 
-/** Entry `type` -> the finite `harness` step toolName vocabulary (pi.md §3.3). */
 const HARNESS_STEP_NAME: Record<string, string> = {
   label: 'label',
   session_info: 'session-info',
@@ -101,13 +89,6 @@ const HARNESS_STEP_NAME: Record<string, string> = {
   custom_message: 'custom-message',
 };
 
-/**
- * Folds a whole Pi source's records into a `SessionBundle` (docs/adapters/pi.md
- * §3.2/§3.3 + §5.1-§5.4). Steps are emitted in file/append order (linearization
- * option (a)): every billed API call counts, abandoned branches are spend, and
- * the active-path view stays derivable later from `parentId`. Session token
- * totals are computed as Σ over `call` steps, never copied from a Pi aggregate.
- */
 export async function computeBundle(input: ComputeBundleInput): Promise<SessionBundle> {
   const { sessionId, source, records, recordDiagnostics, resolveProject, fallbackCwd, headerUuid } =
     input;
@@ -115,7 +96,6 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
 
   const diagnostics: Diagnostic[] = [...recordDiagnostics];
 
-  // --- pre-pass: file-wide facts ---
   const header = records.find((p) => p.record.type === 'session')?.record;
   const headerCwd = header?.cwd && header.cwd.length > 0 ? header.cwd : undefined;
 
@@ -139,9 +119,6 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
   }
 
   const sawFirstKeptEntryIndex = records.some((p) => p.record.firstKeptEntryIndex !== undefined);
-  // pi.md §8: legacy when the header is absent, the version is absent, any
-  // entry carries firstKeptEntryIndex, or the entries are v1-shaped (none of
-  // them carries an id/parentId at all).
   const entries = records.filter((p) => p.record.type !== 'session');
   const entriesLackIds = entries.length > 0 && entries.every((p) => p.record.id === undefined);
   const legacy =
@@ -167,19 +144,13 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
       ),
     );
   } else if (!cwd && !fallbackCwd) {
-    // Gentle Shell children live in a flat directory (gentle-shell.md §2), so
-    // there is no dirname fallback; an absent header cwd stays unknown. Pi
-    // always has the dirname fallback, so this never fires for Pi.
     diagnostics.push(
       makeDiagnostic('info', 'missing-cwd', 'No cwd observed and no dirname fallback'),
     );
   }
 
-  // Pi 1.5.0 headers may carry `parentSession` (fork/clone). The parent is
-  // referenced by its file path, so only the basename carries the uuid.
   const forkSource = header?.parentSession;
   const forkUuid = forkSource ? sessionIdFromRootFile(basename(forkSource)) : undefined;
-  // Absent `knownSessionUuids` (the Pi adapter) keeps the unconditional link.
   const knownUuids = input.knownSessionUuids;
   const forkResolved =
     forkUuid !== undefined && (knownUuids === undefined || knownUuids.has(forkUuid));
@@ -191,7 +162,6 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
   const forkedFrom =
     forkResolved && forkUuid !== undefined ? `${HARNESS_ID}:${forkUuid}` : undefined;
   if (forkSource && !forkResolved) {
-    // Diagnostics carry counts only, never the referenced path.
     diagnostics.push(
       makeDiagnostic(
         'info',
@@ -206,7 +176,6 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
     ? await resolveProject(cwd)
     : { key: sessionId, name: sessionId, identity: 'cwd' };
 
-  // --- main pass ---
   const steps: Step[] = [];
   let seq = 0;
 
@@ -225,9 +194,6 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
   const modelOrder: string[] = [];
   const modelCounts = new Map<string, number>();
   const modelOutputByName = new Map<string, number>();
-  // First provider observed per model name: feeds modelPrimaryProvider.
-  // A session running one model name through two providers is not something the
-  // harnesses do in practice; first-seen wins deterministically.
   const modelProviderByName = new Map<string, string>();
   const modelTargetsSeen = new Set<string>();
   const declaredModelTargets = new Set<string>();
@@ -285,7 +251,6 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
     }
   }
 
-  /** Extra-context calls have no model unless the entry explicitly supplies one. */
   function pushExtraCall(
     at: string | undefined,
     usage: NonNullable<PiRecord['usage']>,
@@ -319,7 +284,7 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
 
     switch (record.type) {
       case 'session':
-        break; // header: timestamps + project + fork link only
+        break;
 
       case 'message': {
         const message = record.message;
@@ -445,7 +410,7 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
           turnCount++;
           break;
         }
-        break; // bashExecution/custom/branchSummary/compactionSummary: no step
+        break;
       }
 
       case 'usage': {
@@ -515,7 +480,7 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
           declaredModelTargets.add(record.modelId);
           if (!hasModeledCall) lastModel = record.modelId;
         }
-        break; // no step
+        break;
       }
 
       case 'label':
@@ -536,15 +501,10 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
       }
 
       default:
-        break; // unknown entry type contributes nothing (records.ts already diagnosed it)
+        break;
     }
   }
 
-  // --- tree accounting (pi.md §5.1) ---
-  // Only entry records are tree nodes. Real Pi writes the `session` header with
-  // an `id` (the session uuid) that no entry ever references, so counting it
-  // made every linear session look branched (B-1). Entries without ids (v1
-  // files) leave this vacuous, which emits no tree diagnostic.
   const ids = new Set<string>();
   const referencedParents = new Set<string>();
   let roots = 0;
@@ -570,7 +530,6 @@ export async function computeBundle(input: ComputeBundleInput): Promise<SessionB
     );
   }
 
-  // --- aggregated diagnostics ---
   if (nestedToolCallCount > 0) {
     diagnostics.push(
       makeDiagnostic(

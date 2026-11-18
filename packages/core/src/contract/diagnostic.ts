@@ -2,13 +2,6 @@ import type { Diagnostic, DiagnosticLevel } from './types';
 
 const MAX_MESSAGE_LENGTH = 200;
 
-/**
- * The only way to build a contract Diagnostic. Rejects long or multi-line
- * messages so a raw record dump can never slip through as a "diagnostic
- * message" (docs/ARCHITECTURE.md §7). Unlike the legacy `../model/diagnostic`
- * version, the contract Diagnostic carries no `harness`/`path` (ARCHITECTURE
- * §3) - those live on the owning session row instead.
- */
 export function makeDiagnostic(
   level: DiagnosticLevel,
   code: string,

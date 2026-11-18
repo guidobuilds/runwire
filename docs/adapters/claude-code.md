@@ -2,7 +2,7 @@
 
 Status: implements the 2026-09-04 contract (D68–D74), `adapterVersion: '2.1.0'`. `discover(ctx, known)` computes every `SessionBundle` field itself (records.ts + compute.ts + project.ts); core only validates, persists, links and rolls up.
 
-Based on structure-only inspection of CLI versions 2.1.22x–2.1.251 on macOS (2026-08-29). Validated on the reference machine (2026-08-30): 731 sources (367 root, 364 subagent), zero parse failures, cold scan 1.3 s / warm rescan 22 ms. Fields marked *(newer)* were only seen in the latest versions.
+Based on structure-only inspection of CLI versions 2.1.22x–2.1.251 on macOS (2026-08-29). Validated on the inspected machine (2026-08-30): 731 sources (367 root, 364 subagent), zero parse failures, cold scan 1.3 s / warm rescan 22 ms. Fields marked *(newer)* were only seen in the latest versions.
 
 ## Location and layout
 
@@ -134,7 +134,7 @@ Explicitly excluded: `message.content[].text|thinking|content` (content) and the
 - Marker on a non-machine verdict → `machine`, surface kept, `subagent-dispatch`. A machine `entrypoint` is never overridden.
 - `promptSource` is not an input: its `sdk` value is emitted by both SDK sessions and the `claude-desktop` surface.
 
-Measured (reference machine, 2026-09-01): 383 roots → 318 `machine` (308 by `entrypoint`, 10 by marker alone), 64 `human`/`cli`, 1 `human`/`claude-desktop`. Machine-started sessions are ~83 % of rows but ~2–3 % of token mass; this is row-count cleanup, not a cost view.
+Measured (inspected machine, 2026-09-01): 383 roots → 318 `machine` (308 by `entrypoint`, 10 by marker alone), 64 `human`/`cli`, 1 `human`/`claude-desktop`. Machine-started sessions are ~83 % of rows but ~2–3 % of token mass; this is row-count cleanup, not a cost view.
 
 ## Tool categories
 
@@ -187,7 +187,7 @@ Harness event vocabulary (`claudeCodeHarnessEventNames`): `hook:<hookEvent>` (th
 
 ## Fixtures
 
-Generated from real sessions on the reference machine via `runwire fixture` (the dev-only redactor), except `malformed/` and `canary/`, which are hand-written. `all/` is a generated union of the others, used only so the contract test kit's capability-consistency check sees the full repertoire in one `discover()` view.
+Generated from real sessions on the inspected machine via `runwire fixture` (the dev-only redactor), except `malformed/` and `canary/`, which are hand-written. `all/` is a generated union of the others, used only so the contract test kit's capability-consistency check sees the full repertoire in one `discover()` view.
 
 Every case except `all/` has a committed `expected.json` snapshot (`packages/adapter-claude-code/src/expected.test.ts`): `{ sessions (sorted by id, sourcePath relative to home, sourceMtime omitted), stepCounts, toolCounts, diagnostics }`, compared with `toEqual` and rewritten with `UPDATE_EXPECTED=1 bun test packages/adapter-claude-code`.
 

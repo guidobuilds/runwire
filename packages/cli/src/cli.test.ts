@@ -8,20 +8,9 @@ import type { HarnessAdapter, SessionBundle } from '@runwire/core';
 import { SessionBundleSchema } from '@runwire/core';
 import { runDiscover } from './commands/discover';
 
-// Never 'bun' from PATH (Windows lookup, PATH-dependence) and never
-// process.cwd() (depends on the caller's shell) - process.execPath is the
-// PATH-independent spawn target, cwd is resolved from import.meta.dir so the
-// script path 'packages/cli/src/index.ts' always resolves the same way
-// regardless of where `bun test` was invoked from.
 const REPO_ROOT = resolve(import.meta.dir, '../../..');
 const CLI_SCRIPT = 'packages/cli/src/index.ts';
 
-/**
- * Adapter home overrides leak from live agent sessions (this suite itself may
- * run inside Pi or Gentle Shell) and would make discovery scan the real home
- * instead of the fixtures. Every harness-root env var the adapters honor must
- * be stripped here, not just PI_*.
- */
 const ISOLATED_ENV = Object.fromEntries(
   Object.entries(process.env).filter(
     ([key]) =>
@@ -85,10 +74,6 @@ describe('runwire discover', () => {
   });
 });
 
-// `discover --json` must not be the one dump path that skips import's strict
-// schema gate (cli-report M2): an adapter object with an unrecognized key is a
-// contract violation, so the line is dropped (never stringified raw) and the
-// run exits 1, while valid lines already emitted are kept.
 function fakeBundle(): Record<string, unknown> {
   return {
     project: { key: 'k', name: 'n', identity: 'cwd' },
@@ -158,7 +143,6 @@ describe('runDiscover bundle validation', () => {
     const { code, logs, errors } = await runDiscoverCaptured([valid, invalid], true);
 
     expect(code).toBe(1);
-    // Only the valid bundle reaches stdout, and it is the schema's output.
     expect(logs.length).toBe(1);
     expect(SessionBundleSchema.safeParse(JSON.parse(logs[0] ?? '')).success).toBe(true);
 
@@ -170,7 +154,6 @@ describe('runDiscover bundle validation', () => {
     expect(stderr).toContain('invalid bundle');
     expect(stderr).toContain('unrecognized_keys');
     expect(stderr).toContain('prompt');
-    // Issue strings name keys only, never values.
     expect(stderr).not.toContain('RUNWIRE_CANARY_1');
   });
 
@@ -276,7 +259,6 @@ describe('runwire import', () => {
         expect(stdout).toBe('');
         expect(stderr).toContain('imported=1');
         expect(existsSync(join(fakeHome, '.runwire', 'runwire.db'))).toBe(true);
-        // The bug created this literal directory under cwd.
         expect(existsSync(join(REPO_ROOT, '~'))).toBe(false);
       } finally {
         await rm(fakeHome, { recursive: true, force: true });
@@ -317,7 +299,6 @@ describe('runwire import', () => {
       expect(failed.code).toBe(1);
       expect(failed.stderr).toContain('source-read-failed');
       expect(failed.stderr).toContain('removed=0');
-      // Privacy: the raw SQLite error and the temp path never reach stderr.
       expect(failed.stderr).not.toMatch(/not a database|SQLITE|malformed/i);
       expect(failed.stderr).not.toContain(badHome);
 
@@ -354,9 +335,6 @@ describe('runwire import', () => {
       expect(forced.stderr).toContain('imported=1');
       expect(forced.stderr).toContain('skipped=0');
 
-      // The forced upsert stored fresh sourceSize/sourceMtime (persist.ts:95,
-      // :137-138), so a normal run after the forced one resumes incremental
-      // skipping rather than re-importing the unchanged source again.
       const postForce = await run(args);
       expect(postForce.code).toBe(0);
       expect(postForce.stderr).toContain('imported=0');

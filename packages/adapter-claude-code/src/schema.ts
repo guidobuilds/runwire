@@ -1,12 +1,5 @@
 import { z } from 'zod';
 
-/**
- * Validates the record AFTER it has already been passed through
- * `project(record, claudeCodeAllowlist)` — every field is optional and
- * loosely typed (docs/DECISIONS.md D21: loose schemas, version-gated field
- * maps, not one adapter per version). `.passthrough()` on every object so an
- * allowlisted-but-unmodeled field never fails validation.
- */
 const contentBlockSchema = z
   .object({
     type: z.string().optional(),

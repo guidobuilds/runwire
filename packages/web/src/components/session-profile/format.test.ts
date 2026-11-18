@@ -54,8 +54,6 @@ describe('formatTime', () => {
 describe('events timestamps stay absolute (Events table excluded)', () => {
   it('formatTime keeps the fixed HH:MM:SS shape and formatDateTime stays absolute', () => {
     const iso = '2026-09-01T10:05:09.000Z';
-    // The events datatable formats timestamps itself with `formatTime`; it must
-    // never inherit the dashboard/profile relative-date display.
     expect(formatTime(iso)).toMatch(/^\d{2}:\d{2}:\d{2}$/);
     expect(formatTime(iso)).not.toMatch(/ago|just now|in /);
     expect(formatDateTime(iso)).not.toMatch(/ago|just now|in /);

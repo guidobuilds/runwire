@@ -6,17 +6,6 @@ import { type SectionCardData, SectionCards } from '@/components/section-cards';
 import { useSessionsTableState } from '@/hooks/use-sessions-table-state';
 import { useSessions, useSessionsStats } from '@/queries/sessions';
 
-// The one deliberate hand-written composition file for f4 (see plan.md decision
-// #13 / stack-research.md §A3): dashboard-01's own `page.tsx` is silently dropped
-// by the shadcn CLI on Vite, so this route hand-arranges the CLI-generated
-// SectionCards/ChartAreaInteractive/DataTable. The table rows come from
-// `useSessions()` (paged), while the SectionCards/ChartAreaInteractive metrics
-// come from `useSessionsStats()` — a separate `GET /api/sessions/stats` endpoint
-// that aggregates over the FULL filtered root set, so the cards/chart no longer
-// depend on the visible page. Both queries use the same committed filters. The
-// AppSidebar/SiteHeader chrome moved to __root.tsx in f6 (shared app-wide, not
-// re-wrapped here). Table state is intentionally client-only (no URL search
-// params).
 export const Route = createFileRoute('/sessions/')({
   component: SessionsDashboard,
 });
@@ -45,8 +34,6 @@ function formatDuration(ms: number): string {
   return `${seconds}s`;
 }
 
-/** Total Sessions / Total Cost / Total Tokens / Avg Duration, formatted from
- * the server-side aggregates over the full filtered set. */
 function cardsFromStats(stats: ApiSessionsStats): SectionCardData[] {
   return [
     { label: 'Total Sessions', value: String(stats.totalSessions) },
@@ -56,7 +43,6 @@ function cardsFromStats(stats: ApiSessionsStats): SectionCardData[] {
   ];
 }
 
-/** The stats endpoint already returns the day-bucketed series the chart wants. */
 function chartDataFromStats(stats: ApiSessionsStats): ChartAreaDataPoint[] {
   return stats.series.map((point) => ({ date: point.date, sessions: point.sessions }));
 }

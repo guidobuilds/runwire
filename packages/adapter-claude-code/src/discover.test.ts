@@ -82,7 +82,6 @@ describe('discover: the P10 known rule', () => {
     const known: Known = new Map([
       [ROOT_PATH, { size: byteLen(ROOT_CONTENT), mtime: 1000 }],
       [CHILD_A1_PATH, { size: byteLen(CHILD_A1_CONTENT), mtime: 2000 }],
-      // child2's mtime in `known` does not match disk (3000) - it "changed".
       [CHILD_A2_PATH, { size: byteLen(CHILD_A2_CONTENT), mtime: 1 }],
     ]);
     const bundles = await collect(ctx, known);
@@ -110,8 +109,6 @@ describe('discover: the P10 known rule', () => {
       [CHILD_A1_PATH]: { content: CHILD_A1_CONTENT, mtimeMs: 2000 },
       [CHILD_A1_META_PATH]: { content: META_A1 },
     });
-    // known also has a2, which no longer exists on disk - removal is core's
-    // job (removeVanished), not discover()'s; it must not force a re-emit.
     const known: Known = new Map([
       [ROOT_PATH, { size: byteLen(ROOT_CONTENT), mtime: 1000 }],
       [CHILD_A1_PATH, { size: byteLen(CHILD_A1_CONTENT), mtime: 2000 }],
@@ -156,7 +153,6 @@ describe('discover: incomplete enumeration is rejected, not masked', () => {
     };
     await expect(collect(ctxWithFs(vanished))).rejects.toThrow();
 
-    // The same fs restored is readable: the rejection was not a permanent loss.
     const bundles = await collect(ctxWithFs(real));
     expect(bundles.map((b) => b.session.id)).toEqual(['claude-code:s1', 'claude-code:s1/a1']);
   });
