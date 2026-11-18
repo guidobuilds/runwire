@@ -144,10 +144,12 @@ async function main(argv: string[]): Promise<number> {
 
 if (import.meta.main) {
   main(process.argv.slice(2)).then(
-    (code) => process.exit(code),
+    (code) => {
+      process.exitCode = code;
+    },
     (e) => {
       console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
-      process.exit(1);
+      process.exitCode = 1;
     },
   );
 }
