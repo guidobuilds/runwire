@@ -68,11 +68,11 @@ describe('createBunFs: absence vs real failure', () => {
     expect(await fs.readdir(join(dir, 'file.txt'))).toEqual([]);
   });
 
-  test('a real non-absence stat/readdir error is rethrown, not masked', async () => {
+  test('an invalid-path error is rethrown, not masked', async () => {
     const fs = createBunFs();
-    const tooLong = join(dir, 'a'.repeat(5000));
-    const statError = await rejectError(fs.stat(tooLong));
-    const readdirError = await rejectError(fs.readdir(tooLong));
+    const invalid = `${dir}\0invalid`;
+    const statError = await rejectError(fs.stat(invalid));
+    const readdirError = await rejectError(fs.readdir(invalid));
     expect(statError).toBeInstanceOf(Error);
     expect(readdirError).toBeInstanceOf(Error);
     expect((statError as { code?: string } | undefined)?.code).not.toBe('ENOENT');

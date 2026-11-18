@@ -3,6 +3,7 @@ import { adapters } from './adapters';
 import { runDiscover } from './commands/discover';
 import { runImport } from './commands/import';
 import { assertBindHost, runServe } from './commands/serve';
+import { streamOutput } from './output';
 
 const USAGE = `Usage:
   runwire import [--adapter <id>] [--home <dir>] [--db <path>] [--no-titles] [--force]
@@ -39,12 +40,13 @@ async function main(argv: string[]): Promise<number> {
         force: parsed.values.force ?? false,
       };
     } catch (e) {
-      console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
-      console.error(USAGE);
+      await streamOutput.err(`error: ${e instanceof Error ? e.message : String(e)}`);
+      await streamOutput.err(USAGE);
       return 2;
     }
     return runImport({
       adapters,
+      output: streamOutput,
       adapterId: values.adapter,
       home: values.home,
       db: values.db,
@@ -74,12 +76,13 @@ async function main(argv: string[]): Promise<number> {
         titles: !parsed.values['no-titles'],
       };
     } catch (e) {
-      console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
-      console.error(USAGE);
+      await streamOutput.err(`error: ${e instanceof Error ? e.message : String(e)}`);
+      await streamOutput.err(USAGE);
       return 2;
     }
     return runDiscover({
       adapters,
+      output: streamOutput,
       adapterId: values.adapter,
       home: values.home,
       json: values.json,
@@ -112,41 +115,41 @@ async function main(argv: string[]): Promise<number> {
       if (values.port !== undefined) {
         const n = Number(values.port);
         if (!Number.isInteger(n) || n < 0 || n > 65535) {
-          console.error('error: --port must be an integer between 0 and 65535');
-          console.error(USAGE);
+          await streamOutput.err('error: --port must be an integer between 0 and 65535');
+          await streamOutput.err(USAGE);
           return 2;
         }
       }
       if (values.host !== undefined) {
         const hostError = assertBindHost(values.host);
         if (hostError !== undefined && (values.host.trim() === '' || !values.expose)) {
-          console.error(hostError);
-          console.error(USAGE);
+          await streamOutput.err(hostError);
+          await streamOutput.err(USAGE);
           return 2;
         }
       }
     } catch (e) {
-      console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
-      console.error(USAGE);
+      await streamOutput.err(`error: ${e instanceof Error ? e.message : String(e)}`);
+      await streamOutput.err(USAGE);
       return 2;
     }
-    return runServe(values);
+    return runServe({ ...values, output: streamOutput });
   }
 
-  console.error(
+  await streamOutput.err(
     subcommand === undefined
       ? 'error: no subcommand given'
       : `error: unknown subcommand "${subcommand}"`,
   );
-  console.error(USAGE);
+  await streamOutput.err(USAGE);
   return 2;
 }
 
 if (import.meta.main) {
   main(process.argv.slice(2)).then(
     (code) => process.exit(code),
-    (e) => {
-      console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
+    async (e) => {
+      await streamOutput.err(`error: ${e instanceof Error ? e.message : String(e)}`);
       process.exit(1);
     },
   );

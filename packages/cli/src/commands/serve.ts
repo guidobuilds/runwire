@@ -5,6 +5,8 @@ import { importAll, modelsOverridesPath, openStore, readModelOverrides } from '@
 import { createServer, DEFAULT_HOST, DEFAULT_PORT } from '@runwire/server';
 import { adapters as defaultAdapters } from '../adapters';
 import { createContext, defaultDbPath, ensureDbDir, resolveUserPath } from '../context';
+import type { Output } from '../output';
+import { consoleOutput } from '../output';
 
 export type ServeOptions = {
   db?: string;
@@ -12,6 +14,7 @@ export type ServeOptions = {
   port?: string;
   expose?: boolean;
   titles: boolean;
+  output?: Output;
 };
 
 type MinimalServer = { port: number; stop: () => void };
@@ -50,16 +53,17 @@ export type ServeDeps = {
 };
 
 export async function runServe(opts: ServeOptions, deps: ServeDeps = {}): Promise<number> {
+  const output = opts.output ?? consoleOutput;
   const dbPath = resolveUserPath(opts.db ?? (deps.defaultDbPath ?? defaultDbPath)());
   const host = opts.host ?? DEFAULT_HOST;
   const expose = opts.expose === true;
   const hostError = assertBindHost(host);
   if (hostError !== undefined && (host.trim() === '' || !expose)) {
-    console.error(hostError);
+    await output.err(hostError);
     return 2;
   }
   if (hostError !== undefined) {
-    console.error(`warn: binding ${host} — this process is reachable off loopback`);
+    await output.err(`warn: binding ${host} — this process is reachable off loopback`);
   }
   await (deps.ensureDbDir ?? ensureDbDir)(dbPath);
   const port = opts.port === undefined ? DEFAULT_PORT : Number(opts.port);
@@ -74,7 +78,7 @@ export async function runServe(opts: ServeOptions, deps: ServeDeps = {}): Promis
     scan: () => importAll({ adapters: deps.adapters ?? defaultAdapters, db, ctx }),
     modelOverrides: () => readModelOverrides(overridesPath),
   });
-  console.error(`runwire serve listening on http://${formatHost(host)}:${server.port}`);
+  await output.err(`runwire serve listening on http://${formatHost(host)}:${server.port}`);
 
   return await new Promise<number>((resolve) => {
     const shutdown = (): void => {

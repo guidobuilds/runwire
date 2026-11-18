@@ -1,6 +1,8 @@
 import type { HarnessAdapter } from '@runwire/core';
 import { validateBundle } from '@runwire/core';
 import { createContext } from '../context';
+import type { Output } from '../output';
+import { consoleOutput } from '../output';
 
 export type DiscoverOptions = {
   adapters: HarnessAdapter[];
@@ -8,18 +10,20 @@ export type DiscoverOptions = {
   home?: string;
   json: boolean;
   titles: boolean;
+  output?: Output;
 };
 
 export async function runDiscover(opts: DiscoverOptions): Promise<number> {
+  const output = opts.output ?? consoleOutput;
   if (opts.adapterId === undefined) {
     const known = opts.adapters.map((a) => a.id).join(', ');
-    console.error(`error: --adapter is required (known: ${known})`);
+    await output.err(`error: --adapter is required (known: ${known})`);
     return 1;
   }
   const adapter = opts.adapters.find((a) => a.id === opts.adapterId);
   if (!adapter) {
     const known = opts.adapters.map((a) => a.id).join(', ');
-    console.error(`error: unknown adapter "${opts.adapterId}" (known: ${known})`);
+    await output.err(`error: unknown adapter "${opts.adapterId}" (known: ${known})`);
     return 1;
   }
 
@@ -28,7 +32,7 @@ export async function runDiscover(opts: DiscoverOptions): Promise<number> {
   for await (const bundle of adapter.discover(ctx, new Map())) {
     const result = validateBundle(bundle);
     if (!result.ok) {
-      console.error(
+      await output.err(
         `error: adapter "${adapter.id}" emitted an invalid bundle (${result.issues.join('; ')})`,
       );
       failed = true;
@@ -36,9 +40,9 @@ export async function runDiscover(opts: DiscoverOptions): Promise<number> {
     }
     const s = result.bundle.session;
     if (opts.json) {
-      console.log(JSON.stringify(result.bundle));
+      await output.out(JSON.stringify(result.bundle));
     } else {
-      console.log(
+      await output.out(
         `${s.id}  ${result.bundle.project.key}  steps=${result.bundle.steps.length}  output=${s.output ?? 0}`,
       );
     }
