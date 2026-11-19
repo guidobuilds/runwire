@@ -1,5 +1,7 @@
 # Architecture
 
+> **Status: beta.** The contract and SQLite schema may change between 0.x releases.
+
 The contract between `core` and the harness adapters. Decisions are `D<n>` in [DECISIONS.md](DECISIONS.md). Related: [PRODUCT.md](PRODUCT.md), [adapters/README.md](adapters/README.md), [adapters/claude-code.md](adapters/claude-code.md), [harness-survey.md](harness-survey.md).
 
 ## 1. Overview

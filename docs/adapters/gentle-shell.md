@@ -117,13 +117,13 @@ coding-agent ones (`bashExecution`, `custom`, `branchSummary`, `compactionSummar
 | `id`, `agent`, `mode` (`task`/`background`), `status`, `cwd`, `parentSessionId`, `sessionPath`, `model`, `modelSource`, `thinking`, `createdAt`, `startedAt`, `endedAt`, `lastActivityAt` | `prompt`, `result`, `error`, `label`, `lastStep`, `sddPreflightContext`, `sddRemediation`, and the whole `thread.items[]` (`text`, tool `args`, `output`) |
 | | `tokens`, `cost`, `turns`, `toolCalls` — **duplicated aggregates, excluded**, see §5.3 |
 
-**4.7 key set (2026-11-10 scan, S4).** The keys a `task` record actually carries:
+**4.7 key set (2026-11-10 scan).** The keys a `task` record actually carries:
 `agent, cost, createdAt, cwd, endedAt, error, id, label, lastActivityAt, lastStep, mode, model,
 modelSource, parentSessionId, prompt, result, sessionPath, startedAt, status, thinking, tokens,
 toolCalls, turns`. `modelSource` is present; `sddRemediation` and `sddPreflightContext` are
 **absent** — they are optional additive keys that the shape reader tolerates by construction (it
 reads `id`, `agent`, `parentSessionId`, `sessionPath` and nothing else), not keys this adapter
-expects. Link metadata stays identity-only (S9).
+expects. Link metadata stays identity-only.
 
 The ledger is capped: `history_max_tasks` defaults to **200** and is global, pruned on every
 task save. It is the *only* structural link from a child session to its parent and its task id;
@@ -166,7 +166,7 @@ does about it:
 | `gentle-pi.review-reminder-receipt/v1` (`custom`, `source: 'subagent'`) carries `taskId` + `toolCallId`. | Secondary spawn-linkage source (D90, §5.1): it fills `spawnCallId` only where no `gentleAgents` `toolResult` supplied one, and such a resolution emits an info `receipt-spawn-link` (count only). The toolResult identity always wins. |
 | `gentle-pi.exploration-budget` (`custom_message` with `details`). | Presence only, like every other extension `custom_message`: `customType` and `display` survive, `content` and `details` do not. |
 | The other live `customType`s are unchanged: `gentle-pi.session-worktree/v1`, `gentle-pi.session-change/v1`, `gentle-agents.stale-result`, `gentle-agents.result`, `gentle-agents.message`, `gentle-todo-state`. | Presence only. |
-| Ledger `task` key set (S4). | §2.2 records the observed keys and the two absent optional ones. |
+| Ledger `task` key set. | §2.2 records the observed keys and the two absent optional ones. |
 | `items[].kind` ∈ `text\|thinking\|note\|tool` in the task thread; `limits {maxItems: 400, maxOutputChars: 16000}`. | Unchanged: the thread is never read (§2.2, §5.3). |
 
 **Caveat: the projection is per key, not per `customType`.** `project()` cannot express "inside
@@ -296,7 +296,7 @@ For each `gentle-agents/tasks/<id>.json`:
 
 `spawnCallId` is the only field that requires reading the **parent** session file: the task
 record does not store the spawn call id. It is what lets core fill `steps.child_id` and connect
-the parent's `subagent_run` tool step to the child. **Decision (2026-10-22 challenge):** the
+the parent's `subagent_run` tool step to the child. **Decision (2026-10-22):** the
 scanner runs only against parents this adapter owns. When the parent lives in the user's Pi
 parent root (shape B/C, labelled `pi:`), `spawnCallId` stays NULL and the gentle-shell adapter
 never opens another adapter's files; the upstream ask in §5.4.1 is the real fix.
@@ -389,7 +389,7 @@ Fingerprinting a shared parent root is *possible* but not free:
 |---|---|---|
 | **A. Home-scoped v1 (implemented, D88)** | `gentle-shell` owns `<gentleHome>/sessions` + **all** `gentle-agents/sessions` trees (Gentle home and user Pi home). Pi keeps `<userPiHome>/sessions`. Shape B/C parents stay labelled `pi`. | No core change, no re-read cost, no double counting. Leaves the shared-home parent attribution as a documented gap. Children link to `pi:` parents where the ledger says so. |
 | **B. Fingerprint split** | `gentle-shell` also claims fingerprinted sessions under `<userPiHome>/sessions`; `pi` skips them. | Exact for the 96 %, but needs a shared classifier, a one-time re-read of the whole Pi root, one-time row identity changes (`pi:` → `gentle-shell:`), and every subsequent run re-reads the non-owned fingerprinted files. Containment: a shared predicate module + an adapterVersion bump. |
-| **B′. Fingerprint + negative cache** | Same as B, plus a per-adapter skip-decision cache keyed by path+mtime in the non-owning adapter, so fingerprinted files are not re-read on every run. | Exact for the 96 % without B's permanent re-read cost; needs adapter-local state outside the DB-derived `known` cache (a small core/adapter addition, much smaller than C). Considered in the 2026-10-22 challenge; the original analysis presented only A/B/C. |
+| **B′. Fingerprint + negative cache** | Same as B, plus a per-adapter skip-decision cache keyed by path+mtime in the non-owning adapter, so fingerprinted files are not re-read on every run. | Exact for the 96 % without B's permanent re-read cost; needs adapter-local state outside the DB-derived `known` cache (a small core/adapter addition, much smaller than C). Considered on 2026-10-22; the original analysis presented only A/B/C. |
 | **C. Harness family contract** | One Pi-family adapter owns both identities; core accepts a declared set of harness ids with per-id capabilities/known/removal. | Cleanest end state with shared family ownership, but a real contract change (ARCHITECTURE §3/§6, schema, test kit, CLI report). Not justified until the product needs exact shared-home attribution. |
 
 Decision (D88): **A implemented**, plus the upstream header marker ask. If exact re-attribution of
@@ -482,7 +482,7 @@ Excluded hazards, each real in this data:
 
 ## 9. Package plan — outcome
 
-**Shape 1 implemented (D84):** two factories in `packages/adapter-pi`, with plain Pi modules
+**Implemented layout (D84):** two factories in `packages/adapter-pi`, with plain Pi modules
 under `src/pi/` and Gentle Shell modules under `src/gentle-shell/`. Both factories are
 registered in the CLI. Pi behaviour and the core-only adapter import boundary are unchanged.
 The full fixture suite and `adapterContract` pass on `fixtures/gentle-shell/all`.

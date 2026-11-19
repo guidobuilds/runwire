@@ -381,7 +381,7 @@ Shipped in v1 as **D81**: only `<agentDir>/sessions` is scanned; `subagent_run`/
 `subagent_list_agents` are emitted as ordinary `agent`-category `tool` steps (delegation counted,
 not linked); `subagents` stays undeclared. The `PiLinkSource` seam is recorded, not implemented.
 
-#### Agent Lanes T6 linkage investigation (S39–S41)
+#### Agent Lanes linkage investigation
 
 The repository evidence still supports **not linkable**, not child emission:
 
@@ -404,7 +404,7 @@ The repository evidence still supports **not linkable**, not child emission:
 Consequently the Pi lane has **agent-kind marks only, no child lanes**. This does not claim that
 extensions never write child sessions: the fixture and earlier reference-machine investigation
 show that they can, but those files are outside Pi's store and cannot be causally linked from the
-available Pi records. S39's child-emission path stays open pending parent approval of a versioned,
+available Pi records. The child-emission path stays open pending parent approval of a versioned,
 metadata-only extension bridge (D81) or new upstream linkage evidence; do not widen discovery,
 read a task ledger, or infer links to close it. No real home session data was accessed for T6.
 
