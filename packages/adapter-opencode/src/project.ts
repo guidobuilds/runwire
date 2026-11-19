@@ -1,3 +1,4 @@
+import { writeSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import type { Project, RunwireFs } from '@runwire/core';
 
@@ -38,6 +39,7 @@ async function findGitRoot(
   let dir = startCwd;
   for (let i = 0; i < 64; i++) {
     const gitPath = `${dir}/.git`;
+    writeSync(2, `DEBUG-GIT-ITER ${gitPath}\n`);
     const stat = await fs.stat(gitPath);
     if (stat) {
       if (stat.isDirectory) return { repoRoot: dir };
@@ -66,6 +68,7 @@ export async function resolveOpencodeProject(
   input: OpenCodeResolveInput,
   opts: OpenCodeResolveOptions,
 ): Promise<Project> {
+  writeSync(2, `DEBUG-RESOLVE ${JSON.stringify(input)}\n`);
   let repoRoot = input.repoRootHint;
   let worktree: string | undefined;
   if (!repoRoot) {
@@ -76,7 +79,9 @@ export async function resolveOpencodeProject(
 
   let remote: string | undefined;
   if (repoRoot) {
+    writeSync(2, `DEBUG-REMOTE-START ${repoRoot}\n`);
     remote = await readOriginRemote(repoRoot, opts.fs);
+    writeSync(2, `DEBUG-REMOTE-END ${repoRoot}\n`);
   }
 
   const normalizedRemote = remote ? normalizeRemoteUrl(remote) : undefined;

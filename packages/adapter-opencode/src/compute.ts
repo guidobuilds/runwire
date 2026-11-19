@@ -1,3 +1,4 @@
+import { writeSync } from 'node:fs';
 import type {
   AdapterContext,
   Diagnostic,
@@ -94,7 +95,9 @@ export async function computeBundle(input: ComputeSessionInput): Promise<Session
 
   const sourceId = sourceIdFor(origin, session.id);
 
+  writeSync(2, `DEBUG-PROJECT-START ${session.id}\n`);
   const project: Project = await resolveSessionProject(session, projects, ctx);
+  writeSync(2, `DEBUG-PROJECT-END ${session.id}\n`);
 
   const steps: Step[] = [];
   let seq = 0;
