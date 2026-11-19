@@ -31,9 +31,9 @@
     "runwire": "bun packages/cli/src/index.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.11",
-    "bun-types": "1.4.0",
-    "dependency-cruiser": "18.2.0",
+    "@biomejs/biome": "2.6.8",
+    "bun-types": "1.4.4",
+    "dependency-cruiser": "18.7.2",
     "typescript": "6.0.3"
   }
 }
