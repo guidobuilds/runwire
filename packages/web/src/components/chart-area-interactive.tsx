@@ -40,6 +40,11 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
+function formatChartDate(value: React.ReactNode): string {
+  if (typeof value !== 'string' && typeof value !== 'number') return '';
+  return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 export function ChartAreaInteractive({ data }: { data: ChartAreaDataPoint[] }) {
   const isMobile = useIsMobile();
   const [timeRange, setTimeRange] = React.useState('90d');
@@ -133,24 +138,13 @@ export function ChartAreaInteractive({ data }: { data: ChartAreaDataPoint[] }) {
               axisLine={false}
               tickMargin={8}
               minTickGap={32}
-              tickFormatter={(value) => {
-                const date = new Date(value);
-                return date.toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                });
-              }}
+              tickFormatter={(value) => formatChartDate(value)}
             />
             <ChartTooltip
               cursor={false}
               content={
                 <ChartTooltipContent
-                  labelFormatter={(value) => {
-                    return new Date(value).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    });
-                  }}
+                  labelFormatter={(value) => formatChartDate(value)}
                   indicator="dot"
                 />
               }

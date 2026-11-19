@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const sessionRowSchema = z
   .object({
-    id: z.string().optional(),
+    id: z.string(),
     project_id: z.string().optional(),
     parent_id: z.string().nullable().optional(),
     fork_session_id: z.string().nullable().optional(),

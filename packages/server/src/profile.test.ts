@@ -21,7 +21,7 @@ function seed(db: Database): void {
         'test',
         parentId,
         parentId === null ? null : 'subagent',
-        '/private/' + id,
+        `/private/${id}`,
         output,
         title,
       ],
@@ -61,7 +61,7 @@ async function withServer(run: (base: string, db: Database) => Promise<void>): P
   seed(store.db);
   const server = createServer({ db: store.db, host: '127.0.0.1', port: 0 });
   try {
-    await run('http://127.0.0.1:' + String(server.port), store.db);
+    await run(`http://127.0.0.1:${server.port}`, store.db);
   } finally {
     server.stop();
     store.close();

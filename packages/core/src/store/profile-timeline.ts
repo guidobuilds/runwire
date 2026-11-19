@@ -125,7 +125,10 @@ function domain(calls: readonly TimedCallRow[]): TimeDomain {
     if (!Number.isFinite(current) || current < previous) return { start: null, end: null };
     previous = current;
   }
-  return { start: calls[0]!.at, end: calls.at(-1)!.at };
+  const first = calls[0];
+  const last = calls[calls.length - 1];
+  if (!first || !last) return { start: null, end: null };
+  return { start: first.at, end: last.at };
 }
 
 function points(
@@ -168,7 +171,8 @@ function points(
       if ((bucketCalls[index] ?? 0) > 0 && !bucketObserved[index]) delta[index] = null;
       if (appeared[index] && !observed[index]) cumulative[index] = null;
     }
-    const last = calls[end - 1]!;
+    const last = calls[end - 1];
+    if (!last) break;
     result.push({
       at: last.at,
       delta,

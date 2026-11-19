@@ -1,6 +1,6 @@
 import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { LABEL_WIDTH, SCROLLBAR_WIDTH } from './renderer/layout';
-import { clamp, fit as fitView, pan, type Viewport, zoom } from './viewport';
+import { clamp, fitView, pan, type Viewport, zoom } from './viewport';
 
 export type CanvasViewState = { view: Viewport; scrollY: number };
 export type CanvasGestureOptions = {
