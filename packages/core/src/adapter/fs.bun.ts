@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
 import type { Stats } from 'node:fs';
-import { stat as nodeStat, readdir } from 'node:fs/promises';
+import { readFile as nodeReadFile, stat as nodeStat, readdir } from 'node:fs/promises';
 import type { FsStat, RunwireFs, SqliteReader } from './types';
 
 export type BunFsIo = {
@@ -12,7 +12,7 @@ export type BunFsIo = {
 const defaultIo: BunFsIo = {
   stat: nodeStat,
   readdir,
-  readFileText: (path) => Bun.file(path).text(),
+  readFileText: (path) => nodeReadFile(path, 'utf8'),
 };
 
 function isAbsenceError(e: unknown): boolean {

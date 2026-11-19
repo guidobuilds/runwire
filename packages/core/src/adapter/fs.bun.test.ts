@@ -62,6 +62,13 @@ describe('createBunFs: absence vs real failure', () => {
     expect(await fs.readFile(missing)).toBeUndefined();
   });
 
+  test('a missing POSIX-style absolute path is absence, not a hang', async () => {
+    const fs = createBunFs();
+    expect(await fs.stat('/runwire-missing/.git')).toBeUndefined();
+    expect(await fs.readdir('/runwire-missing')).toEqual([]);
+    expect(await fs.readFile('/runwire-missing/.git/config')).toBeUndefined();
+  });
+
   test('ENOTDIR is absence: a path under a file stats undefined and a file readdirs empty', async () => {
     const fs = createBunFs();
     expect(await fs.stat(join(dir, 'file.txt', 'child'))).toBeUndefined();
