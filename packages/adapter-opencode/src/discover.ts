@@ -1,3 +1,4 @@
+import { writeSync } from 'node:fs';
 import type { AdapterContext, Diagnostic, Known, SessionBundle, SqliteReader } from '@runwire/core';
 import { makeDiagnostic } from '@runwire/core';
 import type { ComputeSessionInput } from './compute';
@@ -120,7 +121,8 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
       const k = known.get(sourceId);
       if (k !== undefined && k.size === sourceSize && k.mtime === sourceMtime) continue;
 
-      yield await computeSessionBundle({
+      writeSync(2, `DEBUG-BEFORE-COMPUTE ${sourceId}\n`);
+      const bundle = await computeSessionBundle({
         harnessId: HARNESS_ID,
         origin,
         session,
@@ -130,6 +132,8 @@ export async function* discover(ctx: AdapterContext, known: Known): AsyncIterabl
         recordDiagnostics: records.diagnostics,
         ctx,
       });
+      writeSync(2, `DEBUG-COMPUTED ${sourceId}\n`);
+      yield bundle;
     }
   }
 }

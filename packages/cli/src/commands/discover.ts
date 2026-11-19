@@ -1,3 +1,4 @@
+import { writeSync } from 'node:fs';
 import type { HarnessAdapter } from '@runwire/core';
 import { validateBundle } from '@runwire/core';
 import { createContext } from '../context';
@@ -30,6 +31,7 @@ export async function runDiscover(opts: DiscoverOptions): Promise<number> {
   const ctx = createContext({ home: opts.home, titles: opts.titles });
   let failed = false;
   for await (const bundle of adapter.discover(ctx, new Map())) {
+    writeSync(2, `DEBUG-BUNDLE ${bundle.session.id}\n`);
     const result = validateBundle(bundle);
     if (!result.ok) {
       await output.err(
