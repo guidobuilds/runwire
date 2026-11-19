@@ -33,7 +33,7 @@ export function pan(view: Viewport, delta: number, callCount: number): Viewport 
   return clamp({ ...view, start: view.start + delta }, callCount);
 }
 
-export function fit(callCount: number): Viewport {
+export function fitView(callCount: number): Viewport {
   return { start: 0, span: Math.max(MIN_SPAN, callCount) };
 }
 

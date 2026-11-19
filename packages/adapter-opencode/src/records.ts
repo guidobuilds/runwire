@@ -99,7 +99,7 @@ export async function readOrigin(ctx: AdapterContext, origin: DbOrigin): Promise
     const sessions: OpenCodeSession[] = [];
     for (const raw of sessionRows) {
       const parsed = parseSessionRow(project(raw, sessionRowAllowlist));
-      if (!parsed || !parsed.id) {
+      if (!parsed) {
         diagnostics.push(
           makeDiagnostic(
             'warn',
@@ -196,7 +196,7 @@ export function attachSpawnCallIds(
 
 function mapSessionRow(row: OpenCodeSessionRow): OpenCodeSession {
   return {
-    id: row.id!,
+    id: row.id,
     projectId: row.project_id ?? '',
     parentId: row.parent_id ?? undefined,
     forkSessionId: row.fork_session_id ?? undefined,

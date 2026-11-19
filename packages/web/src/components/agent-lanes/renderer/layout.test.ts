@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LaneModelData } from '../model';
-import { fit as fitView } from '../viewport';
+import { fitView } from '../viewport';
 import { layout } from './layout';
 
 function sampleModel(count = 18): LaneModelData {

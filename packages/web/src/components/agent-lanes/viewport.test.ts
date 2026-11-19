@@ -6,7 +6,7 @@ import {
   bucket,
   bucketSize,
   clamp,
-  fit,
+  fitView,
   MIN_SPAN,
   pan,
   ppc,
@@ -27,10 +27,10 @@ it('anchors zoom at the cursor; clamps pan, zoom, fit and small/empty sessions',
   expect(pan(view, -100, 200)).toEqual({ start: 0, span: 40 });
   expect(pan(view, 1000, 200)).toEqual({ start: 160, span: 40 });
   expect(clamp({ start: -2, span: 2 }, 100)).toEqual({ start: 0, span: 12 });
-  expect(fit(100)).toEqual({ start: 0, span: 100 });
-  expect(fit(3)).toEqual({ start: 0, span: 12 });
-  expect(fit(0)).toEqual({ start: 0, span: 12 });
-  expect(clamp({ start: 10, span: 1000 }, 100)).toEqual(fit(100));
+  expect(fitView(100)).toEqual({ start: 0, span: 100 });
+  expect(fitView(3)).toEqual({ start: 0, span: 12 });
+  expect(fitView(0)).toEqual({ start: 0, span: 12 });
+  expect(clamp({ start: 10, span: 1000 }, 100)).toEqual(fitView(100));
 });
 
 it.each([

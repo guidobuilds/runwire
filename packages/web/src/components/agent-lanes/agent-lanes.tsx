@@ -17,7 +17,7 @@ import { resolveCanvasSize } from './sizing';
 import { formatCount, Toolbar } from './toolbar';
 import { type CanvasViewState, useCanvasGestures } from './use-canvas-gestures';
 import { useFullscreen } from './use-fullscreen';
-import { bucketSize, fit as fitView, ppc, xOf } from './viewport';
+import { bucketSize, fitView, ppc, xOf } from './viewport';
 
 export type AgentLanesProps = {
   sessionId: string;

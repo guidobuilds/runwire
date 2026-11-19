@@ -16,7 +16,7 @@ function seed(db: Database): void {
   const session = (id: string, parentId: string | null, title: string) =>
     db.run(
       'INSERT INTO sessions (id, harness_id, parent_id, relation, source_path, title) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, 'test', parentId, parentId === null ? null : 'subagent', '/private/' + id, title],
+      [id, 'test', parentId, parentId === null ? null : 'subagent', `/private/${id}`, title],
     );
   session('root', null, 'SECRET ROOT TITLE');
   session('root/child', 'root', 'SECRET CHILD TITLE');
@@ -119,7 +119,7 @@ async function withServer(run: (base: string, db: Database) => Promise<void>): P
   seed(store.db);
   const server = createServer({ db: store.db, host: '127.0.0.1', port: 0 });
   try {
-    await run('http://127.0.0.1:' + String(server.port), store.db);
+    await run(`http://127.0.0.1:${server.port}`, store.db);
   } finally {
     server.stop();
     store.close();

@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@runwire/core": "workspace:*",
-    "zod": "4.6.6"
+    "zod": "4.6.7"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",

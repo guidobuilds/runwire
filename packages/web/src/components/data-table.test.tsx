@@ -10,7 +10,6 @@ import {
 } from '@tanstack/react-router';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { DataTable } from '@/components/data-table';
 import { formatDateTime } from '@/components/relative-date';
@@ -101,15 +100,17 @@ function makeProps(overrides: Partial<DataTableProps> = {}): DataTableProps {
 
 function renderTable(overrides: Partial<DataTableProps> = {}) {
   const router = createTestRouter();
-  const RoutedWrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
-      <RouterContextProvider router={router}>{children}</RouterContextProvider>
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const table = (props: DataTableProps) => (
+    <QueryClientProvider client={queryClient}>
+      <RouterContextProvider router={router}>
+        <DataTable {...props} />
+      </RouterContextProvider>
     </QueryClientProvider>
   );
-  const result = render(<DataTable {...makeProps(overrides)} />, { wrapper: RoutedWrapper });
-  return { ...result, router };
+  const result = render(table(makeProps(overrides)));
+  const rerender = (next: Partial<DataTableProps> = {}) => result.rerender(table(makeProps(next)));
+  return { ...result, rerender, router };
 }
 
 function toolbarMenuTrigger(name: RegExp): HTMLElement {
@@ -125,7 +126,7 @@ describe('DataTable prop-sync', () => {
     const { rerender } = renderTable({ data: [sessionA] });
     expect(screen.getByText('Session A')).toBeInTheDocument();
 
-    rerender(<DataTable {...makeProps({ data: [sessionB] })} />);
+    rerender({ data: [sessionB] });
 
     expect(screen.queryByText('Session B')).toBeInTheDocument();
     expect(screen.queryByText('Session A')).not.toBeInTheDocument();
@@ -268,7 +269,7 @@ describe('DataTable date column toggling (T5)', () => {
     const { rerender } = renderDated();
     fireEvent.click(screen.getByRole('button', { name: '3d ago' }));
 
-    rerender(<DataTable {...makeProps({ data: [{ ...datedA }, { ...datedB }] })} />);
+    rerender({ data: [{ ...datedA }, { ...datedB }] });
 
     expect(screen.getByRole('button', { name: formatDateTime(startedA) })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: formatDateTime(startedB) })).toBeInTheDocument();
@@ -351,15 +352,11 @@ describe('DataTable last activity column', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Last Activity' }));
     expect(onSortChange).toHaveBeenLastCalledWith({ id: 'lastActivity', desc: false });
 
-    rerender(
-      <DataTable {...makeProps({ sort: { id: 'lastActivity', desc: false }, onSortChange })} />,
-    );
+    rerender({ sort: { id: 'lastActivity', desc: false }, onSortChange });
     fireEvent.click(screen.getByRole('button', { name: 'Last Activity' }));
     expect(onSortChange).toHaveBeenLastCalledWith({ id: 'lastActivity', desc: true });
 
-    rerender(
-      <DataTable {...makeProps({ sort: { id: 'lastActivity', desc: true }, onSortChange })} />,
-    );
+    rerender({ sort: { id: 'lastActivity', desc: true }, onSortChange });
     fireEvent.click(screen.getByRole('button', { name: 'Last Activity' }));
     expect(onSortChange).toHaveBeenLastCalledWith(null);
   });
@@ -385,10 +382,10 @@ describe('DataTable sorting', () => {
     expect(nameHeader().querySelector('.lucide-chevrons-up-down')).not.toBeNull();
     expect(nameHeader().querySelector('.lucide-arrow-up')).toBeNull();
 
-    rerender(<DataTable {...makeProps({ sort: { id: 'name', desc: false } })} />);
+    rerender({ sort: { id: 'name', desc: false } });
     expect(nameHeader().querySelector('.lucide-arrow-up')).not.toBeNull();
 
-    rerender(<DataTable {...makeProps({ sort: { id: 'name', desc: true } })} />);
+    rerender({ sort: { id: 'name', desc: true } });
     expect(nameHeader().querySelector('.lucide-arrow-down')).not.toBeNull();
   });
 
@@ -399,7 +396,7 @@ describe('DataTable sorting', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Name' }));
     expect(onSortChange).toHaveBeenLastCalledWith({ id: 'name', desc: false });
 
-    rerender(<DataTable {...makeProps({ sort: { id: 'name', desc: false }, onSortChange })} />);
+    rerender({ sort: { id: 'name', desc: false }, onSortChange });
     fireEvent.click(screen.getByRole('button', { name: 'Name' }));
     expect(onSortChange).toHaveBeenLastCalledWith({ id: 'name', desc: true });
   });

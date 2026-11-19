@@ -121,11 +121,11 @@ export function readProfileSpawns(
       } else {
         const matchingChildren = childrenByCall.get(key(parent.id, child.spawn_call_id)) ?? [];
         const matchingActions = actionsByCall.get(key(parent.id, child.spawn_call_id)) ?? [];
-        if (matchingActions.length === 0) causalStatus = 'call-not-found';
+        const [matchingAction] = matchingActions;
+        if (!matchingAction) causalStatus = 'call-not-found';
         else if (matchingChildren.length !== 1 || matchingActions.length !== 1)
           causalStatus = 'ambiguous';
         else {
-          const matchingAction = matchingActions[0]!;
           callAt = matchingAction.at;
           if (matchingAction.child_id === child.id) causalStatus = 'linked';
           else if (matchingAction.child_id === null) causalStatus = 'unresolved';

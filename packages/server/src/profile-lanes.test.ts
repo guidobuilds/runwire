@@ -78,14 +78,10 @@ describe('profile lanes endpoint', () => {
     });
     try {
       const first = (await (
-        await fetch(
-          'http://127.0.0.1:' + String(server.port) + '/api/sessions/s1/profile/lanes?scope=own',
-        )
+        await fetch(`http://127.0.0.1:${server.port}/api/sessions/s1/profile/lanes?scope=own`)
       ).json()) as LanesResponse;
       const second = (await (
-        await fetch(
-          'http://127.0.0.1:' + String(server.port) + '/api/sessions/s1/profile/lanes?scope=own',
-        )
+        await fetch(`http://127.0.0.1:${server.port}/api/sessions/s1/profile/lanes?scope=own`)
       ).json()) as LanesResponse;
       expect(loads).toBe(2);
       expect(first.models).toEqual([{ name: 'gpt-6.1-sol', contextWindow: 777_000, tier: 'high' }]);
