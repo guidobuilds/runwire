@@ -24,6 +24,7 @@ Run the same checks CI runs, in this order:
 bun run lint       # Biome + dependency-cruiser import boundaries
 bun run typecheck  # tsc --noEmit in every package
 bun run test       # bun test per package, Vitest in packages/web
+bun run --filter '@runwire/web' build
 ```
 
 Do not run a bare `bun test` at the repository root: `bunfig.toml` excludes `packages/web`, so it
